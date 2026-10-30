@@ -1,0 +1,17 @@
+# Projects' connector with ERP (Ferrum docs/plan/apps-ui.md §13): invoicing projects' time and
+# milestones through ERP, with the service items and cost centers it uses. Offered where both apps
+# are installed; ships with Projects.
+id: projects-erp
+name: Projects and ERP
+version: 0.1.0
+publisher: cbferrum
+summary: Invoices for projects' time and milestones
+categories: [connector, projects, finance]
+license: AGPL-3.0-only
+homepage: https://github.com/CBFerrum/ferrum-app-projects
+support: https://github.com/CBFerrum/ferrum-app-projects/issues
+runtime: native
+platform: ">=0.3.2, <0.4"
+requires: {projects: ">=0.2", erp: ">=0.1"}
+packages: [projects_erp]
+uninstall: ask

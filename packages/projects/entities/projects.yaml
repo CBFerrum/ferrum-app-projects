@@ -8,7 +8,6 @@
     - {name: activity_type, type: data, required: true, unique: true, in_list: true}
     - {name: billing_rate, type: currency, min: "0", in_list: true, label: Default Billing Rate (per hour)}
     - {name: costing_rate, type: currency, min: "0", perm_group: costing, label: Default Costing Rate (per hour)}
-    - {name: item, type: link, to: Item, link_filters: {is_stock_item: false, disabled: false}, in_list: true, label: Service Item, description: Invoiced for billable time of this activity}
     - {name: disabled, type: check, in_filter: true}
   list: {columns: [activity_type, billing_rate, item], sort: activity_type asc}
 
@@ -65,7 +64,6 @@
     - {name: depends_on, type: table, of: TaskDependency, description: Tasks that must be completed before this one starts}
     - {name: description, type: text}
     - {name: billing_percent, type: percent, min: "0", max: "100", perm_group: billing, label: "Billing % of Contract Value", visible_if: "doc.is_milestone"}
-    - {name: sales_invoice, type: link, to: SalesInvoice, read_only: true, no_copy: true, on_delete: set_null, visible_if: "doc.is_milestone", label: Milestone Invoice}
     - {name: billed_amount, type: currency, read_only: true, no_copy: true, visible_if: "doc.is_milestone"}
   form:
     - {label: Task, fields: [subject, project, company, status, priority, parent_task, is_milestone]}
@@ -96,7 +94,6 @@
     - {name: costing_rate, type: currency, read_only: true, perm_group: costing}
     - {name: costing_amount, type: currency, read_only: true, perm_group: costing}
     - {name: billed, type: check, read_only: true, no_copy: true}
-    - {name: sales_invoice, type: link, to: SalesInvoice, read_only: true, no_copy: true, on_delete: set_null}
     - {name: description, type: text}
 
 - name: Timesheet
@@ -126,5 +123,4 @@
     - {name: note, type: text}
   indexes: [[user]]
   actions:
-    - {name: make_sales_invoice, label: Create Sales Invoice, docstatus: [1], permission: read}
   list: {columns: [number, user, start_date, total_hours, status], sort: start_date desc}

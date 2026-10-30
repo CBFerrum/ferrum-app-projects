@@ -1,0 +1,37 @@
+package: projects_erp
+version: 0.1.0
+label: Projects and ERP
+description: Invoicing projects' time and milestones through ERP, with the service items and cost centers it uses.
+depends: [projects, selling]
+field_prefix: proj_
+
+overlays:
+  - entity: Project
+    ops:
+      - {op: add_field, after: proj_contract_value, field: {name: proj_billing_item, type: link, to: Item, label: Milestone Billing Item, link_filters: {is_stock_item: false, disabled: false}, visible_if: "doc.proj_billing_method == 'Fixed Price'", description: Service item used on milestone invoices}}
+      - {op: add_field, after: proj_billing_item, field: {name: proj_cost_center, type: link, to: CostCenter, label: Cost Center, link_filters: {is_group: false}, description: Used on this project's invoices}}
+      - {op: add_action, action: {name: make_sales_invoice, label: Create Sales Invoice, permission: read, condition: "doc.proj_billing_method == 'Time and Materials'", confirm: "Invoice the project's unbilled time (optionally only up to a date)?"}}
+  - entity: SalesInvoiceItem
+    ops:
+      - {op: add_field, field: {name: proj_time_logs, type: json, label: Billed Time Logs, hidden: true, description: Timesheet log ids this line bills; marked billed when the invoice is submitted}}
+      - {op: add_field, field: {name: proj_milestone, type: link, to: Task, label: Billed Milestone, hidden: true}}
+  - entity: ActivityType
+    ops:
+      - {op: add_field, column: true, after: costing_rate, field: {name: item, type: link, to: Item, link_filters: {is_stock_item: false, disabled: false}, in_list: true, label: Service Item, description: Invoiced for billable time of this activity}}
+  - entity: Task
+    ops:
+      - {op: add_field, column: true, after: billing_percent, field: {name: sales_invoice, type: link, to: SalesInvoice, read_only: true, no_copy: true, on_delete: set_null, visible_if: "doc.is_milestone", label: Milestone Invoice}}
+  - entity: TimesheetDetail
+    ops:
+      - {op: add_field, column: true, after: billed, field: {name: sales_invoice, type: link, to: SalesInvoice, read_only: true, no_copy: true, on_delete: set_null}}
+  - entity: Timesheet
+    ops:
+      - {op: add_action, action: {name: make_sales_invoice, label: Create Sales Invoice, docstatus: [1], permission: read}}
+
+roles:
+  - name: Projects Manager
+    permissions:
+      - {entity: SalesInvoice, read: true, write: true, create: true, delete: true}
+      - {entity: Item, read: true}
+      - {entity: CostCenter, read: true}
+      - {entity: Account, read: true}
