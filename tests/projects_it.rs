@@ -131,7 +131,8 @@ async fn scenario() {
             admin_email: "admin@acme.test".into(),
             admin_password: "Correct-Horse-9".into(),
             admin_name: None,
-            packages: vec!["projects".into()],
+            // With ERP: the connector invoices time and milestones.
+            packages: vec!["projects".into(), "projects_erp".into()],
             settings: Some(json!({"fiscal_year_start_month": 4})),
         })
         .await
@@ -157,7 +158,7 @@ async fn scenario() {
     let globex = uid(&admin.insert("Customer", json!({"customer_name": "Globex"})).await).to_string();
     let services = admin.find_one("ItemGroup", json!({"group_name": "Services"})).await;
     let hour = admin.find_one("Uom", json!({"uom_name": "Hour"})).await;
-    let service = |code: &str| json!({"item_code": code, "item_name": code, "item_group": services["id"], "stock_uom": hour["id"], "is_stock_item": false, "is_purchased": false});
+    let service = |code: &str| json!({"item_code": code, "item_name": code, "item_group": services["id"], "stock_uom": hour["id"], "is_stock_item": false});
     let svc_dev = uid(&admin.insert("Item", service("SVC-DEV")).await).to_string();
     let svc_consult = uid(&admin.insert("Item", service("SVC-CONSULT")).await).to_string();
     let svc_fixed = uid(&admin.insert("Item", service("SVC-FIXED")).await).to_string();
@@ -560,4 +561,50 @@ async fn scenario() {
     assert_eq!(moved["status"], json!("Open"), "a new end date lifts Overdue");
     // (100 × 10 + 100 × 0 + 0 × 5) / 15 hours: the reopened project counts its new task.
     assert_eq!(dec(&pm.get("Project", web).await["proj_percent_complete"]), n("66.67"));
+
+    projects_alone(&k).await;
+}
+
+/// Projects in a workspace without ERP (Ferrum docs/plan/apps-ui.md §13): projects, tasks and
+/// timesheets work; nothing of ERP is there, and nothing invoices.
+async fn projects_alone(k: &Arc<Kernel>) {
+    let tenant = k
+        .create_tenant(NewTenant {
+            slug: "solo".into(),
+            name: "Solo Projects".into(),
+            admin_email: "admin@solo.test".into(),
+            admin_password: "Correct-Horse-9".into(),
+            admin_name: None,
+            packages: vec!["projects".into()],
+            settings: None,
+        })
+        .await
+        .expect("tenant");
+    let session = k.login("solo", "admin@solo.test", "Correct-Horse-9").await.expect("login");
+    let ctx = k.load_ctx(tenant, session.user, Some(session.token_version), "it".into()).await.expect("ctx");
+    let mut packages = ctx.schema.packages.clone();
+    packages.sort();
+    assert_eq!(packages, ["contacts", "core", "parties", "project_records", "projects"]);
+    for erp in ["SalesInvoice", "Account", "Item"] {
+        assert!(ctx.schema.entity(erp).is_none(), "{erp} without ERP");
+    }
+    let project = ctx.schema.entity("Project").unwrap();
+    assert!(project.field("customer").is_some() && project.field("proj_cost_center").is_none());
+    assert!(project.def.actions.iter().all(|a| a.name != "make_sales_invoice"));
+    let inr = k
+        .list(&ctx, "Currency", &ListQuery { filters: ferrum_kernel::query::parse_filters(&json!({"code": "INR"})).unwrap(), ..Default::default() })
+        .await
+        .unwrap()
+        .rows;
+    let company = k
+        .insert(&ctx, "Company", json!({"company_name": "Solo Projects", "abbr": "SP", "default_currency": inr[0]["id"]}).as_object().cloned().unwrap())
+        .await
+        .expect("company");
+    let customer = k.insert(&ctx, "Customer", json!({"customer_name": "Client Co"}).as_object().cloned().unwrap()).await.expect("customer");
+    let p = k
+        .insert(&ctx, "Project", json!({"project_name": "Website", "company": company["id"], "customer": customer["id"]}).as_object().cloned().unwrap())
+        .await
+        .expect("project");
+    let task = k.insert(&ctx, "Task", json!({"subject": "Design", "project": p["id"]}).as_object().cloned().unwrap()).await.expect("task");
+    assert_eq!(task["project"], p["id"]);
 }

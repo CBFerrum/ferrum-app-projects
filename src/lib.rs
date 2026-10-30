@@ -26,9 +26,15 @@ pub fn register(hooks: &mut HookRegistry) {
         .register("Project", Arc::new(project::ProjectHook))
         .register("Task", Arc::new(project::TaskHook))
         .register("Timesheet", Arc::new(timesheet::TimesheetHook))
-        .register("ActivityCost", Arc::new(timesheet::ActivityCostHook))
-        .register("SalesInvoice", Arc::new(billing::InvoiceHook));
+        .register("ActivityCost", Arc::new(timesheet::ActivityCostHook));
+    // Invoicing time and milestones is the `projects_erp` connector's.
+    hooks.scoped(&[CONNECTOR_PACKAGE.to_string()], |h| {
+        h.register("SalesInvoice", Arc::new(billing::InvoiceHook));
+    });
 }
+
+/// The connector with ERP's package.
+pub const CONNECTOR_PACKAGE: &str = "projects_erp";
 
 /// This package's reports.
 pub fn reports() -> Vec<Arc<dyn ReportSource>> {
@@ -106,6 +112,10 @@ include!(concat!(env!("OUT_DIR"), "/packages.rs"));
 
 /// This app's manifest (`app.yaml`).
 pub const MANIFEST: &str = include_str!("../app.yaml");
+
+/// The manifest of the connector app with ERP (`connectors/erp/app.yaml`, package `projects_erp`).
+/// It ships with Projects.
+pub const CONNECTOR_MANIFEST: &str = include_str!("../connectors/erp/app.yaml");
 
 /// This app's metadata packages, embedded at build time.
 pub fn packages() -> std::result::Result<Vec<ferrum_meta::Package>, ferrum_meta::MetaError> {

@@ -1,6 +1,6 @@
 id: projects
 name: Projects
-version: 0.1.0
+version: 0.2.0
 publisher: cbferrum
 summary: Projects, task trees with dependencies, timesheets, time and milestone billing, profitability
 description: README.md
@@ -9,6 +9,6 @@ license: AGPL-3.0-only
 homepage: https://github.com/CBFerrum/ferrum-app-projects
 support: https://github.com/CBFerrum/ferrum-app-projects/issues
 runtime: native
-platform: ">=0.3, <0.4"
+platform: ">=0.3.2, <0.4"
 packages: [projects]
 uninstall: ask
