@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1
+
+- Someone added to a task's assignees is notified (kind `projects.assigned`, "Tasks assigned to
+  you"), in the bar and by email unless they chose otherwise in Ferrum's bell; not the person who
+  added them. Requires the platform with notification kinds (Ferrum 2fccf10).
+
 ## 0.3.0
 
 - An interface of its own at /projects/ (Ferrum docs/plan/apps-ui.md U5), in `ui/` (built with
