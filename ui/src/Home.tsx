@@ -52,7 +52,7 @@ function Projects() {
     );
   }
   return (
-    <ul className="pj-projects">
+    <ul className="pj-projects" data-ferrum-nocard>
       {q.data.rows.map((p) => (
         <li key={p.id}>
           <Link className="pj-project" to={`p/${p.id}`}>
@@ -81,7 +81,7 @@ function MyTasks({ me }: { me: string }) {
   if (!q.data.length) return <p className="muted">Nothing open on your plate.</p>;
   const now = today();
   return (
-    <ul className="stack">
+    <ul className="stack" data-ferrum-nocard>
       {q.data.map((t) => (
         <li key={t.id}>
           <Link to={`e/Task/${t.id}`}>{t.subject}</Link> <span className="faint">{t._titles?.project}</span> <Badge tone={statusTone(t.status)}>{t.status}</Badge>{" "}

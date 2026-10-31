@@ -13,6 +13,7 @@ mod billing;
 mod logic;
 mod project;
 mod reports;
+mod site;
 mod timesheet;
 
 use ferrum_domain::reports::ReportSource;
@@ -27,6 +28,7 @@ pub fn register(hooks: &mut HookRegistry) {
         .register("Task", Arc::new(project::TaskHook))
         .register("Timesheet", Arc::new(timesheet::TimesheetHook))
         .register("ActivityCost", Arc::new(timesheet::ActivityCostHook));
+    hooks.add_site("projects", Arc::new(site::ProjectsSite));
     // Invoicing time and milestones is the `projects_erp` connector's.
     hooks.scoped(&[CONNECTOR_PACKAGE.to_string()], |h| {
         h.register("SalesInvoice", Arc::new(billing::InvoiceHook));

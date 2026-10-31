@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+
+- Home's My work lists your open tasks (`/api/app/projects/work`, Ferrum docs/plan/apps-ui.md
+  §12.8), due on their expected end, High and Urgent ones marked, read with your own rights.
+- Record cards stay off the project list, My tasks, the board and the timeline, whose rows already
+  show what a card would.
+
 ## 0.3.2
 
 - Rebuilt with Ferrum-Frontend a8d4dda: under the platform's bar the records frame no longer shows

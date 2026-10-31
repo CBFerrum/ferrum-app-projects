@@ -227,6 +227,28 @@ async fn scenario() {
     .expect("notifications");
     tx.commit().await.expect("commit");
     assert_eq!(heard, vec![("alice@acme.test".to_string(), 2), ("bob@acme.test".to_string(), 2)]);
+    // Home's My work: each person's open tasks, through the app's endpoint and their own rights.
+    let work = |who: &U| {
+        let site = who.k.hooks.site("projects").expect("projects' endpoints").clone();
+        let req = ferrum_kernel::SiteRequest {
+            tenant: who.ctx.tenant,
+            user: Some(who.ctx.clone()),
+            method: "GET".into(),
+            path: "/work".into(),
+            query: Default::default(),
+            headers: Default::default(),
+            body: vec![],
+            client_ip: "203.0.113.9".into(),
+        };
+        let k = who.k.clone();
+        async move { serde_json::from_slice::<serde_json::Value>(&site.handle(&k, req).await.expect("work").body).unwrap() }
+    };
+    let mine = work(alice).await;
+    let titles: Vec<&str> = mine["items"].as_array().unwrap().iter().map(|i| i["title"].as_str().unwrap()).collect();
+    assert_eq!(titles.len(), 2, "{mine}");
+    assert!(titles.contains(&"Design") && titles.contains(&"Build"), "{mine}");
+    assert!(mine["items"][0]["url"].as_str().unwrap().starts_with("/open/Task/"));
+    assert_eq!(work(acc).await["items"], json!([]), "nothing assigned, nothing to do");
 
     let r = pm.try_update("Task", design, json!({"depends_on": [{"task": test.to_string()}]})).await;
     assert!(field_error(&r, "depends_on", "cycle"), "indirect cycle design → test → build → design: {r:?}");
