@@ -111,6 +111,10 @@ pub(crate) async fn unknown_users(tx: &mut Tx, tenant: Uuid, emails: &[String]) 
 include!(concat!(env!("OUT_DIR"), "/packages.rs"));
 include!(concat!(env!("OUT_DIR"), "/ui.rs"));
 
+/// The notification kind app.yaml declares (`shell.notification`): tasks assigned to you, in the bar
+/// and by email unless the person chose otherwise.
+pub const ASSIGNED: &str = "projects.assigned";
+
 /// This app's manifest (`app.yaml`).
 pub const MANIFEST: &str = include_str!("../app.yaml");
 

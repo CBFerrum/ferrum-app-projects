@@ -1,6 +1,6 @@
 id: projects
 name: Projects
-version: 0.3.0
+version: 0.3.1
 publisher: cbferrum
 summary: Projects, task trees with dependencies, timesheets, time and milestone billing, profitability
 description: README.md
@@ -32,3 +32,5 @@ contributes:
   shell.create:
     - {id: task, label: Task, path: projects/e/Task/new, entity: Task}
     - {id: project, label: Project, path: projects/e/Project/new, entity: Project}
+  shell.notification:
+    - {id: assigned, label: Tasks assigned to you, default: [inapp, email]}

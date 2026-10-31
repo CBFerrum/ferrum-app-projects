@@ -216,6 +216,17 @@ async fn scenario() {
     test_input["depends_on"] = json!([{"task": build.to_string()}]);
     let test = uid(&pm.insert("Task", test_input).await);
     let sub = uid(&pm.insert("Task", json!({"subject": "Wireframes", "project": web.to_string(), "parent_task": design.to_string()})).await);
+    // Each person given a task hears of it once (the manager who gave them does not).
+    let mut tx = pm.k.db.system_tx().await.expect("tx");
+    let heard: Vec<(String, i64)> = sqlx::query_as(
+        "select u.email, count(*) from notification n join app_user u on u.tenant_id = n.tenant_id and u.id = n.user_id \
+         where n.kind = 'projects.assigned' group by u.email order by u.email",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .expect("notifications");
+    tx.commit().await.expect("commit");
+    assert_eq!(heard, vec![("alice@acme.test".to_string(), 2), ("bob@acme.test".to_string(), 2)]);
 
     let r = pm.try_update("Task", design, json!({"depends_on": [{"task": test.to_string()}]})).await;
     assert!(field_error(&r, "depends_on", "cycle"), "indirect cycle design → test → build → design: {r:?}");

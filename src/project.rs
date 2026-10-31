@@ -227,6 +227,21 @@ impl DocHook for TaskHook {
         for p in projects {
             refresh_project(hc.kernel, hc.ctx, hc.tx, p, None).await?;
         }
+        // People newly given the task hear of it (not whoever gave it to them).
+        let before = old.map(assignees).unwrap_or_default();
+        let me = hc.ctx.email.to_lowercase();
+        for email in assignees(doc).into_iter().filter(|u| !before.contains(u) && *u != me) {
+            let user: Option<Uuid> = sqlx::query_scalar("select id from app_user where tenant_id = $1 and lower(email) = $2 and is_active")
+                .bind(hc.ctx.tenant)
+                .bind(&email)
+                .fetch_optional(&mut **hc.tx)
+                .await?;
+            if let (Some(user), Some(task)) = (user, id(doc, "id")) {
+                let title = format!("{} was assigned to you", s(doc, "subject").unwrap_or("A task"));
+                let default = ferrum_kernel::notify::declared_default(&["inapp", "email"]);
+                ferrum_kernel::notify::send_kind(hc.tx, hc.ctx.tenant, user, crate::ASSIGNED, default, &title, None, Some("Task"), Some(task)).await?;
+            }
+        }
         Ok(())
     }
 
@@ -246,6 +261,11 @@ impl DocHook for TaskHook {
         }
         crate::billing::invoice_milestone(hc, doc).await.map(Some)
     }
+}
+
+/// A task's assignees' emails, in lower case.
+fn assignees(doc: &Doc) -> Vec<String> {
+    rows(doc, "assigned_to").iter().filter_map(|r| s(r, "user").map(str::to_lowercase)).collect()
 }
 
 pub(crate) async fn invoice_number(hc: &mut HookCtx<'_>, invoice: Uuid) -> Result<String> {
