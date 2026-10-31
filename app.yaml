@@ -1,6 +1,6 @@
 id: projects
 name: Projects
-version: 0.2.0
+version: 0.3.0
 publisher: cbferrum
 summary: Projects, task trees with dependencies, timesheets, time and milestone billing, profitability
 description: README.md
@@ -12,3 +12,23 @@ runtime: native
 platform: ">=0.3.2, <0.4"
 packages: [projects]
 uninstall: ask
+ui:
+  dist: ui/dist
+contributes:
+  shell.app:
+    - id: projects
+      route: projects
+      title: Projects
+      description: Projects with their boards, timelines and time; tasks and timesheets
+      icon: folder-kanban
+      color: "#b45309"
+      roles: [Projects User, Projects Manager]
+  shell.open:
+    # A project opens in the project view (before ERP's records of the shared projects); tasks,
+    # timesheets and the projects-erp connector's records in Projects' forms and lists.
+    - {id: project, entity: Project, path: "projects/p/{id}", list: projects/, priority: 1}
+    - {id: projects, package: projects, path: "projects/e/{entity}/{id}", list: "projects/e/{entity}"}
+    - {id: projects_erp, package: projects_erp, path: "projects/e/{entity}/{id}", list: "projects/e/{entity}"}
+  shell.create:
+    - {id: task, label: Task, path: projects/e/Task/new, entity: Task}
+    - {id: project, label: Project, path: projects/e/Project/new, entity: Project}

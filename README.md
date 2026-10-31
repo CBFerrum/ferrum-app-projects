@@ -41,6 +41,14 @@ cargo test
 `FERRUM_PROJECTS_TEST_DATABASE_URL` overrides the database URL. The app's metadata lives in `packages/` and is embedded
 at build time; `app.yaml` is its manifest (see Ferrum's `docs/plan/apps.md`).
 
+## Interface
+
+Projects' own interface at `/projects/` (Ferrum docs/plan/apps-ui.md) is in `ui/`: the open projects
+and your tasks; each project's board, timeline and logged time; the other records as lists and
+forms in the records frame. It builds with Ferrum-Frontend's packages from the sibling checkout
+(`../../ferrum/web`), and `ui/dist` is committed and embedded in the crate (`cd ui && npm run
+build`; CI checks it).
+
 ## License
 
 AGPL-3.0-only, like the platform.
