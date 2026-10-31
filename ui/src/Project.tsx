@@ -74,7 +74,7 @@ function Board({ project, tasks }: { project: Project; tasks: Task[] }) {
           Add
         </Button>
       </form>
-      <div className="pj-board" role="list" aria-label="Tasks by status">
+      <div className="pj-board" role="list" aria-label="Tasks by status" data-ferrum-nocard>
         {board(tasks).map((c) => (
           <section key={c.status} className="pj-column" role="listitem" aria-label={c.status}>
             <div className="pj-column-head">
@@ -122,7 +122,7 @@ function Timeline({ project, tasks }: { project: Project; tasks: Task[] }) {
             </span>
           ))}
         </div>
-        <ul className="pj-bars">
+        <ul className="pj-bars" data-ferrum-nocard>
           {tl.bars.map((b) => (
             <li key={b.task.id}>
               <Link to={`/e/Task/${b.task.id}`} className="pj-bar-label">
