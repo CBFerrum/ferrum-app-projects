@@ -9,11 +9,14 @@ import { createRoot } from "react-dom/client";
 import { createBrowserRouter, Link, RouterProvider, useRouteError } from "react-router";
 import { routeBase, shell } from "@ferrum/client";
 import { ConfirmHost, EmptyState, ErrorState, Toaster } from "@ferrum/kit";
-import { FormView, ListView, ReportView } from "@ferrum/records";
-import { AppSettingsPage, RequireAuth, ScreenPage, setFrameMode } from "@ferrum/records/frame";
+import { RequireAuth, setFrameMode } from "@ferrum/records/frame";
 import { ProjectsHome } from "./Home";
 import { ProjectPage } from "./Project";
 import "./styles.css";
+
+/** A page of the records frame, loaded when first opened. */
+const page = (name: "FormView" | "ListView" | "ReportView" | "AppSettingsPage" | "ScreenPage") => () =>
+  import("./records").then((m) => ({ Component: m[name] }));
 
 /** Projects' packages (and the shared projects): the sidebar shows their modules. */
 const PROJECTS_PACKAGES = ["projects", "projects_erp", "project_records"];
@@ -56,11 +59,11 @@ const router = createBrowserRouter(
       children: [
         { index: true, element: <ProjectsHome /> },
         { path: "p/:id", element: <ProjectPage /> },
-        { path: "e/:entity", element: <ListView /> },
-        { path: "e/:entity/:id", element: <FormView /> },
-        { path: "r/:name", element: <ReportView /> },
-        { path: "apps/:app/settings", element: <AppSettingsPage /> },
-        { path: "x/:app/:page", element: <ScreenPage /> },
+        { path: "e/:entity", lazy: page("ListView") },
+        { path: "e/:entity/:id", lazy: page("FormView") },
+        { path: "r/:name", lazy: page("ReportView") },
+        { path: "apps/:app/settings", lazy: page("AppSettingsPage") },
+        { path: "x/:app/:page", lazy: page("ScreenPage") },
         { path: "*", element: <NotFound /> },
       ],
     },
