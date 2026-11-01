@@ -8,7 +8,7 @@ import { type FormEvent, type KeyboardEvent, useCallback, useMemo, useState } fr
 import { Link } from "react-router";
 import { api, ApiError, docPath, errorMessage, newKey, saveBlob, todayIso } from "@ferrum/client";
 import { Alert, Badge, Button, confirmDialog, Dialog, EmptyState, ErrorState, Field, Icon, Spinner, statusTone, Tabs, TabPanel, useLiveEntity, useShellTitle } from "@ferrum/kit";
-import { LinkInput, useMetaIndex, usePeople } from "@ferrum/records";
+import { LinkInput, useMe, useMetaIndex, usePeople } from "@ferrum/records";
 import { Progress } from "./bits";
 import { list, type Project, useNames, useQueryState } from "./data";
 import { addDays } from "./days";
@@ -23,6 +23,40 @@ const TABS = [
 
 interface Report<R> {
   rows: R[];
+}
+
+// ── the company the figures are for ──
+
+/** Reports run for one company: the person's own, unless there are several and they choose another. */
+function useCompany(): { id: string | undefined; choices: { id: string; name: string }[]; choose: (id: string) => void } {
+  const me = useMe().data;
+  const [sp, setQuery] = useQueryState();
+  const q = useQuery({
+    queryKey: ["projects", "companies"],
+    queryFn: ({ signal }) => list<{ id: string; company_name?: string }>("Company", { fields: "company_name", sort: "company_name asc", limit: 50 }, signal).then((r) => r.rows),
+    retry: false,
+  });
+  const choices = (q.data ?? []).map((c) => ({ id: c.id, name: c.company_name ?? "Company" }));
+  const asked = sp.get("company");
+  const id = asked && choices.some((c) => c.id === asked) ? asked : (me?.default_company ?? undefined);
+  return { id, choices, choose: (value) => setQuery({ company: value || null }) };
+}
+
+function CompanyPick({ company }: { company: ReturnType<typeof useCompany> }) {
+  if (company.choices.length < 2) return null;
+  return (
+    <label className="pj-tools-pick">
+      <span className="faint">Company</span>
+      <select className="select pj-select" value={company.id ?? ""} onChange={(e) => company.choose(e.target.value)}>
+        {!company.id && <option value="">Choose a company</option>}
+        {company.choices.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 }
 
 // ── an allocation, added or changed ──
@@ -255,7 +289,7 @@ function Heat({ weeks, people, totals, nameOf, selected, onOpen }: { weeks: stri
   );
 }
 
-function Capacity() {
+function Capacity({ company }: { company: ReturnType<typeof useCompany> }) {
   const qc = useQueryClient();
   const names = useNames();
   const everyone = usePeople().data?.users ?? [];
@@ -269,8 +303,8 @@ function Capacity() {
   const [editing, setEditing] = useState<Draft | null>(null);
 
   const q = useQuery({
-    queryKey: ["projects", "workload", weeks[0], count],
-    queryFn: ({ signal }) => api.get<Report<WorkloadRow>>("/api/reports/workload", { from_date: weeks[0], to_date: weekEnd(weeks[count - 1]) }, signal),
+    queryKey: ["projects", "workload", company.id ?? "", weeks[0], count],
+    queryFn: ({ signal }) => api.get<Report<WorkloadRow>>("/api/reports/workload", { company: company.id, from_date: weeks[0], to_date: weekEnd(weeks[count - 1]) }, signal),
   });
   useLiveEntity("ResourceAllocation", useCallback(() => void qc.invalidateQueries({ queryKey: ["projects"] }), [qc]));
   const g = useMemo(() => grid(q.data?.rows ?? [], weeks, all ? everyone.map((p) => p.email) : [], names), [q.data, weeks, all, everyone, names]);
@@ -287,6 +321,7 @@ function Capacity() {
     <div className="pj-capacity" data-drawer={picked ? "" : undefined}>
       <div className="pj-capacity-main">
         <div className="pj-tools" role="toolbar" aria-label="Weeks shown">
+          <CompanyPick company={company} />
           <Button size="sm" icon="left" aria-label="Earlier weeks" onClick={() => shift(-7 * count)} />
           <Button size="sm" icon="chevronRight" aria-label="Later weeks" onClick={() => shift(7 * count)} />
           <Button size="sm" onClick={() => setQuery({ from: null })}>
@@ -365,7 +400,7 @@ interface Standing {
 
 const attention = (r: Standing) => r.overdue * 100 + r.open_risks * 10 + r.open_issues;
 
-function Portfolios() {
+function Portfolios({ company }: { company: ReturnType<typeof useCompany> }) {
   const [sp, setQuery] = useQueryState();
   const chosen = sp.get("portfolio") ?? "";
   const portfolios = useQuery({
@@ -373,8 +408,8 @@ function Portfolios() {
     queryFn: ({ signal }) => list<{ id: string; portfolio_name?: string; owner_email?: string }>("Portfolio", { fields: "portfolio_name,owner_email", sort: "portfolio_name asc", limit: 100 }, signal).then((r) => r.rows),
   });
   const standing = useQuery({
-    queryKey: ["projects", "standing", chosen],
-    queryFn: ({ signal }) => api.get<Report<Standing>>("/api/reports/portfolio_overview", { portfolio: chosen }, signal).then((r) => r.rows),
+    queryKey: ["projects", "standing", company.id ?? "", chosen],
+    queryFn: ({ signal }) => api.get<Report<Standing>>("/api/reports/portfolio_overview", { company: company.id, portfolio: chosen }, signal).then((r) => r.rows),
   });
   const projects = useQuery({
     queryKey: ["projects", "named"],
@@ -392,6 +427,7 @@ function Portfolios() {
   return (
     <div className="stack">
       <div className="pj-tools" role="toolbar" aria-label="Portfolio">
+        <CompanyPick company={company} />
         <label className="pj-tools-pick">
           <span className="faint">Portfolio</span>
           <select className="select pj-select" value={chosen} onChange={(e) => setQuery({ portfolio: e.target.value || null })}>
@@ -501,6 +537,7 @@ export function Planning() {
   const loaded = !!useMetaIndex().data;
   const [sp, setQuery] = useQueryState();
   const tab = sp.get("tab") === "portfolios" ? "portfolios" : "capacity";
+  const company = useCompany();
   return (
     <div className="pj-page pj-planning">
       <header className="pj-head-row">
@@ -520,7 +557,7 @@ export function Planning() {
           </div>
           <Tabs id="pl" value={tab} onChange={(t) => setQuery({ tab: t === "capacity" ? null : t, from: null })} tabs={TABS} />
           <TabPanel id="pl" tab={tab}>
-            {tab === "capacity" ? <Capacity /> : <Portfolios />}
+            {tab === "capacity" ? <Capacity company={company} /> : <Portfolios company={company} />}
           </TabPanel>
         </>
       )}

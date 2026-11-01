@@ -58,7 +58,8 @@ export function logsOf(rows: TimeRow[]): Log[] {
     .sort((a, b) => b.at.localeCompare(a.at));
 }
 
-export const counted = (logs: Log[]): number => logs.filter((l) => l.counted).reduce((n, l) => n + l.hours, 0);
+/** Hours that count toward the task's, to the hundredth (a sum of tenths is not 0.30000000000000004). */
+export const counted = (logs: Log[]): number => Math.round(logs.filter((l) => l.counted).reduce((n, l) => n + l.hours, 0) * 100) / 100;
 
 /** What the history tells about, and how it is called. What is left out is the record's bookkeeping. */
 const TOLD: Record<string, string> = {

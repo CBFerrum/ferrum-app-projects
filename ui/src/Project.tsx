@@ -130,7 +130,7 @@ const NUMBER = ["int", "decimal", "currency", "percent", "float"];
 function Time({ project }: { project: Project }) {
   const q = useQuery({
     queryKey: ["projects", "time", project.id],
-    queryFn: ({ signal }) => api.get<Report>("/api/reports/timesheet_summary", { project: project.id, from_date: "2000-01-01", to_date: addDays(todayIso(), 366) }, signal),
+    queryFn: ({ signal }) => api.get<Report>("/api/reports/timesheet_summary", { company: project.company, project: project.id, from_date: "2000-01-01", to_date: addDays(todayIso(), 366) }, signal),
   });
   if (q.error) return <ErrorState error={q.error} onRetry={() => void q.refetch()} title="The time logged cannot be shown" />;
   if (!q.data) return <Spinner label="Loading the time logged" />;
