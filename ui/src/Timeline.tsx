@@ -372,7 +372,7 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
       <p className="sr-only" id="pj-time-help">
         Each bar is a task. Press Enter to open it. The left and right arrow keys move it by a day, with Shift by a week; with Alt they change when it ends. To make a task wait for another without dragging, open its page.
       </p>
-      <div className="pj-gantt" ref={scroller} style={{ "--row": `${ROW}px` } as CSSProperties}>
+      <div className="pj-gantt" data-ferrum-nocard="" ref={scroller} style={{ "--row": `${ROW}px` } as CSSProperties}>
         <div className="pj-gantt-head">
           <div className="pj-gl pj-gl-corner">Task</div>
           <div className="pj-scale" style={{ width }} aria-hidden="true">
@@ -460,6 +460,11 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
             ))}
             {todayAt >= 0 && todayAt < view.days && <span className="pj-today-line" style={{ left: (todayAt + 0.5) * view.px }} aria-hidden="true" />}
             {out.unscheduled.length > 0 && <span className="pj-undated" style={{ top: (shown.length + 1) * ROW, height: out.unscheduled.length * ROW }} aria-hidden="true" />}
+            {out.unscheduled.length > 0 && canWrite && (
+              <div className="pj-undated-note" style={{ top: shown.length * ROW }}>
+                <span className="faint">Click a row below to give that task dates, from the day you click.</span>
+              </div>
+            )}
 
             <svg className="pj-links" width={width} height={rowsHigh * ROW} aria-hidden="true">
               <defs>

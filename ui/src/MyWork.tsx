@@ -251,7 +251,7 @@ export function MyWork() {
                 <h2 className="pj-group">
                   {g.label} {g.label === "Overdue" ? <Badge tone="red">{g.tasks.length}</Badge> : <span className="faint">{g.tasks.length}</span>}
                 </h2>
-                <ul className="pj-rows">
+                <ul className="pj-rows" data-ferrum-nocard="">
                   {g.tasks.map((t) => (
                     <Row key={t.id} task={t} today={today} writable={writable && mine} onPatch={(task, change, gone) => void patch(task, change, gone)} />
                   ))}

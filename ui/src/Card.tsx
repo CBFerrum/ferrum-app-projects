@@ -152,7 +152,9 @@ export function CardMenu({ task, me, canWrite, actions }: { task: Task; me: stri
 
 /** A card that can be dragged and dropped among its column's. `children` is the card itself. */
 export function SortableCard({ id, disabled, children }: { id: string; disabled: boolean; children: (props: HTMLAttributes<HTMLElement>, held: boolean) => ReactNode }) {
-  const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
+  // Cards slide out of the way of a carried one, unless the person asked for less motion.
+  const calm = typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled, transition: calm ? null : undefined });
   return (
     <li ref={setNodeRef} className="pj-slot" style={{ transform: CSS.Transform.toString(transform), transition }}>
       {children({ ...listeners } as unknown as HTMLAttributes<HTMLElement>, isDragging)}

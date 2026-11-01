@@ -447,7 +447,7 @@ function Portfolios() {
               <span className="pj-tile-value">{sum.issues}</span>
             </div>
           </section>
-          <div className="pj-table-wrap">
+          <div className="pj-table-wrap" data-ferrum-nocard="">
             <table className="pj-table">
               <caption className="sr-only">Projects, the ones needing attention first</caption>
               <thead>

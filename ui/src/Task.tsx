@@ -28,7 +28,7 @@ function useSection<T>(id: string, name: string, fn: (signal: AbortSignal) => Pr
 
 function Card({ title, aside, children }: { title: string; aside?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="card pj-section" aria-label={title}>
+    <section className="card pj-section" data-ferrum-nocard="" aria-label={title}>
       <div className="card-head">
         <h2>{title}</h2>
         <span className="spacer" />
