@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { changes, counted, logsFor, story } from "./story";
+import { changes, counted, logsOf, story } from "./story";
 
 const name = (field: string, value: unknown) => (value == null ? "" : field === "progress" ? `${value}%` : String(value));
 
@@ -14,13 +14,10 @@ describe("a task's story", () => {
   });
 
   it("puts changes, comments and time in one list, newest first", () => {
-    const logs = logsFor(
-      [
-        { id: "ts1", user: "asha@acme.test", docstatus: 1, time_logs: [{ task: "t1", hours: "2.5", from_time: "2026-11-02T09:00:00Z", description: "Wired it up" }, { task: "other", hours: "1", from_time: "2026-11-02T12:00:00Z" }] },
-        { id: "ts2", user: "ravi@acme.test", docstatus: 0, time_logs: [{ task: "t1", hours: 1, from_time: "2026-11-04T09:00:00Z" }] },
-      ],
-      "t1",
-    );
+    const logs = logsOf([
+      { timesheet: "ts1", user: "asha@acme.test", docstatus: 1, at: "2026-11-02T09:00:00Z", hours: "2.500000000", what: "Wired it up" },
+      { timesheet: "ts2", user: "ravi@acme.test", docstatus: 0, at: "2026-11-04T09:00:00Z", hours: 1 },
+    ]);
     const items = story(
       [
         { id: 1, at: "2026-11-01T08:00:00Z", action: "create", actor_name: "Asha" },
@@ -45,14 +42,12 @@ describe("a task's story", () => {
   });
 
   it("counts only the time in submitted timesheets, as the task does", () => {
-    const logs = logsFor(
-      [
-        { id: "a", user: "x", docstatus: 1, time_logs: [{ task: "t", hours: "1.5" }, { task: "t", hours: "2" }] },
-        { id: "b", user: "y", docstatus: 0, time_logs: [{ task: "t", hours: "4" }] },
-        { id: "c", user: "z", docstatus: 2, time_logs: [{ task: "t", hours: "8" }] },
-      ],
-      "t",
-    );
+    const logs = logsOf([
+      { timesheet: "a", user: "x", docstatus: 1, hours: "1.5" },
+      { timesheet: "a", user: "x", docstatus: 1, hours: "2" },
+      { timesheet: "b", user: "y", docstatus: 0, hours: "4" },
+      { timesheet: "c", user: "z", docstatus: 2, hours: "8" },
+    ]);
     expect(counted(logs)).toBe(3.5);
     expect(logs).toHaveLength(3); // the cancelled timesheet is left out
   });

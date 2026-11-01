@@ -12,12 +12,15 @@ import { can, CollabPanel, Composer, type EntityMeta, LinkInput, RecordFields, u
 import { Avatars, Due, PriorityFlag, Progress } from "./bits";
 import { list, tasksKey, useNames } from "./data";
 import { CHOOSABLE, late, num, type Task } from "./plan";
-import { type AuditEvent, type Comment, counted, type Item, logsFor, story, type Timesheet } from "./story";
+import { type AuditEvent, type Comment, counted, type Item, logsOf, story, type TimeRow } from "./story";
 import { People } from "./TaskPanel";
 
 const ICONS: Record<Item["kind"], string> = { created: "plus", status: "refresh", change: "edit", comment: "chat", time: "calendar" };
 
 const when = (at: string) => (at ? new Date(at).toLocaleString(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "");
+
+/** The time logged on a task, line by line (timesheets keep their lines as child rows, which a list leaves out). */
+const timeOn = (task: string, signal: AbortSignal) => api.get<{ logs: TimeRow[] }>("/api/app/projects/time", { task }, signal).then((r) => r.logs);
 
 /** A section's data: loading, failing and, for a section the person may not read, nothing at all. */
 function useSection<T>(id: string, name: string, fn: (signal: AbortSignal) => Promise<T>, extra = "") {
@@ -54,11 +57,10 @@ function Waiting({ q, what }: { q: { isLoading: boolean; error: unknown; refetch
 // ── sub-tasks ──
 
 function SubTasks({ task, canWrite, changed }: { task: Task; canWrite: boolean; changed: () => void }) {
-  const names = useNames();
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const { q, hidden } = useSection(task.id, "kids", (signal) =>
-    list<Task>("Task", { filters: JSON.stringify([["parent_task", "=", task.id]]), fields: "number,subject,status,priority,exp_end_date,assigned_to,version", sort: "created_at asc", limit: 200 }, signal).then((r) => r.rows),
+    list<Task>("Task", { filters: JSON.stringify([["parent_task", "=", task.id]]), fields: "number,subject,status,priority,exp_end_date,version", sort: "created_at asc", limit: 200 }, signal).then((r) => r.rows),
   );
   if (hidden) return null;
   const kids = (q.data ?? []).filter((k) => k.status !== "Cancelled");
@@ -103,7 +105,6 @@ function SubTasks({ task, canWrite, changed }: { task: Task; canWrite: boolean; 
             </Link>
             <PriorityFlag priority={k.priority} />
             <Due day={k.exp_end_date} late={late(k, now)} />
-            <Avatars emails={(k.assigned_to ?? []).map((a) => a.user ?? "").filter(Boolean)} names={names} max={2} />
           </li>
         ))}
       </ul>
@@ -181,10 +182,10 @@ function Waits({ task, project, rows, canWrite, save }: { task: Task; project: s
 // ── time ──
 
 function TimeLogged({ task, doc }: { task: Task; doc: Record<string, unknown> }) {
-  const { q, hidden } = useSection(task.id, "time", (signal) => list<Timesheet>("Timesheet", { filters: JSON.stringify([["time_logs.task", "=", task.id]]), fields: "user,docstatus,time_logs", limit: 100 }, signal).then((r) => r.rows));
+  const { q, hidden } = useSection(task.id, "time", (signal) => timeOn(task.id, signal));
   const names = useNames();
   if (hidden) return null;
-  const logs = logsFor(q.data ?? [], task.id);
+  const logs = logsOf(q.data ?? []);
   const logged = counted(logs);
   const estimate = num(doc.expected_hours as string | number | null);
   const shared = typeof doc.project === "string" ? doc.project : "";
@@ -252,9 +253,9 @@ function Story({ id, changed }: { id: string; changed: () => void }) {
   const names = useNames();
   const audit = useSection(id, "audit", (signal) => api.get<{ events: AuditEvent[] }>(docPath("Task", id, "audit"), undefined, signal).then((r) => r.events));
   const talk = useSection(id, "comments", (signal) => api.get<{ comments: Comment[] }>(docPath("Task", id, "comments"), undefined, signal).then((r) => r.comments));
-  const sheets = useSection(id, "time", (signal) => list<Timesheet>("Timesheet", { filters: JSON.stringify([["time_logs.task", "=", id]]), fields: "user,docstatus,time_logs", limit: 100 }, signal).then((r) => r.rows));
+  const sheets = useSection(id, "time", (signal) => timeOn(id, signal));
   const words = useCallback((field: string, v: unknown) => (v == null || v === "" ? "" : field.endsWith("_date") ? formatDate(v) : field === "progress" ? `${Number(v)}%` : field === "expected_hours" ? `${Number(v)} h` : field === "is_milestone" ? (v ? "Yes" : "No") : String(v)), []);
-  const items = useMemo(() => story(audit.q.data ?? [], talk.q.data ?? [], logsFor(sheets.q.data ?? [], id), words), [audit.q.data, talk.q.data, sheets.q.data, id, words]);
+  const items = useMemo(() => story(audit.q.data ?? [], talk.q.data ?? [], logsOf(sheets.q.data ?? []), words), [audit.q.data, talk.q.data, sheets.q.data, id, words]);
   const writable = !talk.hidden;
   const post = async (body: string, mentions: string[]) => {
     try {

@@ -42,10 +42,26 @@ export interface Rows<T> {
 
 export const list = <T,>(entity: string, query: Record<string, string | number | boolean>, signal?: AbortSignal) => api.get<Rows<T>>(`/api/v1/${entity}`, query, signal);
 
-/** The fields of a task the screens use. */
-export const TASK_FIELDS =
-  "number,subject,project,status,priority,exp_start_date,exp_end_date,expected_hours,actual_hours,progress,is_milestone,parent_task,rank,assigned_to,depends_on,version";
-const KEPT = new Set(["id", ...TASK_FIELDS.split(",")]);
+/** The fields of a task the screens keep from what the server answers a change with. */
+const KEPT = new Set([
+  "id",
+  "version",
+  "number",
+  "subject",
+  "project",
+  "status",
+  "priority",
+  "exp_start_date",
+  "exp_end_date",
+  "expected_hours",
+  "actual_hours",
+  "progress",
+  "is_milestone",
+  "parent_task",
+  "rank",
+  "assigned_to",
+  "depends_on",
+]);
 
 /** A project's tasks, and how many it has (more than the screens load, when the two differ). */
 export interface TaskSet {
@@ -58,8 +74,10 @@ export const tasksKey = (project: string) => ["projects", "tasks", project];
 /** The most tasks a screen loads; the API's own limit. */
 export const TASK_LIMIT = 500;
 
+/** A project's tasks with the people on each and what each waits for: a list leaves those out (they
+ *  are child rows), so Projects' own endpoint adds them, with the caller's own rights. */
 export async function loadTasks(project: string, signal?: AbortSignal): Promise<TaskSet> {
-  const r = await list<Task>("Task", { filters: JSON.stringify([["project", "=", project]]), fields: TASK_FIELDS, sort: "created_at asc", limit: TASK_LIMIT, count: true }, signal);
+  const r = await api.get<Rows<Task>>("/api/app/projects/tasks", { project }, signal);
   return { rows: r.rows, total: r.total ?? r.rows.length };
 }
 

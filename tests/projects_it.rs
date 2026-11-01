@@ -256,6 +256,45 @@ async fn scenario() {
     assert!(mine["items"][0]["url"].as_str().unwrap().starts_with("/open/Task/"));
     assert_eq!(work(acc).await["items"], json!([]), "nothing assigned, nothing to do");
 
+    // The board's tasks: the project's, and with each what a list leaves out (the people on it and
+    // what it waits for), read with the caller's own rights.
+    let get = |who: &U, path: &str, query: serde_json::Value| {
+        let site = who.k.hooks.site("projects").expect("projects' endpoints").clone();
+        let req = ferrum_kernel::SiteRequest {
+            tenant: who.ctx.tenant,
+            user: Some(who.ctx.clone()),
+            method: "GET".into(),
+            path: path.into(),
+            query: query.as_object().cloned().unwrap(),
+            headers: Default::default(),
+            body: vec![],
+            client_ip: "203.0.113.9".into(),
+        };
+        let k = who.k.clone();
+        async move { site.handle(&k, req).await.map(|r| serde_json::from_slice::<serde_json::Value>(&r.body).unwrap()) }
+    };
+    let all = get(pm, "/tasks", json!({"project": web.to_string()})).await.expect("the board");
+    let row =
+        |name: &str| all["rows"].as_array().unwrap().iter().find(|r| r["subject"] == json!(name)).cloned().unwrap_or_else(|| panic!("no {name} in {all}"));
+    let who = |name: &str| -> Vec<String> {
+        let mut people: Vec<String> = row(name)["assigned_to"].as_array().unwrap().iter().map(|a| a["user"].as_str().unwrap().to_string()).collect();
+        people.sort();
+        people
+    };
+    assert_eq!(all["total"], json!(4));
+    assert_eq!(who("Build"), ["alice@acme.test", "bob@acme.test"]);
+    assert_eq!(who("Wireframes"), Vec::<String>::new());
+    assert_eq!(row("Build")["depends_on"][0]["task"], json!(design.to_string()));
+    assert_eq!(row("Test")["depends_on"][0]["task"], json!(build.to_string()));
+    assert_eq!(row("Design")["depends_on"], json!([]));
+    assert!(
+        row("Design")["version"].as_i64().is_some() && row("Design")["number"].as_str().is_some_and(|n| n.starts_with("TASK-")),
+        "the version and number a change needs: {all}"
+    );
+    let bobs = get(bob, "/tasks", json!({"project": web.to_string()})).await.expect("Bob's board");
+    assert_eq!((bobs["rows"].as_array().unwrap().len(), bobs["total"].clone()), (2, json!(2)), "only his own tasks: {bobs}");
+    assert!(matches!(get(pm, "/tasks", json!({})).await, Err(Error::Invalid(m)) if m.contains("project")), "a project is asked for");
+
     let r = pm.try_update("Task", design, json!({"depends_on": [{"task": test.to_string()}]})).await;
     assert!(field_error(&r, "depends_on", "cycle"), "indirect cycle design → test → build → design: {r:?}");
     let r = pm.try_update("Task", design, json!({"depends_on": [{"task": build.to_string()}]})).await;
@@ -352,6 +391,14 @@ async fn scenario() {
     let ts1 = alice.submit("Timesheet", ts1_id).await;
     assert_eq!(ts1["status"], json!("Submitted"));
     assert!(ts1["number"].as_str().unwrap().starts_with("TS-"));
+    // The time logged on a task, line by line, through the app's endpoint and the caller's own rights.
+    let on_design = get(pm, "/time", json!({"task": design.to_string()})).await.expect("time on Design");
+    let lines = on_design["logs"].as_array().unwrap();
+    assert_eq!(lines.len(), 1, "{on_design}");
+    assert_eq!((dec(&lines[0]["hours"]), lines[0]["user"].clone(), lines[0]["docstatus"].clone()), (n("3"), json!("alice@acme.test"), json!(1)));
+    assert_eq!(get(alice, "/time", json!({"task": design.to_string()})).await.unwrap()["logs"].as_array().unwrap().len(), 1, "her own time");
+    assert_eq!(get(bob, "/time", json!({"task": design.to_string()})).await.unwrap()["logs"], json!([]), "not Bob's to see");
+    assert!(matches!(get(pm, "/time", json!({})).await, Err(Error::Invalid(m)) if m.contains("task")));
     let p = pm.get("Project", web).await;
     assert_eq!(
         (dec(&p["proj_actual_hours"]), dec(&p["proj_costing_amount"]), dec(&p["proj_billable_amount"]), p["proj_actual_start_date"].clone()),
