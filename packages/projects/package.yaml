@@ -69,3 +69,6 @@ roles:
       - {entity: Task, read: true, read_groups: [billing]}
       - {entity: ActivityType, read: true, read_groups: [costing]}
       - {entity: ActivityCost, read: true}
+personal_data:
+  - {entity: Timesheet, match: user, retain: "Billing records"}
+  - {entity: ActivityCost, match: user, retain: "Costing records"}
