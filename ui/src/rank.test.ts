@@ -83,3 +83,31 @@ describe("dropping a card", () => {
     expect(ids(next.sort(byRank))).toEqual(["a", "b", "moved", "c", "d"]);
   });
 });
+
+describe("dropping a card, over many columns", () => {
+  const rng = (seed: number) => () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+
+  it("always puts the card where it was dropped and leaves the rest in their order", () => {
+    for (let seed = 1; seed <= 400; seed++) {
+      const rand = rng(seed);
+      const pick = (n: number) => Math.floor(rand() * n);
+      const n = 1 + pick(9);
+      // Some tasks ranked (with gaps from huge down to hardly any), the rest not yet.
+      const ranked = pick(n + 1);
+      let at = 1000 * (1 + pick(5));
+      const column: Task[] = Array.from({ length: n }, (_, i) => {
+        at += [1000, 10, 0.5, 0.00002, 0.000001, 0][pick(6)];
+        return t(`t${i}`, i < ranked ? at : null, `TASK-${String(i).padStart(5, "0")}`);
+      });
+      const order = [...column].sort(byRank);
+      const moved = order[pick(n)];
+      const others = order.filter((x) => x !== moved);
+      const place_ = pick(others.length + 1);
+      const p = place(others, place_);
+      const changed = new Map(p.also.map((a) => [a.id, a.rank]));
+      const next = [...others.map((o) => ({ ...o, rank: changed.get(o.id) ?? o.rank })), { ...moved, rank: p.rank }].sort(byRank);
+      const want = [...others.slice(0, place_), moved, ...others.slice(place_)].map((x) => x.id);
+      expect(next.map((x) => x.id), `seed ${seed}: ${JSON.stringify(column.map((c) => c.rank))} moving ${moved.id} to ${place_}`).toEqual(want);
+    }
+  });
+});
