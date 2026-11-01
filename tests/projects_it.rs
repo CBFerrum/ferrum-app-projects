@@ -291,6 +291,21 @@ async fn scenario() {
     let r = alice.try_update("Task", build, json!({"billing_percent": "10"})).await;
     assert!(field_error(&r, "billing_percent", "not permitted"), "{r:?}");
 
+    // The board's order: the rank is a decimal kept to the digit, set by whoever may change the task,
+    // and tasks without one come after those that have it.
+    bob.update("Task", test, json!({"rank": "1500.250000"})).await;
+    pm.update("Task", build, json!({"rank": "1500.125000"})).await;
+    assert_eq!(dec(&bob.get("Task", test).await["rank"]), n("1500.25"));
+    let by_rank = ListQuery {
+        filters: ferrum_kernel::query::parse_filters(&json!({"project": web.to_string()})).unwrap(),
+        sort: Some("rank asc".into()),
+        ..Default::default()
+    };
+    let order: Vec<String> = pm.k.list(&pm.ctx, "Task", &by_rank).await.unwrap().rows.iter().map(|t| t["subject"].as_str().unwrap().to_string()).collect();
+    assert_eq!(order[..2], ["Build", "Test"], "ranked tasks first, in rank order: {order:?}");
+    let r = bob.try_update("Task", design, json!({"rank": "1"})).await;
+    assert!(matches!(r, Err(Error::NotFound(_))), "a card that is not his cannot be moved: {r:?}");
+
     // ───────────── timesheets ─────────────
     let ts1_input = json!({"company": cid, "time_logs": [
         {"activity_type": dev, "task": design.to_string(), "from_time": at(d1, "09:00"), "to_time": at(d1, "12:00")},

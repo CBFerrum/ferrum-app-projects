@@ -60,6 +60,7 @@
     - {name: progress, type: percent, min: "0", max: "100", label: "% Progress", in_list: true}
     - {name: actual_hours, type: decimal, read_only: true, no_copy: true, description: From submitted timesheets}
     - {name: completed_on, type: date, no_copy: true}
+    - {name: rank, type: decimal, hidden: true, no_copy: true, description: "Place on the board among tasks of the same status; set by moving the card (empty: after the ranked ones, in the order made)"}
     - {name: assigned_to, type: table, of: TaskAssignee}
     - {name: depends_on, type: table, of: TaskDependency, description: Tasks that must be completed before this one starts}
     - {name: repeat, type: select, options: [Daily, Weekly, Monthly], description: "Makes a new task when this one is due, with the same people; empty: once"}
