@@ -486,7 +486,7 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
         </EmptyState>
       )}
       <DndContext sensors={sensors} collisionDetection={detect} accessibility={{ announcements, screenReaderInstructions: { draggable: "Press Enter to open the task." } }} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd} onDragCancel={cancel}>
-        <div className="pj-board" role="region" aria-label="Tasks by status" aria-describedby="pj-board-help" style={{ "--cols": model.statuses.length } as CSSProperties}>
+        <div className="pj-board" data-ferrum-nocard="" role="region" aria-label="Tasks by status" aria-describedby="pj-board-help" style={{ "--cols": model.statuses.length } as CSSProperties}>
           <div className="pj-heads">
             {model.statuses.map((s) => {
               const n = model.lanes.reduce((sum, l) => sum + (l.cells.find((c) => c.status === s)?.cards.length ?? 0), 0);
