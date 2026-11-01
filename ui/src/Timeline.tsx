@@ -28,6 +28,8 @@ interface Held {
   id: string;
   mode: Mode | "link";
   x0: number;
+  /** How far the pointer goes before a press is a drag and no longer a click: a finger needs more room. */
+  slop: number;
   moved: boolean;
 }
 
@@ -205,7 +207,7 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
     e.stopPropagation();
     e.currentTarget.focus({ preventScroll: true });
     e.currentTarget.setPointerCapture(e.pointerId);
-    held.current = { id: r.task.id, mode: r.task.is_milestone && mode !== "link" ? "move" : mode, x0: e.clientX, moved: false };
+    held.current = { id: r.task.id, mode: r.task.is_milestone && mode !== "link" ? "move" : mode, x0: e.clientX, slop: e.pointerType === "mouse" ? 4 : 10, moved: false };
     setMenu(null);
   };
 
@@ -213,7 +215,7 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
     const h = held.current;
     if (!h) return;
     const dx = e.clientX - h.x0;
-    if (Math.abs(dx) > 3) h.moved = true;
+    if (Math.abs(dx) > h.slop) h.moved = true;
     if (h.mode === "link") {
       const box = canvas.current?.getBoundingClientRect();
       if (box && h.moved) setLinking({ from: h.id, x: e.clientX - box.left, y: e.clientY - box.top });
