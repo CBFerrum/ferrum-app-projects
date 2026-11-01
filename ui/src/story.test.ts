@@ -49,6 +49,7 @@ describe("a task's story", () => {
       { timesheet: "c", user: "z", docstatus: 2, hours: "8" },
     ]);
     expect(counted(logs)).toBe(3.5);
+    expect(counted(logsOf([{ timesheet: "a", docstatus: 1, hours: "0.1" }, { timesheet: "a", docstatus: 1, hours: "0.2" }]))).toBe(0.3);
     expect(logs).toHaveLength(3); // the cancelled timesheet is left out
   });
 });

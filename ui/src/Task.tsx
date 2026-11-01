@@ -125,8 +125,8 @@ function SubTasks({ task, canWrite, changed }: { task: Task; canWrite: boolean; 
 function Waits({ task, project, rows, canWrite, save }: { task: Task; project: string; rows: { id?: string; task?: string | null }[]; canWrite: boolean; save: (name: string, value: unknown) => Promise<void> }) {
   const ids = rows.map((r) => r.task ?? "").filter(Boolean);
   const first = useSection(task.id, "waits", (signal) => (ids.length ? list<Task>("Task", { filters: JSON.stringify([["id", "in", ids]]), fields: "number,subject,status,exp_end_date", limit: 100 }, signal).then((r) => r.rows) : Promise.resolve([] as Task[])), ids.join(","));
-  const then = useSection(task.id, "blocks", (signal) => list<Task>("Task", { filters: JSON.stringify([["depends_on.task", "=", task.id]]), fields: "number,subject,status,exp_end_date", limit: 100 }, signal).then((r) => r.rows));
-  if (first.hidden && then.hidden) return null;
+  const after = useSection(task.id, "blocks", (signal) => list<Task>("Task", { filters: JSON.stringify([["depends_on.task", "=", task.id]]), fields: "number,subject,status,exp_end_date", limit: 100 }, signal).then((r) => r.rows));
+  if (first.hidden && after.hidden) return null;
   const before = first.q.data ?? [];
   const holding = before.filter((b) => b.status !== "Completed");
   const keep = (r: (typeof rows)[number]) => ({ id: r.id, task: r.task });
@@ -162,9 +162,9 @@ function Waits({ task, project, rows, canWrite, save }: { task: Task; project: s
         </div>
       )}
       <h3 className="pj-minor">Others wait for it</h3>
-      <Waiting q={then.q} what="The tasks after it" />
+      <Waiting q={after.q} what="The tasks after it" />
       <ul className="pj-lines">
-        {(then.q.data ?? []).map((b) => (
+        {(after.q.data ?? []).map((b) => (
           <li key={b.id}>
             <Badge tone={statusTone(b.status)}>{b.status}</Badge>
             <Link to={`/t/${b.id}`} className="pj-line-title">
@@ -173,7 +173,7 @@ function Waits({ task, project, rows, canWrite, save }: { task: Task; project: s
             <Due day={b.exp_end_date} late={late(b, todayIso())} />
           </li>
         ))}
-        {then.q.data && !then.q.data.length && <li className="faint">Nothing waits for it.</li>}
+        {after.q.data && !after.q.data.length && <li className="faint">Nothing waits for it.</li>}
       </ul>
     </Card>
   );

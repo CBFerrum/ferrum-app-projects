@@ -244,11 +244,11 @@ describe("home, a project and a plate", () => {
     const qc = seeded();
     qc.setQueryData(["meta"], { version: 1, packages: [], modules: [], warnings: [], entities: [{ name: "ResourceAllocation", label: "Resource Allocation", label_plural: "Resource Allocations", kind: "master", submittable: false, permissions: all }] });
     const monday = weekStart(todayIso());
-    qc.setQueryData(["projects", "workload", monday, 8], { rows: [{ person: "asha@acme.test", week: monday, hours: "44", capacity: 40, over: true }, { person: "ravi@acme.test", week: monday, hours: "10", capacity: 40, over: false }] });
+    qc.setQueryData(["projects", "workload", "", monday, 8], { rows: [{ person: "asha@acme.test", week: monday, hours: "44", capacity: 40, over: true }, { person: "ravi@acme.test", week: monday, hours: "10", capacity: 40, over: false }] });
     let html = page(qc, <Planning />, "/plan", "/plan");
     for (const t of ["Planning", "Asha Rao", "Ravi Kumar", "44", "110%", "1 person is", "Over the week", "Export CSV"]) expect(html).toContain(t);
     qc.setQueryData(["projects", "portfolios"], [{ id: "pf1", portfolio_name: "Client work" }]);
-    qc.setQueryData(["projects", "standing", ""], [{ project: "Website", status: "Open", tasks: 10, completed: 4, overdue: 2, progress: "40", open_risks: 1, open_issues: 0 }]);
+    qc.setQueryData(["projects", "standing", "", ""], [{ project: "Website", status: "Open", tasks: 10, completed: 4, overdue: 2, progress: "40", open_risks: 1, open_issues: 0 }]);
     qc.setQueryData(["projects", "named"], [{ id: "p1", project_name: "Website", end_date: day(30), proj_project_manager: "asha@acme.test" }]);
     html = page(qc, <Planning />, "/plan?tab=portfolios", "/plan");
     for (const t of ["Client work", "Website", "4/10", "Every project"]) expect(html).toContain(t);
