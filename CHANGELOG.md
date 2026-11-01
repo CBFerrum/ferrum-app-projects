@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.6.0
+
+- The board is worked by hand. Drag a card to another column or to another place in its own and it
+  stays where you put it, for everyone; or move it from the keyboard (Shift and the arrow keys) or
+  from its menu. A move shows at once and goes back, with the server's reason, if it is refused.
+  Swimlanes by person or priority, filters, a sort order and a box to add tasks to a column are in
+  the address, so a link shares the view. A task opens in a panel beside the board.
+- A timeline you can use. Drag a bar to move it and its ends to resize it, drag the dot at its end
+  onto another bar to make that one wait for it, click an empty row to give a task dates. Arrows
+  join tasks that wait for others. Moving a task that others wait for first shows what would move
+  and asks; the last change can be undone. Zoom by day, week, month or quarter; critical path.
+- A page for each task with its whole story: sub-tasks, what it waits for and what waits for it, time
+  logged against the estimate, issues raised on it, and everything that happened, with the comments.
+  Tasks open on it from notifications and Home's My work.
+- My work: what is on a person's plate across every project, by when it is due or by project, with
+  the hours to go, what they are planned for this week against what they logged, and a tick to be
+  done. Managers can look at anyone's.
+- Planning, for Projects Managers: a grid of who is booked how much, week by week (the workload
+  report), with the allocations behind each week to add, change or remove; and how the projects of a
+  portfolio stand (the portfolio overview), the ones needing attention first.
+- A project opens on a strip of how it stands: progress, hours against the estimate, cost, billed,
+  open risks and issues, changes waiting for a decision.
+- Tasks carry a hidden `rank`, the place on the board among tasks of the same status. Tasks made
+  before this have none, and come after those that were moved, in the order they were made.
+- Two requests of the app's own, for what a list cannot carry (child rows), both read with the
+  caller's rights: `GET /api/app/projects/tasks?project=` gives a project's tasks with the people on
+  each and what each waits for, and `GET /api/app/projects/time?task=` the time logged on a task.
+
 ## 0.5.0
 
 - Risks, issues, change requests, resource allocations and portfolios, with workload and portfolio reports. Tasks can repeat.

@@ -1,6 +1,6 @@
 id: projects
 name: Projects
-version: 0.5.0
+version: 0.6.0
 publisher: cbferrum
 summary: Projects, task trees with dependencies, timesheets, time and milestone billing, profitability
 description: README.md
@@ -19,14 +19,15 @@ contributes:
     - id: projects
       route: projects
       title: Projects
-      description: Projects with their boards, timelines and time; tasks and timesheets
+      description: Projects with their boards, timelines and time; your work across projects; who is booked when; tasks and timesheets
       icon: folder-kanban
       color: "#b45309"
       roles: [Projects User, Projects Manager]
   shell.open:
-    # A project opens in the project view (before ERP's records of the shared projects); tasks,
-    # timesheets and the projects-erp connector's records in Projects' forms and lists.
+    # A project opens in the project view (before ERP's records of the shared projects) and a task
+    # on its own page; timesheets and the projects-erp connector's records in Projects' forms and lists.
     - {id: project, entity: Project, path: "projects/p/{id}", list: projects/, priority: 1}
+    - {id: task, entity: Task, path: "projects/t/{id}", list: "projects/e/Task", priority: 1}
     - {id: projects, package: projects, path: "projects/e/{entity}/{id}", list: "projects/e/{entity}"}
     - {id: projects_erp, package: projects_erp, path: "projects/e/{entity}/{id}", list: "projects/e/{entity}"}
   shell.create:
