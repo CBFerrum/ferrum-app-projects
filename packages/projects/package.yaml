@@ -36,7 +36,8 @@ modules:
     label: Projects
     icon: briefcase
     order: 50
-    items: [Project, Task, Timesheet, ActivityType, ActivityCost, report:project_profitability, report:timesheet_summary, report:task_overview]
+    items: [Project, Task, Timesheet, ProjectRisk, ProjectIssue, ChangeRequest, ResourceAllocation, Portfolio, ActivityType, ActivityCost, report:project_profitability,
+            report:timesheet_summary, report:task_overview, report:workload, report:portfolio_overview]
 
 roles:
   - name: Projects Manager
@@ -48,6 +49,11 @@ roles:
       - {entity: TimesheetDetail, read_groups: [costing], write_groups: [costing]}
       - {entity: ActivityType, read: true, write: true, create: true, delete: true, read_groups: [costing], write_groups: [costing]}
       - {entity: ActivityCost, read: true, write: true, create: true, delete: true, import: true}
+      - {entity: ProjectRisk, read: true, write: true, create: true, delete: true, export: true}
+      - {entity: ProjectIssue, read: true, write: true, create: true, delete: true, export: true}
+      - {entity: ChangeRequest, read: true, write: true, create: true, delete: true, submit: true, cancel: true, export: true, read_groups: [costing], write_groups: [costing]}
+      - {entity: ResourceAllocation, read: true, write: true, create: true, delete: true, export: true}
+      - {entity: Portfolio, read: true, write: true, create: true, delete: true}
       - {entity: Customer, read: true}
       - {entity: Company, read: true}
       - {entity: Currency, read: true}
@@ -56,6 +62,11 @@ roles:
   - name: Projects User
     description: Records own time and works on the tasks assigned to them.
     permissions:
+      - {entity: ProjectRisk, read: true}
+      - {entity: ProjectIssue, read: true, write: true, create: true}
+      - {entity: ChangeRequest, read: true, write: true, create: true, submit: true}
+      - {entity: ResourceAllocation, read: true, if_owner: true}
+      - {entity: Portfolio, read: true}
       - {entity: Project, read: true}
       - {entity: Task, read: true, write: true, create: true, if_owner: true, read_groups: [billing]}
       - {entity: Timesheet, read: true, write: true, create: true, delete: true, submit: true, cancel: true, if_owner: true}

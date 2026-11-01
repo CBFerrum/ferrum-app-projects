@@ -601,7 +601,95 @@ async fn scenario() {
     // (100 × 10 + 100 × 0 + 0 × 5) / 15 hours: the reopened project counts its new task.
     assert_eq!(dec(&pm.get("Project", web).await["proj_percent_complete"]), n("66.67"));
 
+    // ───────────── risks, issues and who decides a change ─────────────
+    let risk = pm.insert("ProjectRisk", json!({"title": "The supplier may fold", "project": web.to_string(), "probability": "High", "impact": "Medium"})).await;
+    assert_eq!(risk["exposure"], json!(6));
+    assert_eq!(pm.update("ProjectRisk", uid(&risk), json!({"impact": "High"})).await["exposure"], json!(9), "worked out, not typed");
+    let issue = pm.insert("ProjectIssue", json!({"title": "The API is down", "project": web.to_string(), "severity": "High"})).await;
+    assert!(pm.try_update("ProjectIssue", uid(&issue), json!({"status": "Resolved"})).await.is_err(), "resolved needs saying how");
+
+    let change = pm
+        .insert(
+            "ChangeRequest",
+            json!({"title": "Add a checkout", "project": web.to_string(), "reason": "The client asked", "hours_impact": "40", "days_impact": 10}),
+        )
+        .await;
+    let change = uid(&change);
+    pm.submit("ChangeRequest", change).await;
+    assert!(matches!(pm.try_action("ChangeRequest", change, "approve", json!({})).await, Err(Error::Forbidden(_))), "not by whoever raised it");
+    let decided = admin.action("ChangeRequest", change, "approve", json!({"note": "Fine"})).await;
+    assert_eq!(decided["decision"], json!("Approved"));
+    let cr = pm.get("ChangeRequest", change).await;
+    assert_eq!((cr["decided_by"].as_str(), cr["decision_note"].as_str()), (Some(admin.ctx.email.as_str()), Some("Fine")));
+    assert!(admin.try_action("ChangeRequest", change, "reject", json!({})).await.is_err(), "decided once");
+
+    // ───────────── who is planned for what ─────────────
+    let monday = crate_week(today);
+    let plan = |person: &str, hours: &str, days: i64| json!({"person": person, "project": web.to_string(), "from_date": monday.to_string(), "to_date": (monday + Duration::days(days)).to_string(), "hours_per_day": hours});
+    assert!(
+        pm.try_insert(
+            "ResourceAllocation",
+            json!({"person": "a@acme.test", "project": web.to_string(), "from_date": monday.to_string(), "to_date": (monday - Duration::days(1)).to_string()})
+        )
+        .await
+        .is_err()
+    );
+    pm.insert("ResourceAllocation", plan("alice@acme.test", "6", 4)).await;
+    pm.insert("ResourceAllocation", plan("Alice@acme.test", "4", 6)).await;
+    pm.insert("ResourceAllocation", plan("bob@acme.test", "8", 4)).await;
+    let load = pm
+        .report("workload", &[company_param.clone(), ("from_date", monday.to_string()), ("to_date", (monday + Duration::days(6)).to_string())])
+        .await
+        .expect("workload");
+    let rows = load["rows"].as_array().unwrap();
+    let of = |who: &str| rows.iter().find(|r| r["person"] == json!(who)).unwrap();
+    assert_eq!(
+        (dec(&of("alice@acme.test")["hours"]), of("alice@acme.test")["over"].as_bool()),
+        (n("50"), Some(true)),
+        "however it was typed, and weekends count for nothing"
+    );
+    assert_eq!((dec(&of("bob@acme.test")["hours"]), of("bob@acme.test")["over"].as_bool()), (n("40"), Some(false)));
+
+    // ───────────── a portfolio ─────────────
+    let portfolio = pm.insert("Portfolio", json!({"portfolio_name": "Digital", "projects": [{"project": web.to_string()}]})).await;
+    let view = pm.report("portfolio_overview", &[company_param.clone(), ("portfolio", uid(&portfolio).to_string())]).await.expect("portfolio");
+    let rows = view["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 1, "only its projects: {view}");
+    assert_eq!((rows[0]["project"].as_str(), rows[0]["open_risks"].as_i64(), rows[0]["open_issues"].as_i64()), (Some("Website"), Some(1), Some(1)));
+
+    // ───────────── tasks that repeat ─────────────
+    let weekly = pm
+        .insert(
+            "Task",
+            json!({"subject": "Status report", "project": web.to_string(), "repeat": "Weekly", "repeat_until": (today + Duration::days(8)).to_string(),
+            "exp_start_date": (today - Duration::days(1)).to_string(), "exp_end_date": today.to_string(), "assigned_to": [{"user": "alice@acme.test"}]}),
+        )
+        .await;
+    ferrum_app_projects::maintenance(&k).await.expect("maintenance");
+    let next = pm.find_one("Task", json!({"repeated_from": weekly["id"]})).await;
+    assert_eq!((next["subject"].as_str(), next["exp_end_date"].as_str()), (Some("Status report"), Some((today + Duration::days(7)).to_string().as_str())));
+    assert_eq!(pm.get("Task", uid(&next)).await["assigned_to"][0]["user"], json!("alice@acme.test"), "the same people");
+    ferrum_app_projects::maintenance(&k).await.expect("a second run");
+    pm.find_one("Task", json!({"repeated_from": weekly["id"]})).await;
+    let mut tx = k.db.tenant_tx(tenant).await.unwrap();
+    sqlx::query("update e_task set exp_end_date = $2, exp_start_date = $2 where tenant_id = $1 and id = $3")
+        .bind(tenant)
+        .bind(today)
+        .bind(uid(&next))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    ferrum_app_projects::maintenance(&k).await.expect("maintenance");
+    let q = ListQuery { filters: ferrum_kernel::query::parse_filters(&json!({"subject": "Status report"})).unwrap(), ..Default::default() };
+    assert_eq!(k.list(&pm.ctx, "Task", &q).await.unwrap().rows.len(), 3, "the next from the latest, once");
+
     projects_alone(&k).await;
+}
+
+fn crate_week(day: chrono::NaiveDate) -> chrono::NaiveDate {
+    use chrono::Datelike;
+    day - Duration::days(day.weekday().num_days_from_monday() as i64)
 }
 
 /// Projects in a workspace without ERP (Ferrum docs/plan/apps-ui.md §13): projects, tasks and

@@ -3,7 +3,7 @@
 
 use crate::logic::{percent, task_bucket};
 use async_trait::async_trait;
-use chrono::{NaiveDate, Utc};
+use chrono::{Datelike, NaiveDate, Utc};
 use ferrum_domain::reports::{Params, ReportCompany, ReportSource, col, param_def, period, read_tx, resolve_company};
 use ferrum_domain::util::money;
 use ferrum_kernel::{Access, Action, Ctx, Error, Kernel, Result, Tx};
@@ -37,6 +37,10 @@ impl ReportSource for Reports {
                     link("project", "Project", "Project"), link("activity_type", "Activity Type", "ActivityType")]}),
             json!({"name": "task_overview", "label": "Task Overview", "module": "projects", "entity": "Task",
                 "params": [param_def("company"), link("project", "Project", "Project"), text("user", "Assignee (email)")]}),
+            json!({"name": "workload", "label": "Workload", "module": "projects", "entity": "ResourceAllocation",
+                "params": [param_def("company"), param_def("from_date"), param_def("to_date"), text("user", "Person (email)")]}),
+            json!({"name": "portfolio_overview", "label": "Portfolio Overview", "module": "projects", "entity": "Project",
+                "params": [param_def("company"), link("portfolio", "Portfolio", "Portfolio")]}),
         ]
     }
 
@@ -48,6 +52,8 @@ impl ReportSource for Reports {
             "project_profitability" => profitability(&mut tx, ctx, &co, &p).await?,
             "timesheet_summary" => timesheet_summary(&mut tx, ctx, &co, &p).await?,
             "task_overview" => task_overview(&mut tx, ctx, &co, &p).await?,
+            "workload" => workload(&mut tx, ctx, &co, &p).await?,
+            "portfolio_overview" => portfolio_overview(&mut tx, ctx, &co, &p).await?,
             _ => return Err(Error::NotFound(format!("report {name}"))),
         };
         tx.rollback().await?;
@@ -57,6 +63,81 @@ impl ReportSource for Reports {
         }
         Ok(out)
     }
+}
+
+/// Hours a person is planned for, week by week, against a 40-hour week: who is over it, and when.
+/// Weekends count for nothing.
+async fn workload(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Params<'_>) -> Result<Value> {
+    const CAPACITY: i64 = 40;
+    let (from, to) = period(p, co)?;
+    let who = p.raw.get("user").map(|u| u.trim().to_lowercase()).filter(|u| !u.is_empty());
+    let rows: Vec<(String, NaiveDate, NaiveDate, Decimal)> = sqlx::query_as(
+        "select lower(person), from_date, to_date, hours_per_day from e_resource_allocation \
+         where tenant_id = $1 and company = $2 and to_date >= $3 and from_date <= $4 and ($5::text is null or lower(person) = $5)",
+    )
+    .bind(ctx.tenant)
+    .bind(co.id)
+    .bind(from)
+    .bind(to)
+    .bind(&who)
+    .fetch_all(&mut **tx)
+    .await?;
+    let mut weeks: BTreeMap<(String, NaiveDate), Decimal> = BTreeMap::new();
+    for (person, start, end, hours) in rows {
+        let mut day = start.max(from);
+        while day <= end.min(to) {
+            if day.weekday().num_days_from_monday() < 5 {
+                *weeks.entry((person.clone(), crate::planning::week_of(day))).or_default() += hours;
+            }
+            day = match day.succ_opt() {
+                Some(next) => next,
+                None => break,
+            };
+        }
+    }
+    let rows: Vec<Value> = weeks
+        .into_iter()
+        .map(|((person, week), hours)| json!({"person": person, "week": week, "hours": money(hours), "capacity": CAPACITY, "over": hours > Decimal::from(CAPACITY)}))
+        .collect();
+    Ok(json!({
+        "columns": [col("person", "Person", "data"), col("week", "Week Of", "date"), col("hours", "Planned Hours", "float"), col("capacity", "Capacity", "float"), col("over", "Over", "check")],
+        "rows": rows,
+        "meta": {"from_date": from, "to_date": to},
+    }))
+}
+
+/// A portfolio's projects at a glance: tasks, what is overdue, risks and issues still open.
+async fn portfolio_overview(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Params<'_>) -> Result<Value> {
+    let portfolio = p.uuid("portfolio")?;
+    let rows: Vec<(String, Option<String>, i64, i64, i64, i64, i64)> = sqlx::query_as(
+        "select a.project_name, a.status, \
+         (select count(*) from e_task t where t.tenant_id = a.tenant_id and t.project = a.id), \
+         (select count(*) from e_task t where t.tenant_id = a.tenant_id and t.project = a.id and t.status = 'Completed'), \
+         (select count(*) from e_task t where t.tenant_id = a.tenant_id and t.project = a.id and t.status = 'Overdue'), \
+         (select count(*) from e_project_risk r where r.tenant_id = a.tenant_id and r.project = a.id and r.status in ('Open', 'Mitigating')), \
+         (select count(*) from e_project_issue i where i.tenant_id = a.tenant_id and i.project = a.id and i.status in ('Open', 'In Progress')) \
+         from e_project a where a.tenant_id = $1 and a.company = $2 \
+         and ($3::uuid is null or exists (select 1 from e_portfolio__projects x where x.tenant_id = a.tenant_id and x.parent_id = $3 and x.project = a.id)) \
+         order by a.project_name limit $4",
+    )
+    .bind(ctx.tenant)
+    .bind(co.id)
+    .bind(portfolio)
+    .bind(MAX_ROWS)
+    .fetch_all(&mut **tx)
+    .await?;
+    let rows: Vec<Value> = rows
+        .into_iter()
+        .map(|(name, status, tasks, done, overdue, risks, issues)| {
+            json!({"project": name, "status": status, "tasks": tasks, "completed": done, "overdue": overdue, "progress": percent(Decimal::from(done), Decimal::from(tasks)), "open_risks": risks, "open_issues": issues})
+        })
+        .collect();
+    Ok(json!({
+        "columns": [col("project", "Project", "data"), col("status", "Status", "data"), col("tasks", "Tasks", "int"), col("completed", "Completed", "int"), col("overdue", "Overdue", "int"),
+            col("progress", "Progress", "percent"), col("open_risks", "Open Risks", "int"), col("open_issues", "Open Issues", "int")],
+        "rows": rows,
+        "meta": {},
+    }))
 }
 
 /// The user, when their role reads only its own records of `entity` (the creator or anyone named

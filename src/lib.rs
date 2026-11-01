@@ -11,6 +11,7 @@
 
 mod billing;
 mod logic;
+mod planning;
 mod project;
 mod reports;
 mod site;
@@ -26,6 +27,8 @@ pub fn register(hooks: &mut HookRegistry) {
     hooks
         .register("Project", Arc::new(project::ProjectHook))
         .register("Task", Arc::new(project::TaskHook))
+        .register("ProjectRisk", Arc::new(planning::RiskHook))
+        .register("ChangeRequest", Arc::new(planning::ChangeRequestHook))
         .register("Timesheet", Arc::new(timesheet::TimesheetHook))
         .register("ActivityCost", Arc::new(timesheet::ActivityCostHook));
     hooks.add_site("projects", Arc::new(site::ProjectsSite));
@@ -55,8 +58,21 @@ pub async fn maintenance(k: &Kernel) -> Result<()> {
             Ok(n) => tracing::info!(%tenant, tasks = n, "tasks marked overdue"),
             Err(e) => tracing::warn!(%tenant, "marking overdue tasks failed: {e}"),
         }
+        match repeat_due(k, tenant).await {
+            Ok(0) => {}
+            Ok(n) => tracing::info!(%tenant, tasks = n, "repeating tasks made"),
+            Err(e) => tracing::warn!(%tenant, "making repeating tasks failed: {e}"),
+        }
     }
     Ok(())
+}
+
+async fn repeat_due(k: &Kernel, tenant: Uuid) -> Result<usize> {
+    let ctx = Ctx::system(tenant, k.registry.schema(tenant).await?);
+    if ctx.schema.entity("Task").is_none() {
+        return Ok(0);
+    }
+    planning::repeat_tasks(k, &ctx, ctx.today()).await
 }
 
 /// Only tasks still `Open` change, in one statement that re-checks each row under its lock, so

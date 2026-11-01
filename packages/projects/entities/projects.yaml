@@ -62,12 +62,15 @@
     - {name: completed_on, type: date, no_copy: true}
     - {name: assigned_to, type: table, of: TaskAssignee}
     - {name: depends_on, type: table, of: TaskDependency, description: Tasks that must be completed before this one starts}
+    - {name: repeat, type: select, options: [Daily, Weekly, Monthly], description: "Makes a new task when this one is due, with the same people; empty: once"}
+    - {name: repeat_until, type: date, visible_if: "doc.repeat != null"}
+    - {name: repeated_from, type: link, to: Task, read_only: true, no_copy: true}
     - {name: description, type: text}
     - {name: billing_percent, type: percent, min: "0", max: "100", perm_group: billing, label: "Billing % of Contract Value", visible_if: "doc.is_milestone"}
     - {name: billed_amount, type: currency, read_only: true, no_copy: true, visible_if: "doc.is_milestone"}
   form:
     - {label: Task, fields: [subject, project, company, status, priority, parent_task, is_milestone]}
-    - {label: Schedule, fields: [exp_start_date, exp_end_date, expected_hours, progress, actual_hours, completed_on]}
+    - {label: Schedule, fields: [exp_start_date, exp_end_date, expected_hours, progress, actual_hours, completed_on, repeat, repeat_until]}
     - {label: People and Dependencies, fields: [assigned_to, depends_on]}
     - {label: Details, fields: [description]}
     - {label: Milestone Billing, collapsible: true, fields: [billing_percent, sales_invoice, billed_amount]}
