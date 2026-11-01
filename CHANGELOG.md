@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Personal data: a person's request now exports their timesheets and activity costs, and says why they are kept: they are billing and costing records.
+
 ## 0.4.1
 
 - The interface starts faster: its first download holds the frame and the app's own pages, and
