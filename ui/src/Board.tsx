@@ -26,6 +26,7 @@ import { arrayMove, SortableContext, verticalListSortingStrategy } from "@dnd-ki
 import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Plus } from "lucide-react";
 import { type CSSProperties, type FormEvent, type HTMLAttributes, type KeyboardEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router";
 import { todayIso } from "@ferrum/client";
 import { Alert, Badge, Button, confirmDialog, EmptyState, statusTone, toast, useDebounced } from "@ferrum/kit";
 import { can, useMe, useMetaIndex } from "@ferrum/records";
@@ -459,7 +460,7 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
       {closed && <Alert tone="info">This project is {project.status?.toLowerCase()}. Its tasks cannot be changed until it is reopened.</Alert>}
       {tasks.total > tasks.rows.length && (
         <Alert tone="warning">
-          The board shows the first {TASK_LIMIT} of {tasks.total} tasks. Open the list to see them all.
+          The board shows the first {TASK_LIMIT} of {tasks.total} tasks. <Link to={`/e/Task?f.project=${project.id}`}>Open the list</Link> to see them all.
         </Alert>
       )}
       <p className="sr-only" role="status" aria-live="polite">

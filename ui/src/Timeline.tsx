@@ -9,6 +9,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Diamond, Undo2 } from "lucide-react";
 import { type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router";
 import { todayIso } from "@ferrum/client";
 import { Alert, Button, EmptyState, toast } from "@ferrum/kit";
 import { can, useMetaIndex } from "@ferrum/records";
@@ -244,6 +245,13 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
     if (task && days) propose(task, h.mode, days, e.altKey);
   };
 
+  /** A press that the system took over (a touch that became a scroll) is let go of, not finished. */
+  const onCancel = () => {
+    held.current = null;
+    setDrag(null);
+    setLinking(null);
+  };
+
   // Escape lets go of a drag, drops the question, closes a link's menu.
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
@@ -355,7 +363,7 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
       {closed && <Alert tone="info">This project is {project.status?.toLowerCase()}. Its tasks cannot be changed until it is reopened.</Alert>}
       {tasks.total > tasks.rows.length && (
         <Alert tone="warning">
-          The timeline shows the first {tasks.rows.length} of {tasks.total} tasks.
+          The timeline shows the first {tasks.rows.length} of {tasks.total} tasks. <Link to={`/e/Task?f.project=${project.id}`}>Open the list</Link> to see them all.
         </Alert>
       )}
       <p className="sr-only" role="status" aria-live="polite">
@@ -522,7 +530,7 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
                 onPointerDown: editable ? (e: PointerEvent<HTMLDivElement>) => onDown(e, r) : undefined,
                 onPointerMove: editable ? onMove : undefined,
                 onPointerUp: editable ? onUp : undefined,
-                onPointerCancel: editable ? onUp : undefined,
+                onPointerCancel: editable ? onCancel : undefined,
                 onClick: editable ? undefined : () => onOpen(t.id),
               };
               if (t.is_milestone) {

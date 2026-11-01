@@ -299,6 +299,20 @@ a.pj-tile:focus-visible {
   margin: 0;
 }
 
+@media (max-width: 720px) {
+  /* A phone has no room for a floating list: it opens in the toolbar's own flow. */
+  .pj-keys {
+    flex-basis: 100%;
+  }
+
+  .pj-keys dl {
+    position: static;
+    width: auto;
+    max-width: none;
+    box-shadow: none;
+  }
+}
+
 .pj-check {
   display: inline-flex;
   align-items: center;
