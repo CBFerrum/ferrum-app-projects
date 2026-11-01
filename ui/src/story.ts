@@ -19,14 +19,18 @@ export interface Comment {
   edited_at?: string | null;
 }
 
-export interface Timesheet {
-  id: string;
+/** A line of time logged on a task, as the app's endpoint gives it (`/api/app/projects/time`). */
+export interface TimeRow {
+  timesheet: string;
   user?: string | null;
-  docstatus?: number;
-  time_logs?: { task?: string | null; hours?: string | number | null; from_time?: string | null; description?: string | null }[] | null;
+  /** Of the timesheet: 1 is submitted, which is when the hours count toward the task's. */
+  docstatus: number;
+  at?: string | null;
+  hours?: string | number | null;
+  what?: string | null;
 }
 
-/** Time logged on a task, from one line of a timesheet. */
+/** Time logged on a task. */
 export interface Log {
   key: string;
   at: string;
@@ -46,16 +50,11 @@ export interface Item {
   who?: string | null;
 }
 
-/** The lines of a timesheet that are on this task (a cancelled timesheet is no part of the story). */
-export function logsFor(sheets: Timesheet[], task: string): Log[] {
-  return sheets
-    .filter((s) => s.docstatus !== 2)
-    .flatMap((s) =>
-      (s.time_logs ?? [])
-        .map((l, i) => ({ l, i }))
-        .filter(({ l }) => l.task === task)
-        .map(({ l, i }): Log => ({ key: `t-${s.id}-${i}`, at: l.from_time ?? "", hours: Number(l.hours ?? 0) || 0, user: s.user ?? "", what: l.description ?? "", counted: s.docstatus === 1 })),
-    )
+/** The time logged on a task, newest first. A cancelled timesheet is no part of the story. */
+export function logsOf(rows: TimeRow[]): Log[] {
+  return rows
+    .filter((r) => r.docstatus !== 2)
+    .map((r, i): Log => ({ key: `t-${r.timesheet}-${i}`, at: r.at ?? "", hours: Number(r.hours ?? 0) || 0, user: r.user ?? "", what: r.what ?? "", counted: r.docstatus === 1 }))
     .sort((a, b) => b.at.localeCompare(a.at));
 }
 

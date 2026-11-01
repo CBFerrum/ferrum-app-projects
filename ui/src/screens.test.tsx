@@ -152,7 +152,7 @@ function loaded(): QueryClient {
   put(["projects", "task", "t2", "kids", ""], [{ id: "k1", version: 1, number: "TASK-6", subject: "Wire the form", status: "Completed", priority: "Medium", exp_end_date: day(12), assigned_to: [] }, { id: "k2", version: 1, number: "TASK-7", subject: "Wire the list", status: "Open", priority: "High", exp_end_date: day(1), assigned_to: [{ user: "ravi@acme.test" }] }]);
   put(["projects", "task", "t2", "waits", "t1"], [{ id: "t1", number: "TASK-1", subject: "Design", status: "Working", exp_end_date: day(6) }]);
   put(["projects", "task", "t2", "blocks", ""], [{ id: "t3", number: "TASK-3", subject: "Launch", status: "Open", exp_end_date: day(23) }]);
-  put(["projects", "task", "t2", "time", ""], [{ id: "ts1", user: "asha@acme.test", docstatus: 1, time_logs: [{ task: "t2", hours: "6.5", from_time: `${day(10)}T09:00:00Z`, description: "First pass" }] }]);
+  put(["projects", "task", "t2", "time", ""], [{ timesheet: "ts1", user: "asha@acme.test", docstatus: 1, at: `${day(10)}T09:00:00Z`, hours: "6.500000000", what: "First pass" }]);
   put(["projects", "task", "t2", "issues", ""], [{ id: "i1", title: "Form loses data", severity: "High", status: "Open" }]);
   put(["projects", "task", "t2", "audit", ""], [{ id: 1, at: `${day(2)}T09:00:00Z`, action: "create", actor_name: "Asha Rao" }, { id: 2, at: `${day(9)}T09:00:00Z`, action: "update", actor_name: "Asha Rao", diff: { status: ["Open", "Working"] } }]);
   put(["projects", "task", "t2", "comments", ""], [{ id: "c1", body: "Starting on the form first", author: "Asha Rao", created_at: `${day(9)}T10:00:00Z` }]);

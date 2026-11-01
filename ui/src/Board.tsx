@@ -384,6 +384,7 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
     const near = { ...args, droppableContainers: targets };
     const hits = pointerWithin(near);
     let over = (hits.length ? hits : rectIntersection(near))[0]?.id;
+    // Between two columns, or just outside the board: the last place it was over still counts.
     if (over === undefined) return lastOver.current ? [{ id: lastOver.current }] : [];
     // Over a column: aim for its nearest card, if it has any.
     if (String(over) in items && items[String(over)].length) {
@@ -431,7 +432,7 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
     setLive(null);
     setHeld(null);
     setHover(null);
-    // Dropped outside every column: it goes back.
+    // Nothing under it at all (released outside the board, with no column hovered yet): it goes back.
     if (over && into) drop(a, into, next[into].indexOf(a));
   };
 
