@@ -194,8 +194,13 @@ function Time({ project }: { project: Project }) {
   );
 }
 
+/** Another project is another page: what was typed or chosen for one does not carry over. */
 export function ProjectPage() {
   const { id = "" } = useParams();
+  return <ProjectView key={id} id={id} />;
+}
+
+function ProjectView({ id }: { id: string }) {
   const qc = useQueryClient();
   const [sp, setQuery] = useQueryState();
   const asked = sp.get("tab");

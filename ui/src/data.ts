@@ -113,6 +113,9 @@ export function changeTask(qc: QueryClient, project: string, task: Task, patch: 
     const current = qc.getQueryData<TaskSet>(key)?.rows.find((t) => t.id === task.id);
     try {
       apply(known(await api.patch<Record<string, unknown>>(docPath("Task", task.id), patch, { ifMatch: current?.version ?? task.version })));
+      // The task's panel and page read the record itself: it has a new version and maybe new values.
+      void qc.invalidateQueries({ queryKey: ["peek", "Task", task.id] });
+      void qc.invalidateQueries({ queryKey: ["projects", "task", task.id] });
       return true;
     } catch (e) {
       undo();

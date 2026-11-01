@@ -9,6 +9,7 @@ import {
   closestCenter,
   DndContext,
   DragOverlay,
+  MeasuringStrategy,
   MouseSensor,
   pointerWithin,
   rectIntersection,
@@ -272,6 +273,16 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
   const cellById = useMemo(() => new Map(model.lanes.flatMap((l) => l.cells.map((c) => [c.id, c] as const))), [model]);
   const refocus = useRef<string | null>(null);
   const lastOver = useRef<string | null>(null);
+  // Just after a card changed column the layout shifts, and for a moment nothing may be under the
+  // pointer: the card itself, not the column it left, is what it is over then.
+  const justMoved = useRef(false);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      justMoved.current = false;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [live]);
 
   // Keyboard moves re-draw the card elsewhere: put focus back on it.
   useEffect(() => {
@@ -385,7 +396,10 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
     const hits = pointerWithin(near);
     let over = (hits.length ? hits : rectIntersection(near))[0]?.id;
     // Between two columns, or just outside the board: the last place it was over still counts.
-    if (over === undefined) return lastOver.current ? [{ id: lastOver.current }] : [];
+    if (over === undefined) {
+      if (justMoved.current) lastOver.current = active;
+      return lastOver.current ? [{ id: lastOver.current }] : [];
+    }
     // Over a column: aim for its nearest card, if it has any.
     if (String(over) in items && items[String(over)].length) {
       const inside = items[String(over)];
@@ -409,6 +423,7 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
     setHover(to && allowed(a, to) ? to : null);
     if (!from || !to || from === to || !allowed(a, to)) return;
     const below = !!active.rect.current.translated && active.rect.current.translated.top > over.rect.top + over.rect.height / 2;
+    justMoved.current = true;
     setLive((cur) => {
       if (!cur) return cur;
       const at = o in cur ? cur[to].length : cur[to].indexOf(o) + (below ? 1 : 0);
@@ -486,7 +501,7 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
           </Button>
         </EmptyState>
       )}
-      <DndContext sensors={sensors} collisionDetection={detect} accessibility={{ announcements, screenReaderInstructions: { draggable: "Press Enter to open the task." } }} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd} onDragCancel={cancel}>
+      <DndContext sensors={sensors} collisionDetection={detect} measuring={{ droppable: { strategy: MeasuringStrategy.Always } }} accessibility={{ announcements, screenReaderInstructions: { draggable: "Press Enter to open the task." } }} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd} onDragCancel={cancel}>
         <div className="pj-board" data-ferrum-nocard="" role="region" aria-label="Tasks by status" aria-describedby="pj-board-help" style={{ "--cols": model.statuses.length } as CSSProperties}>
           <div className="pj-heads">
             {model.statuses.map((s) => {
