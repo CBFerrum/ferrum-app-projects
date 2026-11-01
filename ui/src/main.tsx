@@ -1,7 +1,7 @@
-// Projects' own interface (Ferrum docs/plan/apps-ui.md §13, U5) at /projects/: the open projects and
-// your tasks on its home, each project's board, timeline and time in the project view, and the
-// rest of its records (tasks, timesheets, activity types and costs) as lists and forms in the records
-// frame, with its modules in the sidebar under the platform's bar.
+// Projects' own interface (Ferrum docs/plan/apps-ui.md §13, U5) at /projects/: the open projects on
+// its home; each project's board, timeline and time at /p/{id}; and the rest of its records (tasks,
+// timesheets, risks, activity types and costs) as lists and forms in the records frame, with its
+// modules in the sidebar under the platform's bar. Each screen loads when first opened.
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode, useEffect } from "react";
@@ -11,7 +11,6 @@ import { routeBase, shell } from "@ferrum/client";
 import { ConfirmHost, EmptyState, ErrorState, Toaster } from "@ferrum/kit";
 import { RequireAuth, setFrameMode } from "@ferrum/records/frame";
 import { ProjectsHome } from "./Home";
-import { ProjectPage } from "./Project";
 import "./styles.css";
 
 /** A page of the records frame, loaded when first opened. */
@@ -58,7 +57,7 @@ const router = createBrowserRouter(
       errorElement: <RouteError />,
       children: [
         { index: true, element: <ProjectsHome /> },
-        { path: "p/:id", element: <ProjectPage /> },
+        { path: "p/:id", lazy: () => import("./Project").then((m) => ({ Component: m.ProjectPage })) },
         { path: "e/:entity", lazy: page("ListView") },
         { path: "e/:entity/:id", lazy: page("FormView") },
         { path: "r/:name", lazy: page("ReportView") },

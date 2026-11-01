@@ -1,84 +1,92 @@
-// The project view's arithmetic (kept apart, so it is tested): the board's columns, which tasks are
-// late, and where each task's bar sits on the timeline.
+// What the screens share about a task: its shape as the API sends it, who works on it, and when it
+// is late. Kept apart from the screens so it is tested without a browser.
 
 export interface Task {
   id: string;
+  /** The version the card was loaded at: a change sends it back, so a stale edit is refused. */
+  version?: number;
   number?: string | null;
   subject?: string | null;
+  project?: string | null;
   status?: string | null;
   priority?: string | null;
   exp_start_date?: string | null;
   exp_end_date?: string | null;
+  expected_hours?: string | number | null;
+  actual_hours?: string | number | null;
   progress?: string | number | null;
   is_milestone?: boolean | null;
   parent_task?: string | null;
-  assigned_to?: { user?: string | null }[] | null;
+  /** Manual order within a status (a decimal, so a card can land between two others). */
+  rank?: string | number | null;
+  assigned_to?: { id?: string; user?: string | null }[] | null;
+  depends_on?: { id?: string; task?: string | null }[] | null;
+  _titles?: Record<string, string>;
 }
 
-/** The board's columns, in order; Overdue shows only when a task is in it, Cancelled never. */
-export const COLUMNS = ["Open", "Working", "Overdue", "Pending Review", "Completed"];
+/** The board's columns in order; Overdue shows only while a task is in it, Cancelled never. */
+export const COLUMNS = ["Open", "Overdue", "Working", "Pending Review", "Completed"];
 export const DONE = ["Completed", "Cancelled"];
+/** The statuses a person can choose: Overdue follows the dates, and cancelling asks first. */
+export const CHOOSABLE = ["Open", "Working", "Pending Review", "Completed"];
+/** Most pressing first. */
+export const PRIORITIES = ["Urgent", "High", "Medium", "Low"];
 
-export function board(tasks: Task[]): { status: string; tasks: Task[] }[] {
-  return COLUMNS.map((status) => ({ status, tasks: tasks.filter((t) => (t.status ?? "Open") === status) })).filter((c) => c.status !== "Overdue" || c.tasks.length);
-}
+export const num = (v: string | number | null | undefined): number => {
+  const n = typeof v === "number" ? v : Number(v ?? 0);
+  return Number.isFinite(n) ? n : 0;
+};
+
+export const statusOf = (t: Task): string => t.status ?? "Open";
+export const priorityOf = (t: Task): string => t.priority ?? "Medium";
 
 /** Late: due before today and not done (ISO dates compare as text). */
 export function late(t: Task, today: string): boolean {
-  return !!t.exp_end_date && t.exp_end_date < today && !DONE.includes(t.status ?? "");
+  return !!t.exp_end_date && t.exp_end_date < today && !DONE.includes(statusOf(t));
 }
 
 export function assignees(t: Task): string[] {
   return (t.assigned_to ?? []).map((a) => a.user ?? "").filter(Boolean);
 }
 
-const DAY = 86_400_000;
-const ms = (d: string) => Date.parse(`${d}T00:00:00Z`);
-const iso = (t: number) => new Date(t).toISOString().slice(0, 10);
-
-export interface Bar {
-  task: Task;
-  /** Where it starts and how long it is, as fractions of the whole span (0..1). */
-  left: number;
-  width: number;
+/** The tasks this one waits for, ids only. */
+export function waitsFor(t: Task): string[] {
+  return (t.depends_on ?? []).map((d) => d.task ?? "").filter(Boolean);
 }
 
-export interface Timeline {
-  start: string;
-  end: string;
-  days: number;
-  bars: Bar[];
-  /** Tasks with no dates to place. */
-  unscheduled: Task[];
-  /** First days of the months within the span, with their place. */
-  months: { label: string; left: number }[];
+/** "AR" for asha.rao@acme.test: a person's mark where only their address is known. */
+export function mark(email?: string | null): string {
+  const name = (email ?? "").split("@")[0].split(/[._-]+/).filter(Boolean);
+  return (name.length > 1 ? name[0][0] + name[1][0] : (name[0] ?? "?").slice(0, 2)).toUpperCase();
 }
 
-/** Bars for the tasks that have dates (a task with only one date is a day long; a milestone sits
- *  on its end date), over the span of the tasks and the project's own dates. */
-export function timeline(tasks: Task[], projectStart?: string | null, projectEnd?: string | null): Timeline {
-  const dated = tasks.filter((t) => t.exp_start_date || t.exp_end_date);
-  const unscheduled = tasks.filter((t) => !t.exp_start_date && !t.exp_end_date);
-  const spans = dated.map((t) => {
-    const end = t.exp_end_date ?? t.exp_start_date!;
-    const start = t.is_milestone ? end : (t.exp_start_date ?? end);
-    return { task: t, from: ms(start), to: ms(end < start ? start : end) };
-  });
-  const edges = [...spans.flatMap((s) => [s.from, s.to]), ...[projectStart, projectEnd].filter((d): d is string => !!d).map(ms)];
-  if (!edges.length) return { start: "", end: "", days: 0, bars: [], unscheduled, months: [] };
-  const first = Math.min(...edges);
-  const last = Math.max(...edges);
-  const days = Math.round((last - first) / DAY) + 1;
-  const bars = spans
-    .sort((a, b) => a.from - b.from || a.to - b.to)
-    .map((s) => ({ task: s.task, left: (s.from - first) / DAY / days, width: (Math.round((s.to - s.from) / DAY) + 1) / days }));
-  // Each month within the span, from where it starts in it (the first may start before the span).
-  const months: { label: string; left: number }[] = [];
-  const f = new Date(first);
-  for (let t = Date.UTC(f.getUTCFullYear(), f.getUTCMonth(), 1); t <= last; ) {
-    const m = new Date(t);
-    months.push({ label: m.toLocaleString(undefined, { month: "short", year: "numeric", timeZone: "UTC" }), left: Math.max(0, (t - first) / DAY / days) });
-    t = Date.UTC(m.getUTCFullYear(), m.getUTCMonth() + 1, 1);
+/** Hours still to go on a task: the estimate less what was logged, never below nothing. */
+export function hoursLeft(t: Task): number {
+  return Math.max(0, num(t.expected_hours) - num(t.actual_hours));
+}
+
+/** Sub-tasks done of all, for each parent that has any (cancelled ones do not count). */
+export function subtaskCounts(tasks: Task[]): Map<string, { done: number; total: number }> {
+  const out = new Map<string, { done: number; total: number }>();
+  for (const t of tasks) {
+    if (!t.parent_task || t.status === "Cancelled") continue;
+    const c = out.get(t.parent_task) ?? { done: 0, total: 0 };
+    c.total++;
+    if (t.status === "Completed") c.done++;
+    out.set(t.parent_task, c);
   }
-  return { start: iso(first), end: iso(last), days, bars, unscheduled, months };
+  return out;
+}
+
+/** The tasks a task waits for that are not completed yet: what keeps it from starting. The server
+ *  holds the same rule (only a completed task releases those after it). */
+export function blockers(t: Task, byId: Map<string, Task>): Task[] {
+  return waitsFor(t)
+    .map((id) => byId.get(id))
+    .filter((p): p is Task => !!p && p.status !== "Completed");
+}
+
+/** Replaces the fields of one task in a list, leaving the rest. */
+export function patched(tasks: Task[], id: string, change: Partial<Task>): Task[] {
+  return tasks.map((t) => (t.id === id ? { ...t, ...change } : t));
 }

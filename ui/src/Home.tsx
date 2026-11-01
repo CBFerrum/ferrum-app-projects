@@ -1,50 +1,36 @@
-// Projects' home: the open projects with how far along they are, and the signed-in person's open
-// tasks, the soonest due first. A project opens in the project view (./Project.tsx).
+// Projects' home: the open projects with how far along they are and what is late in them, and the
+// signed-in person's soonest tasks (all of them are on My work). A project opens in the project view.
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { Link } from "react-router";
-import { api } from "@ferrum/client";
-import { Badge, Button, EmptyState, ErrorState, Spinner, statusTone, useLiveEntity, useShellTitle } from "@ferrum/kit";
+import { todayIso } from "@ferrum/client";
+import { Badge, EmptyState, ErrorState, Spinner, statusTone, useLiveEntity, useShellTitle } from "@ferrum/kit";
 import { can, useMe, useMetaIndex } from "@ferrum/records";
+import { Due, PriorityFlag, Progress } from "./bits";
+import { list, type Project } from "./data";
+import { Nav } from "./Nav";
 import { DONE, late, type Task } from "./plan";
 
-export interface Project {
-  id: string;
-  project_name?: string | null;
-  status?: string | null;
-  start_date?: string | null;
-  end_date?: string | null;
-  customer?: string | null;
-  proj_priority?: string | null;
-  proj_project_manager?: string | null;
-  proj_percent_complete?: string | number | null;
-  _titles?: Record<string, string>;
-}
-
-export const rows = <T,>(entity: string, query: Record<string, string | number>, signal?: AbortSignal) =>
-  api.get<{ rows: T[]; total?: number }>(`/api/v1/${entity}`, { titles: "true", ...query }, signal);
-export const today = () => new Date().toISOString().slice(0, 10);
-
-export function Progress({ value }: { value: string | number | null | undefined }) {
-  const pct = Math.max(0, Math.min(100, Math.round(Number(value ?? 0))));
-  return (
-    <span className="pj-progress" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Complete">
-      <span style={{ width: `${pct}%` }} />
-      <small>{pct}%</small>
-    </span>
-  );
-}
-
 function Projects() {
-  const q = useQuery({
+  const projects = useQuery({
     queryKey: ["projects", "open"],
     queryFn: ({ signal }) =>
-      rows<Project>("Project", { filters: JSON.stringify([["status", "=", "Open"]]), sort: "end_date asc", limit: 100, fields: "project_name,status,start_date,end_date,customer,proj_priority,proj_project_manager,proj_percent_complete" }, signal),
+      list<Project>("Project", { titles: true, filters: JSON.stringify([["status", "in", ["Open", "On Hold"]]]), sort: "end_date asc", limit: 100, fields: "project_name,status,start_date,end_date,customer,proj_priority,proj_project_manager,proj_percent_complete" }, signal),
   });
-  if (q.error) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
-  if (!q.data) return <Spinner label="Loading projects" />;
-  if (!q.data.rows.length) {
+  // Late tasks by project, one request for all of them.
+  const overdue = useQuery({
+    queryKey: ["projects", "overdue"],
+    queryFn: ({ signal }) => list<Task>("Task", { filters: JSON.stringify([["status", "=", "Overdue"]]), fields: "project", limit: 500 }, signal),
+  });
+  const lateBy = useMemo(() => {
+    const n = new Map<string, number>();
+    for (const t of overdue.data?.rows ?? []) if (t.project) n.set(t.project, (n.get(t.project) ?? 0) + 1);
+    return n;
+  }, [overdue.data]);
+  if (projects.error) return <ErrorState error={projects.error} onRetry={() => void projects.refetch()} title="The projects cannot be shown" />;
+  if (!projects.data) return <Spinner label="Loading projects" />;
+  if (!projects.data.rows.length) {
     return (
       <EmptyState title="No open projects" icon="board">
         <Link to="e/Project/new">Start a project</Link>
@@ -53,12 +39,19 @@ function Projects() {
   }
   return (
     <ul className="pj-projects" data-ferrum-nocard>
-      {q.data.rows.map((p) => (
+      {projects.data.rows.map((p) => (
         <li key={p.id}>
           <Link className="pj-project" to={`p/${p.id}`}>
-            <span className="pj-project-name">{p.project_name}</span>
+            <span className="pj-project-top">
+              <span className="pj-project-name">{p.project_name}</span>
+              {p.status === "On Hold" && <Badge tone="amber">On hold</Badge>}
+              <PriorityFlag priority={p.proj_priority} />
+            </span>
             <span className="faint">{[p._titles?.customer, p.end_date && `due ${p.end_date}`, p.proj_project_manager].filter(Boolean).join(" · ")}</span>
-            <Progress value={p.proj_percent_complete} />
+            <span className="pj-project-foot">
+              <Progress value={p.proj_percent_complete} />
+              {(lateBy.get(p.id) ?? 0) > 0 && <span className="pj-late">{lateBy.get(p.id)} late</span>}
+            </span>
           </Link>
         </li>
       ))}
@@ -70,25 +63,29 @@ function MyTasks({ me }: { me: string }) {
   const q = useQuery({
     queryKey: ["projects", "my-tasks", me],
     queryFn: ({ signal }) =>
-      rows<Task & { project?: string; _titles?: Record<string, string> }>(
-        "Task",
-        { filters: JSON.stringify([["assigned_to.user", "=", me], ["status", "not in", DONE]]), sort: "exp_end_date asc", limit: 50, fields: "subject,status,priority,exp_end_date,project" },
-        signal,
-      ).then((r) => r.rows),
+      list<Task>("Task", { titles: true, filters: JSON.stringify([["assigned_to.user", "=", me], ["status", "not in", DONE]]), sort: "exp_end_date asc", limit: 8, count: true, fields: "number,subject,status,priority,exp_end_date,project" }, signal),
   });
   if (q.error) return <p className="muted">Your tasks cannot be shown.</p>;
   if (!q.data) return <Spinner small label="Loading your tasks" />;
-  if (!q.data.length) return <p className="muted">Nothing open on your plate.</p>;
-  const now = today();
+  if (!q.data.rows.length) return <p className="muted">Nothing open on your plate.</p>;
+  const now = todayIso();
   return (
-    <ul className="stack" data-ferrum-nocard>
-      {q.data.map((t) => (
-        <li key={t.id}>
-          <Link to={`e/Task/${t.id}`}>{t.subject}</Link> <span className="faint">{t._titles?.project}</span> <Badge tone={statusTone(t.status)}>{t.status}</Badge>{" "}
-          {t.exp_end_date && <span className={late(t, now) ? "pj-late" : "faint"}>due {t.exp_end_date}</span>}
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="pj-mine" data-ferrum-nocard>
+        {q.data.rows.map((t) => (
+          <li key={t.id}>
+            <Link to={`t/${t.id}`}>{t.subject}</Link>
+            <span className="faint pj-mine-project">{t._titles?.project}</span>
+            <PriorityFlag priority={t.priority} />
+            <Badge tone={statusTone(t.status)}>{t.status}</Badge>
+            <Due day={t.exp_end_date} late={late(t, now)} />
+          </li>
+        ))}
+      </ul>
+      <p>
+        <Link to="my">{(q.data.total ?? 0) > q.data.rows.length ? `All ${q.data.total} of your tasks` : "Everything on your plate"}</Link>
+      </p>
+    </>
   );
 }
 
@@ -109,27 +106,20 @@ export function ProjectsHome() {
     );
   }
   return (
-    <div className="stack">
-      <div className="page-head">
-        <div>
-          <h1 className="page-title">Projects</h1>
-          <p className="page-sub">Open projects and how far along they are, and your tasks.</p>
-        </div>
+    <div className="pj-page">
+      <header className="pj-head-row">
+        <Nav />
         {project && can(project.permissions, "create") && (
-          <div className="page-actions">
-            <Link to="e/Project/new">
-              <Button variant="primary" icon="plus">
-                New project
-              </Button>
-            </Link>
-          </div>
+          <Link className="btn btn-primary btn-md" to="e/Project/new">
+            New project
+          </Link>
         )}
-      </div>
+      </header>
       <Projects />
       {me && (
         <section className="card" aria-labelledby="pj-mine">
           <div className="card-head">
-            <h2 id="pj-mine">Your tasks</h2>
+            <h2 id="pj-mine">Your soonest tasks</h2>
           </div>
           <div className="card-body">
             <MyTasks me={me} />
