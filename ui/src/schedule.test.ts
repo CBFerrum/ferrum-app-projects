@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { addDays, dayNumber, diffDays, weekdaysIn, weekStart } from "./days";
 import type { Task } from "./plan";
-import { arrow, cascade, critical, dayAt, dayUnder, dragged, firstDates, header, links, outline, PX, spanOf, viewOf, weekends, writes } from "./schedule";
+import { arrow, cascade, critical, dayAt, dayUnder, dragged, firstDates, header, length, links, outline, PX, spanOf, viewOf, weekends, writes } from "./schedule";
 
 const t = (id: string, start: string | null, end: string | null, extra: Partial<Task> = {}): Task => ({ id, number: id, status: "Open", exp_start_date: start, exp_end_date: end, ...extra });
 const after = (...ids: string[]) => ids.map((task) => ({ task }));
@@ -281,3 +281,43 @@ describe("the critical path", () => {
 });
 
 void after;
+
+describe("what moving a task moves, over many schedules", () => {
+  // A small deterministic generator, so a failure can be run again.
+  const rng = (seed: number) => () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+
+  it("always leaves every link whole, lengths as they were, and tasks without links alone", () => {
+    for (let seed = 1; seed <= 300; seed++) {
+      const rand = rng(seed);
+      const pick = (n: number) => Math.floor(rand() * n);
+      const n = 3 + pick(9);
+      // Links only run from an earlier task to a later one, so there is no cycle; each task starts after what it waits for.
+      const tasks: Task[] = [];
+      for (let i = 0; i < n; i++) {
+        const preds = Array.from({ length: i }, (_, p) => p).filter(() => rand() < 0.3);
+        const earliest = Math.max(0, ...preds.map((p) => diffDays("2026-11-01", tasks[p].exp_end_date as string) + 1));
+        const start = earliest + pick(4);
+        const end = start + pick(5);
+        tasks.push(t(`t${i}`, addDays("2026-11-01", start), addDays("2026-11-01", end), { depends_on: preds.map((p) => ({ task: `t${p}` })) }));
+      }
+      const dragTask = tasks[pick(n)];
+      const mode = (["move", "start", "end"] as const)[pick(3)];
+      const edit = dragged(dragTask, mode, pick(21) - 10);
+      if (!edit) continue;
+      const plan = cascade(tasks, [edit]);
+
+      const after = new Map(tasks.map((x) => [x.id, spanOf(x) as { start: string; end: string }]));
+      for (const c of plan.changes) after.set(c.id, c.after);
+      for (const x of tasks) {
+        for (const p of x.depends_on ?? []) {
+          const [a, b] = [after.get(p.task as string) as { end: string }, after.get(x.id) as { start: string }];
+          expect(b.start > a.end, `seed ${seed}: ${p.task} → ${x.id} after dragging ${dragTask.id} (${mode})`).toBe(true);
+        }
+      }
+      for (const c of plan.changes.filter((x) => x.kind !== "dragged")) {
+        expect(length(c.after), `seed ${seed}: ${c.id} keeps its length`).toBe(length(c.before as { start: string; end: string }));
+      }
+      expect(plan.changes.filter((c) => c.kind === "dragged").map((c) => c.id).every((id) => id === dragTask.id)).toBe(true);
+    }
+  });
+});
