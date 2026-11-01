@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 
+- Risks, issues, change requests, resource allocations and portfolios, with workload and portfolio reports. Tasks can repeat.
 - Personal data: a person's request now exports their timesheets and activity costs, and says why they are kept: they are billing and costing records.
 
 ## 0.4.1
