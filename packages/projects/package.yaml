@@ -72,3 +72,5 @@ roles:
 personal_data:
   - {entity: Timesheet, match: user, retain: "Billing records"}
   - {entity: ActivityCost, match: user, retain: "Costing records"}
+handover:
+  - {entity: Task, field: assigned_to.user, where: {status: [Open, Working, Pending Review, Overdue]}}
