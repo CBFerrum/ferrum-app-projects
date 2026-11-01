@@ -98,7 +98,8 @@ function Week({ who, today }: { who: string; today: string }) {
         <h2 id="pj-week">This week</h2>
       </div>
       <div className="card-body stack">
-        {!planned.error && (
+        {(planned.isLoading || logged.isLoading) && <Spinner small label="Loading the week" />}
+        {!planned.error && !planned.isLoading && (
           <div className="pj-meter">
             <span>Planned</span>
             <span className="pj-meter-bar" role="img" aria-label={`${hoursText(booked)} planned of ${CAPACITY} hours`}>
@@ -107,7 +108,7 @@ function Week({ who, today }: { who: string; today: string }) {
             <strong>{hoursText(booked)}</strong>
           </div>
         )}
-        {!logged.error && (
+        {!logged.error && !logged.isLoading && (
           <div className="pj-meter">
             <span>Logged</span>
             <span className="pj-meter-bar" role="img" aria-label={`${hoursText(logged.data ?? 0)} logged of ${CAPACITY} hours`}>
