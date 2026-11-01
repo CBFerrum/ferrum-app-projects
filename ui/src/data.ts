@@ -112,7 +112,10 @@ export function changeTask(qc: QueryClient, project: string, task: Task, patch: 
     // The latest version known: an earlier change to this task may have raised it.
     const current = qc.getQueryData<TaskSet>(key)?.rows.find((t) => t.id === task.id);
     try {
-      apply(known(await api.patch<Record<string, unknown>>(docPath("Task", task.id), patch, { ifMatch: current?.version ?? task.version })));
+      const saved = await api.patch<Record<string, unknown>>(docPath("Task", task.id), patch, { ifMatch: current?.version ?? task.version });
+      apply(known(saved));
+      // The server follows the dates: a late task asked to be Open comes back Overdue. Say so.
+      if (!quiet && patch.status === "Open" && saved.status === "Overdue") toast("It is past its expected end date, so it stays Overdue until that date moves.", "info");
       // The task's panel and page read the record itself: it has a new version and maybe new values.
       void qc.invalidateQueries({ queryKey: ["peek", "Task", task.id] });
       void qc.invalidateQueries({ queryKey: ["projects", "task", task.id] });
