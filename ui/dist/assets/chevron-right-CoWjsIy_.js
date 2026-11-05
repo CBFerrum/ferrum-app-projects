@@ -1,1 +1,0 @@
-import{c as n}from"./index-BUymolHD.js";const o={name:"chevron-down",size:24,node:[["path",{d:"m6 9 6 6 6-6",key:"qrunsl"}]]};o.node;const a=n(o);const e={name:"chevron-right",size:24,node:[["path",{d:"m9 18 6-6-6-6",key:"mthhwq"}]]};e.node;const c=n(e);export{a as C,c as a};
