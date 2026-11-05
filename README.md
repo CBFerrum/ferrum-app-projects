@@ -266,6 +266,10 @@ CHANGELOG.md  what changed in each version
 
 | Version | Highlights |
 |---|---|
+| **0.6.2** | Rebuilt with Ferrum-Frontend daeadda: after an action runs, a record page shows what the action said it did rather than only that it is done. |
+| **0.6.1** | Rebuilt with Ferrum-Frontend 80ff179: a field's label names its control for assistive technology, and a record whose title is a link shows that record's title, … |
+| **0.6.0** | The board is worked by hand. Drag a card to another column or to another place in its own and it stays where you put it, for everyone; or move it from the … |
+| **0.5.0** | Risks, issues, change requests, resource allocations and portfolios, with workload and portfolio reports. Tasks can repeat. Personal data: a person's request … |
 | **0.4.1** | The interface starts faster: its first download holds the frame and the app's own pages, and lists, forms, reports and other apps' screens load … |
 | **0.4.0** | Home's My work lists your open tasks (`/api/app/projects/work`, Ferrum docs/plan/apps-ui.md §12.8), due on their expected end, High and Urgent … |
 | **0.3.2** | Rebuilt with Ferrum-Frontend a8d4dda: under the platform's bar the records frame no longer shows a second bell (the bar has notifications). |
