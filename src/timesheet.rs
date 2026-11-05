@@ -153,9 +153,11 @@ async fn derive(hc: &mut HookCtx<'_>, doc: &mut Doc) -> Result<()> {
         set(r, "is_billable", billable);
         if billable {
             // Billing hours follow the hours, and the rate follows the activity, until the user
-            // changes them (the client-side rule of other ERPs, enforced on the server).
+            // changes them (the client-side rule of other ERPs, enforced on the server). Zero is
+            // not a change: a page's preview fills both with 0 before the row has its activity
+            // and times, and sends them back; billing none of the time is unticking Billable.
             let old = s(r, "id").and_then(|i| old_rows.get(i));
-            let unset = |r: &Doc, f: &str| r.get(f).is_none_or(Value::is_null);
+            let unset = |r: &Doc, f: &str| r.get(f).is_none_or(Value::is_null) || d(r, f).is_zero();
             let hours_followed = old.is_some_and(|o| r.get("billing_hours") == o.get("billing_hours") && d(o, "billing_hours") == d(o, "hours"));
             if unset(r, "billing_hours") || hours_followed {
                 set(r, "billing_hours", money(hours));

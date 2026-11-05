@@ -363,6 +363,15 @@ async fn scenario() {
     let ts1_id = uid(&ts1);
     let costed = pm.get("Timesheet", ts1_id).await;
     assert_eq!(dec(&costed["total_costing_amount"]), n("460"), "3 × 70 + 2.5 × 80 + 1 × 50");
+    // As a record page sends a row: its preview filled the billing hours and rate with 0 before
+    // the row had its activity and times. Zero is not a choice; the defaults still apply.
+    let paged = alice
+        .insert("Timesheet", json!({"company": cid, "time_logs": [
+            {"activity_type": dev, "task": design.to_string(), "from_time": at(d1, "18:00"), "to_time": at(d1, "19:30"), "billing_hours": "0", "billing_rate": "0"}]}))
+        .await;
+    let row = &paged["time_logs"][0];
+    assert_eq!((dec(&row["billing_hours"]), dec(&row["billing_rate"]), dec(&row["billing_amount"])), (n("1.5"), n("120"), n("180")), "{row}");
+    alice.k.delete(&alice.ctx, "Timesheet", uid(&paged), None).await.expect("discard the draft");
 
     let bad = |logs: Value| json!({"company": cid, "time_logs": logs});
     let r = alice
