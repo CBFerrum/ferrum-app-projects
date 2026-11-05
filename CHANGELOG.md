@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.4
+
+Time entered on a timesheet's page bills at the activity's rate. The page's preview filled a row's billing hours and billing rate with 0 before the row had its activity and times, and sent them back, so the server took them for a choice and every row billed nothing (found walking project to profit in a browser: three billable hours at 80 an hour came to 0.00). Zero now means the default, as it already did for activity costs: billing hours follow the hours, and the rate follows the person's activity cost or the activity type. To bill none of the time, untick Billable.
+
 ## 0.6.3
 
 Rebuilt with Ferrum-Frontend 00dea07: in a workflow state that names what may change, the other fields show read-only, and the fields the state needs show required.
