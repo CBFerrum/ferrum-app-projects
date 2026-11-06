@@ -1,5 +1,5 @@
 package: projects
-version: 0.2.0
+version: 0.2.1
 label: Projects
 description: Projects with task trees, dependencies and milestones, timesheets with costing and billing, activity rates, milestone and time-and-materials invoicing, and project profitability.
 # Projects and customers are shared records; invoicing through ERP comes with the projects_erp
@@ -28,7 +28,8 @@ overlays:
       - {op: add_field, field: {name: proj_billable_amount, type: currency, currency: currency, label: Billable Time, read_only: true, no_copy: true}}
       - {op: add_field, field: {name: proj_billed_amount, type: currency, currency: currency, label: Billed Amount, read_only: true, no_copy: true, description: Invoiced time and milestones}}
       - {op: add_rule, rule: {name: proj_contract_value, check: "doc.proj_billing_method != 'Fixed Price' || doc.proj_contract_value > 0.0", message: "A fixed price project needs a contract value"}}
-      - {op: add_action, action: {name: complete, label: Complete Project, permission: write, condition: "doc.status != 'Completed' && doc.status != 'Cancelled'", confirm: "Complete the project? With force, its open tasks are cancelled."}}
+      - {op: add_action, action: {name: complete, label: Complete Project, permission: write, condition: "doc.status != 'Completed' && doc.status != 'Cancelled'", confirm: "Complete the project? With force, its open tasks are cancelled.",
+                                  params: [{name: force, type: select, options: ["No", "Yes"], label: Cancel Its Open Tasks, description: "Yes cancels the open tasks first; No refuses while any is open"}]}}
       - {op: set_entity_property, property: list, value: {columns: [number, project_name, customer, status, proj_percent_complete], sort: created_at desc}}
 
 modules:

@@ -611,11 +611,23 @@ async fn scenario() {
     assert!(own["columns"].as_array().unwrap().iter().all(|c| c["name"] != json!("cost")) && own["rows"][0].get("cost").is_none(), "no costs for staff");
 
     // ───────────── completing the project ─────────────
+    // What the actions read, their pages ask for: invoicing up to a day, a timesheet's project,
+    // and whether completing cancels the open tasks.
+    let asks = |entity: &str, action: &str| -> Vec<String> {
+        let ent = pm.ctx.schema.entity(entity).unwrap();
+        ent.def.actions.iter().find(|a| a.name == action).unwrap().params.iter().map(|p| p.name.clone()).collect()
+    };
+    for (entity, action, names) in
+        [("Project", "make_sales_invoice", &["to_date"][..]), ("Timesheet", "make_sales_invoice", &["project", "to_date"]), ("Project", "complete", &["force"])]
+    {
+        assert_eq!(asks(entity, action), names, "{entity}.{action}");
+    }
     let r = pm.try_update("Project", web, json!({"status": "Completed"})).await;
     assert!(field_error(&r, "status", "still open"), "Build and Test are open: {r:?}");
     let r = pm.try_action("Project", web, "complete", json!({})).await;
     assert!(invalid(&r, "still open"), "completing needs force while tasks are open: {r:?}");
-    let out = pm.action("Project", web, "complete", json!({"force": true})).await;
+    // "Yes", as the page's choice sends it.
+    let out = pm.action("Project", web, "complete", json!({"force": "Yes"})).await;
     assert_eq!(out, json!({"status": "Completed", "cancelled_tasks": 2}));
     let done = pm.get("Project", web).await;
     assert_eq!(done["status"], json!("Completed"));

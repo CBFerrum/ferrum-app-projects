@@ -1,5 +1,5 @@
 package: projects_erp
-version: 0.1.0
+version: 0.1.1
 label: Projects and ERP
 description: Invoicing projects' time and milestones through ERP, with the service items and cost centers it uses.
 depends: [projects, selling]
@@ -10,7 +10,8 @@ overlays:
     ops:
       - {op: add_field, after: proj_contract_value, field: {name: proj_billing_item, type: link, to: Item, label: Milestone Billing Item, link_filters: {is_stock_item: false, disabled: false}, visible_if: "doc.proj_billing_method == 'Fixed Price'", description: Service item used on milestone invoices}}
       - {op: add_field, after: proj_billing_item, field: {name: proj_cost_center, type: link, to: CostCenter, label: Cost Center, link_filters: {is_group: false}, description: Used on this project's invoices}}
-      - {op: add_action, action: {name: make_sales_invoice, label: Create Sales Invoice, permission: read, condition: "doc.proj_billing_method == 'Time and Materials'", confirm: "Invoice the project's unbilled time (optionally only up to a date)?"}}
+      - {op: add_action, action: {name: make_sales_invoice, label: Create Sales Invoice, permission: read, condition: "doc.proj_billing_method == 'Time and Materials'", confirm: "Invoice the project's unbilled time (optionally only up to a date)?",
+                                  params: [{name: to_date, type: date, label: Up To, description: "Time ending on or before this day; all unbilled time when empty"}]}}
   - entity: SalesInvoiceItem
     ops:
       - {op: add_field, field: {name: proj_time_logs, type: json, label: Billed Time Logs, hidden: true, description: Timesheet log ids this line bills; marked billed when the invoice is submitted}}
@@ -26,7 +27,9 @@ overlays:
       - {op: add_field, column: true, after: billed, field: {name: sales_invoice, type: link, to: SalesInvoice, read_only: true, no_copy: true, on_delete: set_null}}
   - entity: Timesheet
     ops:
-      - {op: add_action, action: {name: make_sales_invoice, label: Create Sales Invoice, docstatus: [1], permission: read}}
+      - {op: add_action, action: {name: make_sales_invoice, label: Create Sales Invoice, docstatus: [1], permission: read,
+                                  params: [{name: project, type: link, to: Project, label: Project, description: "Needed when the timesheet has unbilled time on several projects"},
+                                           {name: to_date, type: date, label: Up To, description: "Time ending on or before this day; all unbilled time when empty"}]}}
 
 roles:
   - name: Projects Manager
