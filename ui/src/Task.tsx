@@ -6,7 +6,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useCallback, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
-import { api, ApiError, docPath, errorMessage, formatDate, newKey, todayIso } from "@ferrum/client";
+import { api, ApiError, docPath, errorMessage, formatDate, formatMoment, newKey, todayIso } from "@ferrum/client";
 import { Alert, Badge, Button, EmptyState, ErrorState, Icon, PageLoading, Spinner, statusTone, toast, useLiveEntity, useShellTitle } from "@ferrum/kit";
 import { can, CollabPanel, Composer, type EntityMeta, LinkInput, RecordFields, useEntityMeta, usePeople, useRecord } from "@ferrum/records";
 import { Avatars, Due, PriorityFlag, Progress } from "./bits";
@@ -17,7 +17,7 @@ import { People } from "./TaskPanel";
 
 const ICONS: Record<Item["kind"], string> = { created: "plus", status: "refresh", change: "edit", comment: "chat", time: "calendar" };
 
-const when = (at: string) => (at ? new Date(at).toLocaleString(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "");
+const when = (at: string) => formatMoment(at, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 
 /** The time logged on a task, line by line (timesheets keep their lines as child rows, which a list leaves out). */
 const timeOn = (task: string, signal: AbortSignal) => api.get<{ logs: TimeRow[] }>("/api/app/projects/time", { task }, signal).then((r) => r.logs);

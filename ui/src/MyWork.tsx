@@ -5,7 +5,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { Link } from "react-router";
-import { api, docPath, todayIso } from "@ferrum/client";
+import { api, docPath, formatMoment, todayIso } from "@ferrum/client";
 import { Badge, EmptyState, ErrorState, Icon, Spinner, toast, useLiveEntity, useShellTitle } from "@ferrum/kit";
 import { can, useMe, useMetaIndex, usePeople } from "@ferrum/records";
 import { Due, PriorityFlag } from "./bits";
@@ -206,7 +206,7 @@ export function MyWork() {
       <div className="page-head">
         <div>
           <h1 className="page-title">{name}</h1>
-          <p className="page-sub">{new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}</p>
+          <p className="page-sub">{formatMoment(new Date(), { weekday: "long", day: "numeric", month: "long" })}</p>
         </div>
       </div>
       {q.error ? (
