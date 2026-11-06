@@ -105,7 +105,8 @@ impl DocHook for ProjectHook {
 /// change goes through the task and project pipelines, so it is validated, audited and published.
 async fn complete(hc: &mut HookCtx<'_>, doc: &Doc, params: &Value) -> Result<Value> {
     let pid = id(doc, "id").ok_or_else(|| Error::internal("project without id"))?;
-    let force = matches!(params.get("force"), Some(Value::Bool(true))) || matches!(params.get("force").and_then(Value::as_str), Some("true" | "1"));
+    // true from the API, "Yes" from the page's choice.
+    let force = matches!(params.get("force"), Some(Value::Bool(true))) || matches!(params.get("force").and_then(Value::as_str), Some("true" | "1" | "Yes"));
     let open = open_tasks(hc.tx, hc.ctx.tenant, pid).await?;
     if !open.is_empty() && !force {
         return Err(Error::invalid(open_tasks_message(&open)));
