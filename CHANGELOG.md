@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.6
+
+Rebuilt with Ferrum-Frontend bb60115: a record page reads an empty number or check as the server does, so an action whose condition needs one shows, and a workspace's settings open as their one record.
+
 ## 0.6.5
 
 The actions ask for what they read: a project's Create Sales Invoice offered to invoice "optionally only up to a date" with no way to give one; a timesheet's needs its project when it has time on several; Complete Project's confirmation spoke of a force the page could not send. They now declare the day, the project and whether to cancel the open tasks (Yes/No; true from the API as before). Projects and ERP connector 0.1.1.
