@@ -3,7 +3,7 @@
 # are installed; ships with Projects.
 id: projects-erp
 name: Projects and ERP
-version: 0.1.0
+version: 0.1.1
 publisher: cbferrum
 summary: Invoices for projects' time and milestones
 categories: [connector, projects, finance]

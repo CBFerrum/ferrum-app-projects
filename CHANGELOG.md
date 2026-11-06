@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.5
+
+The actions ask for what they read: a project's Create Sales Invoice offered to invoice "optionally only up to a date" with no way to give one; a timesheet's needs its project when it has time on several; Complete Project's confirmation spoke of a force the page could not send. They now declare the day, the project and whether to cancel the open tasks (Yes/No; true from the API as before). Projects and ERP connector 0.1.1.
+
 ## 0.6.4
 
 Time entered on a timesheet's page bills at the activity's rate. The page's preview filled a row's billing hours and billing rate with 0 before the row had its activity and times, and sent them back, so the server took them for a choice and every row billed nothing (found walking project to profit in a browser: three billable hours at 80 an hour came to 0.00). Zero now means the default, as it already did for activity costs: billing hours follow the hours, and the rate follows the person's activity cost or the activity type. To bill none of the time, untick Billable.
