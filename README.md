@@ -266,6 +266,7 @@ CHANGELOG.md  what changed in each version
 
 | Version | Highlights |
 |---|---|
+| **0.6.7** | Times on the workspace's clock; rebuilt with Ferrum-Frontend 24c3951. |
 | **0.6.6** | Rebuilt with Ferrum-Frontend bb60115: empty numbers read as the server reads them; settings open as their record. |
 | **0.6.5** | Create Sales Invoice asks up to which day, Complete Project whether to cancel its open tasks. |
 | **0.6.4** | Time entered on a timesheet's page bills at the activity's rate: a row's billing hours and rate left at 0 take their defaults. |
