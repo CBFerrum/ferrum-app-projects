@@ -10,7 +10,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Diamond, Undo2 } from "lucide-react";
 import { type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
-import { todayIso, t as tr } from "@ferrum/client";
+import { todayIso, t as tr, isolate } from "@ferrum/client";
 import { Alert, Button, EmptyState, toast } from "@ferrum/kit";
 import { can, useMetaIndex } from "@ferrum/records";
 import { Keys } from "./bits";
@@ -21,7 +21,7 @@ import { arrow, cascade, critical, dayAt, dayUnder, dragged, firstDates, header,
 
 /** The height of a row, in pixels. */
 const ROW = 36;
-const ZOOM_NAMES: Record<Zoom, string> = { day: "Day", week: "Week", month: "Month", quarter: "Quarter" };
+const ZOOM_NAMES: Record<Zoom, string> = { get day() { return tr("Day"); }, get week() { return tr("Week"); }, get month() { return tr("Month"); }, get quarter() { return tr("Quarter"); } };
 
 /** A press on a bar, until it is let go. */
 interface Held {
@@ -330,7 +330,7 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
         <div className="segmented" role="group" aria-label={tr("Zoom")}>
           {ZOOMS.map((z) => (
             <button key={z} type="button" aria-pressed={z === zoom} onClick={() => zoomTo(z)}>
-              {ZOOM_NAMES[z]}
+              {isolate(ZOOM_NAMES[z])}
             </button>
           ))}
         </div>
@@ -360,16 +360,16 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
             ["Esc", "Let go of a bar, or cancel the move"],
           ]}
         />
-        <span className="faint pj-time-hint">{canWrite ? "Drag a bar to move it, its ends to resize it, the dot to link it. The arrow keys work too." : "Open a task to see it beside the timeline."}</span>
+        <span className="faint pj-time-hint">{canWrite ? tr("Drag a bar to move it, its ends to resize it, the dot to link it. The arrow keys work too.") : tr("Open a task to see it beside the timeline.")}</span>
       </div>
-      {closed && <Alert tone="info">{tr("This project is")} {project.status?.toLowerCase()}{tr(". Its tasks cannot be changed until it is reopened.")}</Alert>}
+      {closed && <Alert tone="info">{tr("This project is")} {isolate(project.status?.toLowerCase() ?? "")}{tr(". Its tasks cannot be changed until it is reopened.")}</Alert>}
       {tasks.total > tasks.rows.length && (
         <Alert tone="warning">
           {tr("The timeline shows the first {length} of {total} tasks.", { length: tasks.rows.length, total: tasks.total })} <Link to={`/e/Task?f.project=${project.id}`}>{tr("Open the list")}</Link> {tr("to see them all.")}
         </Alert>
       )}
       <p className="sr-only" role="status" aria-live="polite">
-        {note}
+        {isolate(note)}
       </p>
       <p className="sr-only" id="pj-time-help">
         {tr("Each bar is a task. Press Enter to open it. The left and right arrow keys move it by a day, with Shift by a week; with Alt they change when it ends. To make a task wait for another without dragging, open its page.")}
@@ -382,7 +382,7 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
               <div key={n} className="pj-scale-line">
                 {line.map((t) => (
                   <span key={t.at} style={{ left: t.at * view.px, width: t.span * view.px }}>
-                    {t.label}
+                    {isolate(t.label)}
                   </span>
                 ))}
               </div>
@@ -400,7 +400,7 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
                       type="button"
                       className="pj-fold"
                       aria-expanded={!folded.has(t.id)}
-                      aria-label={`${folded.has(t.id) ? "Show" : "Hide"} the ${r.kids} sub-tasks of ${t.subject}`}
+                      aria-label={tr("{value} the {kids} sub-tasks of {subject}", { value: folded.has(t.id) ? "Show" : "Hide", kids: r.kids, subject: String(t.subject) })}
                       onClick={() =>
                         setFolded((f) => {
                           const n = new Set(f);
@@ -416,7 +416,7 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
                   )}
                   <button type="button" className="pj-gl-title" onClick={() => onOpen(t.id)} title={`${t.number ?? ""} ${t.subject ?? ""}`.trim()}>
                     {t.is_milestone && <Diamond size={11} role="img" aria-label={tr("Milestone")} className="pj-milestone-mark" />}
-                    {t.subject}
+                    {isolate(t.subject ?? "")}
                   </button>
                   {!r.span && canWrite && (
                     <button type="button" className="link-btn pj-schedule" onClick={() => give(t, today)} title={tr("Give it dates, starting today")}>
@@ -435,7 +435,7 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
                     <span className="pj-fold" aria-hidden="true" />
                     <button type="button" className="pj-gl-title" onClick={() => onOpen(t.id)}>
                       {t.is_milestone && <Diamond size={11} role="img" aria-label={tr("Milestone")} className="pj-milestone-mark" />}
-                      {t.subject}
+                      {isolate(t.subject ?? "")}
                     </button>
                     {canWrite && (
                       <button type="button" className="link-btn pj-schedule" onClick={() => give(t, today)} title={tr("Give it dates, starting today")}>
@@ -494,8 +494,8 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
                       }}
                     >
                       <title>
-                        {byId.get(l.to)?.subject} {tr("waits for")} {byId.get(l.from)?.subject}
-                        {l.ok ? "" : ": its dates overlap"}
+                        {isolate(byId.get(l.to)?.subject ?? "")} {tr("waits for")} {isolate(byId.get(l.from)?.subject ?? "")}
+                        {l.ok ? "" : tr(": its dates overlap")}
                       </title>
                     </path>
                   </g>
@@ -555,7 +555,7 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
                   {editable && <span className="pj-grip pj-grip-end" data-grip="end" aria-hidden="true" />}
                   {editable && <span className="pj-dot" data-grip="link" aria-hidden="true" />}
                   <span className="pj-bar-text" data-out={wide < 90 || undefined}>
-                    {t.subject}
+                    {isolate(t.subject ?? "")}
                   </span>
                 </div>
               );
@@ -564,7 +564,7 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
             {menu && (
               <div className="pj-linkmenu card" style={{ left: Math.max(0, Math.min(menu.x, width - 230)), top: menu.y + 8 }} role="dialog" aria-label={tr("Link")}>
                 <p>
-                  <strong>{byId.get(menu.to)?.subject}</strong> {tr("waits for")} <strong>{byId.get(menu.from)?.subject}</strong>.
+                  <strong>{isolate(byId.get(menu.to)?.subject ?? "")}</strong> {tr("waits for")} <strong>{isolate(byId.get(menu.from)?.subject ?? "")}</strong>.
                 </p>
                 <div className="row">
                   {canWrite && (
@@ -585,18 +585,18 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
         <div className="pj-decide card" role="alertdialog" aria-label={tr("Confirm the move")} aria-describedby="pj-decide-text">
           <p id="pj-decide-text">
             {pending.days === 0 ? (
-              <>{tr("To keep the new link,")} {decide.others.length === 1 ? "1 task moves" : `${decide.others.length} tasks move`} later.</>
+              <>{tr("To keep the new link,")} {decide.others.length === 1 ? tr("1 task moves") : tr("{length} tasks move", { length: decide.others.length })} {tr("later.")}</>
             ) : (
               <>
-                {tr("Moving")} <strong>{decide.task.subject}</strong> {describeShift(pending)} {tr("also moves")} {decide.others.length === 1 ? "1 task" : `${decide.others.length} tasks`} {tr("linked to it:")} {decide.others.slice(0, 3).map((c) => byId.get(c.id)?.subject).join(", ")}
+                {tr("Moving")} <strong>{isolate(decide.task.subject ?? "")}</strong> {isolate(describeShift(pending))} {tr("also moves")} {decide.others.length === 1 ? tr("1 task") : tr("{length} tasks", { length: decide.others.length })} {tr("linked to it:")} {isolate(decide.others.slice(0, 3).map((c) => byId.get(c.id)?.subject).join(", "))}
                 {decide.others.length > 3 ? ", …" : ""}.
               </>
             )}
-            {plan.skipped.length > 0 && <span className="faint"> {plan.skipped.length === 1 ? "1 linked task without dates stays." : `${plan.skipped.length} linked tasks without dates stay.`}</span>}
+            {plan.skipped.length > 0 && <span className="faint"> {plan.skipped.length === 1 ? tr("1 linked task without dates stays.") : tr("{length} linked tasks without dates stay.", { length: plan.skipped.length })}</span>}
           </p>
           <div className="row">
             <Button variant="primary" size="sm" autoFocus onClick={() => commit(plan)}>
-              {tr("Move")} {plan.changes.length === 1 ? "it" : `${plan.changes.length} tasks`}
+              {tr("Move")} {plan.changes.length === 1 ? tr("it") : tr("{length} tasks", { length: plan.changes.length })}
             </Button>
             <Button size="sm" onClick={() => setPending(null)}>
               {tr("Cancel")}

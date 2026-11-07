@@ -10,7 +10,7 @@ import { can, CollabPanel, type Doc, type EntityMeta, RecordFields, useEntityMet
 import { Avatar } from "./bits";
 import { tasksKey, useNames } from "./data";
 import { CHOOSABLE, type Task, waitsFor } from "./plan";
-import { t as tr } from "@ferrum/client";
+import { t as tr, isolate } from "@ferrum/client";
 
 type Rows = { id?: string; user?: string | null }[];
 
@@ -28,9 +28,9 @@ export function People({ doc, canWrite, save }: { doc: Doc; canWrite: boolean; s
         {rows.map((r) => (
           <li key={r.id ?? r.user}>
             <Avatar email={r.user ?? ""} name={names(r.user)} />
-            <span>{names(r.user)}</span>
+            <span>{isolate(names(r.user))}</span>
             {canWrite && (
-              <button type="button" className="icon-btn icon-btn-sm" aria-label={`Take ${names(r.user)} off this task`} onClick={() => void save("assigned_to", rows.filter((x) => x !== r).map(keep))}>
+              <button type="button" className="icon-btn icon-btn-sm" aria-label={tr("Take {value} off this task", { value: names(r.user) })} onClick={() => void save("assigned_to", rows.filter((x) => x !== r).map(keep))}>
                 <Icon name="x" size={13} />
               </button>
             )}
@@ -64,13 +64,13 @@ function Related({ title, tasks, onOpen }: { title: string; tasks: Task[]; onOpe
   if (!tasks.length) return null;
   return (
     <section className="peek-section" aria-label={title}>
-      <h3>{title}</h3>
+      <h3>{isolate(title)}</h3>
       <ul className="pj-mini">
         {tasks.map((t) => (
           <li key={t.id}>
-            <Badge tone={statusTone(t.status)}>{t.status}</Badge>
+            <Badge tone={statusTone(t.status)}>{isolate(t.status ?? "")}</Badge>
             <button type="button" className="link-btn" onClick={() => onOpen(t.id)}>
-              {t.number} {t.subject}
+              {isolate(t.number ?? "")} {isolate(t.subject ?? "")}
             </button>
           </li>
         ))}
@@ -115,11 +115,11 @@ function Panel({ meta, id, project, tasks, onOpen, onClose }: { meta: EntityMeta
   const status = typeof doc?.status === "string" ? doc.status : "Open";
 
   return (
-    <aside className="peek pj-panel" aria-label={doc ? `${doc.number} ${doc.subject}` : "Task"} ref={root} tabIndex={-1} onKeyDown={onKeyDown}>
+    <aside className="peek pj-panel" aria-label={doc ? `${doc.number} ${doc.subject}` : tr("Task")} ref={root} tabIndex={-1} onKeyDown={onKeyDown}>
       <header className="peek-head">
         <div className="peek-title">
           <h2>{doc ? String(doc.subject ?? doc.number) : "…"}</h2>
-          {doc && <span className="faint pj-mono">{String(doc.number ?? "")}</span>}
+          {doc && <span className="faint pj-mono">{isolate(String(doc.number ?? ""))}</span>}
         </div>
         <Link className="icon-btn" to={`/t/${id}`} aria-label={tr("Open the task page")} title={tr("Open the task page")}>
           <Icon name="expand" size={15} />
@@ -132,7 +132,7 @@ function Panel({ meta, id, project, tasks, onOpen, onClose }: { meta: EntityMeta
         <div className="pj-steps" role="group" aria-label={tr("Status")}>
           {CHOOSABLE.map((s) => (
             <button key={s} type="button" aria-pressed={s === status || (status === "Overdue" && s === "Open")} onClick={() => s !== status && void save("status", s)}>
-              {s}
+              {isolate(s)}
             </button>
           ))}
         </div>
@@ -140,7 +140,7 @@ function Panel({ meta, id, project, tasks, onOpen, onClose }: { meta: EntityMeta
       <div className="peek-tabs" role="tablist">
         {(["details", "discussion"] as const).map((t) => (
           <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)}>
-            {t === "details" ? "Details" : "Discussion"}
+            {t === "details" ? tr("Details") : tr("Discussion")}
           </button>
         ))}
       </div>
@@ -155,7 +155,7 @@ function Panel({ meta, id, project, tasks, onOpen, onClose }: { meta: EntityMeta
           <>
             <People doc={doc} canWrite={writable} save={save} />
             <RecordFields meta={meta} doc={doc} save={save} />
-            <Related title={kids.length ? `Sub-tasks, ${kids.filter((k) => k.status === "Completed").length} of ${kids.length} done` : "Sub-tasks"} tasks={kids} onOpen={onOpen} />
+            <Related title={kids.length ? tr("Sub-tasks, {length} of {length2} done", { length: kids.filter((k) => k.status === "Completed").length, length2: kids.length }) : tr("Sub-tasks")} tasks={kids} onOpen={onOpen} />
             <Related title={tr("Waits for")} tasks={waits} onOpen={onOpen} />
             <Related title={tr("Others wait for this")} tasks={blocks} onOpen={onOpen} />
             <p className="pj-panel-foot">

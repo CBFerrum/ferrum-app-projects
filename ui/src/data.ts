@@ -5,7 +5,7 @@
 import { type QueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router";
-import { api, ApiError, docPath, errorMessage, newKey } from "@ferrum/client";
+import { api, ApiError, docPath, errorMessage, newKey, t as tr } from "@ferrum/client";
 import { toast } from "@ferrum/kit";
 import { usePeople } from "@ferrum/records";
 import { patched, type Task } from "./plan";
@@ -115,7 +115,7 @@ export function changeTask(qc: QueryClient, project: string, task: Task, patch: 
       const saved = await api.patch<Record<string, unknown>>(docPath("Task", task.id), patch, { ifMatch: current?.version ?? task.version });
       apply(known(saved));
       // The server follows the dates: a late task asked to be Open comes back Overdue. Say so.
-      if (!quiet && patch.status === "Open" && saved.status === "Overdue") toast("It is past its expected end date, so it stays Overdue until that date moves.", "info");
+      if (!quiet && patch.status === "Open" && saved.status === "Overdue") toast(tr("It is past its expected end date, so it stays Overdue until that date moves."), "info");
       // The task's panel and page read the record itself: it has a new version and maybe new values.
       void qc.invalidateQueries({ queryKey: ["peek", "Task", task.id] });
       void qc.invalidateQueries({ queryKey: ["projects", "task", task.id] });

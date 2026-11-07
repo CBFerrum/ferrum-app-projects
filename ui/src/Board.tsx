@@ -28,7 +28,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Plus } from "lucide-react";
 import { type CSSProperties, type FormEvent, type HTMLAttributes, type KeyboardEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
-import { todayIso, t as tr } from "@ferrum/client";
+import { todayIso, t as tr, isolate } from "@ferrum/client";
 import { Alert, Badge, Button, confirmDialog, EmptyState, statusTone, toast, useDebounced } from "@ferrum/kit";
 import { can, useMe, useMetaIndex } from "@ferrum/records";
 import { Avatar, Keys } from "./bits";
@@ -98,14 +98,14 @@ function Bar({ filters, lanes, order, people, parents, names, set, shown, total 
         <option value="none">{tr("Nobody")}</option>
         {people.map((p) => (
           <option key={p} value={p}>
-            {names(p)}
+            {isolate(names(p))}
           </option>
         ))}
       </select>
       <select className="select pj-select" aria-label={tr("Priority")} value={filters.priority} onChange={(e) => change({ priority: e.target.value })}>
         <option value="">{tr("Any priority")}</option>
         {PRIORITIES.map((p) => (
-          <option key={p}>{p}</option>
+          <option key={p}>{isolate(p)}</option>
         ))}
       </select>
       <select className="select pj-select" aria-label={tr("Due")} value={filters.due} onChange={(e) => change({ due: e.target.value as Filters["due"] })}>
@@ -150,10 +150,10 @@ function Bar({ filters, lanes, order, people, parents, names, set, shown, total 
         ]}
       />
       <p className="pj-tools-count faint" aria-live="polite">
-        {shown === total ? `${total} ${total === 1 ? "task" : "tasks"}` : `${shown} of ${total} tasks`}
+        {shown === total ? `${total} ${total === 1 ? "task" : "tasks"}` : tr("{shown} of {total} tasks", { shown, total })}
         {on > 0 && (
           <>
-            {" · "}
+            {isolate(" · ")}
             <button
               type="button"
               className="link-btn"
@@ -162,7 +162,7 @@ function Bar({ filters, lanes, order, people, parents, names, set, shown, total 
                 set(filterParams(NO_FILTERS));
               }}
             >
-              {tr("Clear")} {on === 1 ? "the filter" : "filters"}
+              {tr("Clear")} {on === 1 ? tr("the filter") : tr("filters")}
             </button>
           </>
         )}
@@ -190,7 +190,7 @@ function Adder({ status, onCreate, onClose }: { status: string; onCreate: (subje
       <input
         autoFocus
         className="input"
-        aria-label={`New task in ${status}`}
+        aria-label={tr("New task in {status}", { status })}
         placeholder={tr("Title, then Enter")}
         value={text}
         readOnly={busy}
@@ -231,7 +231,7 @@ function Cell({ id, status, keys, cards, over, sortNote, canDrag, render }: {
           })}
         </ul>
       </SortableContext>
-      {over && sortNote && <p className="pj-sort-note">{sortNote}</p>}
+      {over && sortNote && <p className="pj-sort-note">{isolate(sortNote)}</p>}
     </div>
   );
 }
@@ -373,7 +373,7 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
       void changeTask(qc, project.id, t, { assigned_to: mine ? rows : [...rows, { user: me }] });
     },
     onCancel: async (t) => {
-      const ok = await confirmDialog({ title: `Cancel “${t.subject ?? "this task"}”?`, message: "It leaves the board. Its record stays, and can be reopened from the task's page.", confirmLabel: "Cancel the task", cancelLabel: "Keep it", danger: true });
+      const ok = await confirmDialog({ title: tr("Cancel “{value}”?", { value: t.subject ?? "this task" }), message: tr("It leaves the board. Its record stays, and can be reopened from the task's page."), confirmLabel: tr("Cancel the task"), cancelLabel: tr("Keep it"), danger: true });
       if (ok) void changeTask(qc, project.id, t, { status: "Cancelled" });
     },
   };
@@ -468,26 +468,26 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
 
   const overlay = held ? cards.get(held) : undefined;
   const sortNote = order === "manual" ? null : `Sorted by ${order === "due" ? "due date" : "priority"}: a drop moves the card between columns only.`;
-  const laneName = (id: string) => (id === NOBODY ? "Nobody" : lanes === "priority" ? `${id} priority` : names(id));
+  const laneName = (id: string) => (id === NOBODY ? tr("Nobody") : lanes === "priority" ? tr("{id} priority", { id }) : names(id));
 
   return (
     <div className="pj-board-wrap">
       <Bar filters={filters} lanes={lanes} order={order} people={people} parents={parents} names={names} set={setQuery} shown={model.shown} total={model.total} />
-      {closed && <Alert tone="info">{tr("This project is")} {project.status?.toLowerCase()}{tr(". Its tasks cannot be changed until it is reopened.")}</Alert>}
+      {closed && <Alert tone="info">{tr("This project is")} {isolate(project.status?.toLowerCase() ?? "")}{tr(". Its tasks cannot be changed until it is reopened.")}</Alert>}
       {tasks.total > tasks.rows.length && (
         <Alert tone="warning">
           {tr("The board shows the first {TASK_LIMIT} of {total} tasks.", { TASK_LIMIT, total: tasks.total })} <Link to={`/e/Task?f.project=${project.id}`}>{tr("Open the list")}</Link> {tr("to see them all.")}
         </Alert>
       )}
       <p className="sr-only" role="status" aria-live="polite">
-        {note}
+        {isolate(note)}
       </p>
       <p className="sr-only" id="pj-board-help">
         {tr("Press Enter to open a task. Hold Shift and use the arrow keys to move it to another column or place. Use the arrow keys or J and K to go from card to card.")}
       </p>
       {!model.total && (
         <EmptyState title={tr("No tasks yet")} icon="board">
-          <p className="muted">{canCreate ? "Add the first one with the plus above a column." : "Nothing has been planned in this project."}</p>
+          <p className="muted">{canCreate ? tr("Add the first one with the plus above a column.") : tr("Nothing has been planned in this project.")}</p>
         </EmptyState>
       )}
       {model.total > 0 && !model.shown && (
@@ -509,10 +509,10 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
               return (
                 <div key={s} className="pj-head">
                   <div className="pj-head-line">
-                    <Badge tone={statusTone(s)}>{s}</Badge>
+                    <Badge tone={statusTone(s)}>{isolate(s)}</Badge>
                     <span className="faint">{n}</span>
                     {canCreate && s !== "Overdue" && (
-                      <button type="button" className="pj-head-add" aria-label={`Add a task to ${s}`} title={`Add a task to ${s}`} aria-expanded={adding === s} onClick={() => setAdding(adding === s ? null : s)}>
+                      <button type="button" className="pj-head-add" aria-label={tr("Add a task to {s}", { s })} title={tr("Add a task to {s}", { s })} aria-expanded={adding === s} onClick={() => setAdding(adding === s ? null : s)}>
                         <Plus size={15} aria-hidden="true" />
                       </button>
                     )}
@@ -526,7 +526,7 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
             const shown = lanes === "none" || !lane.id ? null : lane.id;
             const isFolded = shown !== null && folded.has(lane.id);
             return (
-              <section key={lane.id || "all"} className="pj-lane" aria-label={shown ? laneName(lane.id) : "All tasks"}>
+              <section key={lane.id || "all"} className="pj-lane" aria-label={shown ? laneName(lane.id) : tr("All tasks")}>
                 {shown !== null && (
                   <h3 className="pj-lane-head">
                     <button
@@ -542,7 +542,7 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
                     >
                       {isFolded ? <ChevronRight size={15} aria-hidden="true" /> : <ChevronDown size={15} aria-hidden="true" />}
                       {lanes === "assignee" && lane.id !== NOBODY && <Avatar email={lane.id} name={names(lane.id)} />}
-                      <span>{laneName(lane.id)}</span>
+                      <span>{isolate(laneName(lane.id))}</span>
                       <span className="faint">{lane.count}</span>
                     </button>
                   </h3>

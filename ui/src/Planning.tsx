@@ -6,7 +6,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, type KeyboardEvent, useCallback, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { api, ApiError, docPath, errorMessage, newKey, saveBlob, todayIso, t as tr } from "@ferrum/client";
+import { api, ApiError, docPath, errorMessage, newKey, saveBlob, todayIso, t as tr, isolate } from "@ferrum/client";
 import { Alert, Badge, Button, confirmDialog, Dialog, EmptyState, ErrorState, Field, Icon, Spinner, statusTone, Tabs, TabPanel, useLiveEntity, useShellTitle } from "@ferrum/kit";
 import { LinkInput, useMe, useMetaIndex, usePeople } from "@ferrum/records";
 import { Progress } from "./bits";
@@ -17,8 +17,8 @@ import { type Allocation, type Cell, grid, hoursIn, hoursText, type Level, type 
 
 const LEVELS: Record<Level, string> = { free: "Nothing planned", ok: "Up to 80 % of the week", busy: "80 to 100 %", over: "Over the week" };
 const TABS = [
-  { id: "capacity", label: "Capacity" },
-  { id: "portfolios", label: "Portfolios" },
+  { id: "capacity", get label() { return tr("Capacity"); } },
+  { id: "portfolios", get label() { return tr("Portfolios"); } },
 ];
 
 interface Report<R> {
@@ -51,7 +51,7 @@ function CompanyPick({ company }: { company: ReturnType<typeof useCompany> }) {
         {!company.id && <option value="">{tr("Choose a company")}</option>}
         {company.choices.map((c) => (
           <option key={c.id} value={c.id}>
-            {c.name}
+            {isolate(c.name)}
           </option>
         ))}
       </select>
@@ -100,7 +100,7 @@ function AllocationDialog({ draft, onClose, onSaved }: { draft: Draft; onClose: 
     }
   };
   const remove = async () => {
-    if (!form.id || !(await confirmDialog({ title: "Remove this allocation?", message: "The person is no longer planned for this time.", confirmLabel: "Remove it", danger: true }))) return;
+    if (!form.id || !(await confirmDialog({ title: tr("Remove this allocation?"), message: tr("The person is no longer planned for this time."), confirmLabel: tr("Remove it"), danger: true }))) return;
     try {
       await api.del(docPath("ResourceAllocation", form.id), { ifMatch: form.version });
       onSaved();
@@ -110,9 +110,9 @@ function AllocationDialog({ draft, onClose, onSaved }: { draft: Draft; onClose: 
     }
   };
   return (
-    <Dialog open onClose={onClose} title={form.id ? "Change the allocation" : "Plan someone onto a project"}>
+    <Dialog open onClose={onClose} title={form.id ? tr("Change the allocation") : tr("Plan someone onto a project")}>
       <form className="stack" onSubmit={(e) => void submit(e)}>
-        {failure && <Alert tone="error">{failure}</Alert>}
+        {failure && <Alert tone="error">{isolate(failure)}</Alert>}
         <Field label={tr("Person")} htmlFor="al-person" required error={errors.person}>
           <select id="al-person" className="select" required value={form.person} onChange={(e) => set({ person: e.target.value })}>
             <option value="">{tr("Choose someone")}</option>
@@ -170,11 +170,11 @@ function Drawer({ person, week, name, onClose, onEdit, onAdd }: { person: string
   const rows = (q.data ?? []).filter((a) => touches(a, week));
   const total = rows.reduce((n, a) => n + hoursIn(a, week, weekEnd(week)), 0);
   return (
-    <aside className="peek pj-drawer" aria-label={`${name}, week of ${weekLabel(week)}`} onKeyDown={(e) => e.key === "Escape" && onClose()}>
+    <aside className="peek pj-drawer" aria-label={tr("{name}, week of {week}", { name, week: weekLabel(week) })} onKeyDown={(e) => e.key === "Escape" && onClose()}>
       <header className="peek-head">
         <div className="peek-title">
-          <h2>{name}</h2>
-          <span className="faint">{weekLabel(week)}</span>
+          <h2>{isolate(name)}</h2>
+          <span className="faint">{isolate(weekLabel(week))}</span>
         </div>
         <button type="button" className="icon-btn" aria-label={tr("Close")} title={tr("Close (Esc)")} onClick={onClose}>
           <Icon name="x" size={15} />
@@ -188,20 +188,20 @@ function Drawer({ person, week, name, onClose, onEdit, onAdd }: { person: string
         ) : (
           <>
             <p className="pj-hours">
-              <strong>{hoursText(total)}</strong> <span className="faint">{tr("planned this week")}</span>
+              <strong>{isolate(hoursText(total))}</strong> <span className="faint">{tr("planned this week")}</span>
             </p>
-            {!rows.length && <p className="muted">{tr("Nothing is planned for")} {name.split(" ")[0]} {tr("this week.")}</p>}
+            {!rows.length && <p className="muted">{tr("Nothing is planned for")} {isolate(name.split(" ")[0])} {tr("this week.")}</p>}
             <ul className="pj-lines">
               {rows.map((a) => (
                 <li key={a.id}>
                   <span className="pj-line-title">
-                    {a._titles?.project ?? "Project"}
-                    {a.task && <span className="faint"> · {a._titles?.task ?? "Task"}</span>}
+                    {a._titles?.project ?? tr("Project")}
+                    {a.task && <span className="faint"> · {a._titles?.task ?? tr("Task")}</span>}
                     <span className="faint pj-line-sub">
-                      {a.from_date} – {a.to_date} · {hoursText(Number(a.hours_per_day))} {tr("a day ·")} {hoursText(hoursIn(a, week, weekEnd(week)))} {tr("this week")}
+                      {isolate(a.from_date)} – {isolate(a.to_date)} · {isolate(hoursText(Number(a.hours_per_day)))} {tr("a day ·")} {isolate(hoursText(hoursIn(a, week, weekEnd(week))))} {tr("this week")}
                     </span>
                   </span>
-                  <Button size="sm" onClick={() => onEdit(a)} aria-label={`Change the allocation to ${a._titles?.project ?? "the project"}`}>
+                  <Button size="sm" onClick={() => onEdit(a)} aria-label={tr("Change the allocation to {value}", { value: a._titles?.project ?? "the project" })}>
                     {tr("Change")}
                   </Button>
                 </li>
@@ -211,7 +211,7 @@ function Drawer({ person, week, name, onClose, onEdit, onAdd }: { person: string
         )}
         <p>
           <Button variant="primary" icon="plus" onClick={onAdd}>
-            {tr("Plan")} {name.split(" ")[0]} {tr("onto a project")}
+            {tr("Plan")} {isolate(name.split(" ")[0])} {tr("onto a project")}
           </Button>
         </p>
       </div>
@@ -243,15 +243,15 @@ function Heat({ weeks, people, totals, nameOf, selected, onOpen }: { weeks: stri
           {tr("Person")}
         </span>
         {weeks.map((w) => (
-          <span key={w} role="columnheader" className="pj-heat-week" title={`Week of ${weekLabel(w)}`}>
-            {weekLabel(w)}
+          <span key={w} role="columnheader" className="pj-heat-week" title={tr("Week of {w}", { w: weekLabel(w) })}>
+            {isolate(weekLabel(w))}
           </span>
         ))}
       </div>
       {people.map((p, r) => (
         <div key={p.email} role="row" className="pj-heat-row">
           <span role="rowheader" className="pj-heat-who" title={p.email}>
-            {nameOf(p.email)}
+            {isolate(nameOf(p.email))}
           </span>
           {p.cells.map((c, i) => (
             <button
@@ -264,7 +264,7 @@ function Heat({ weeks, people, totals, nameOf, selected, onOpen }: { weeks: stri
               data-c={i}
               data-selected={(selected?.person === p.email && selected.week === c.week) || undefined}
               tabIndex={cur[0] === r && cur[1] === i ? 0 : -1}
-              aria-label={`${nameOf(p.email)}, week of ${weekLabel(c.week)}: ${c.hours ? `${hoursText(c.hours)} of ${c.capacity}, ${percent(c)} per cent` : "nothing planned"}. ${LEVELS[c.level]}.`}
+              aria-label={tr("{value}, week of {value2}: {value3}. {value4}.", { value: nameOf(p.email), value2: weekLabel(c.week), value3: c.hours ? `${hoursText(c.hours)} of ${c.capacity}, ${percent(c)} per cent` : "nothing planned", value4: LEVELS[c.level] })}
               onClick={() => onOpen(p.email, c.week)}
               onFocus={() => setCur([r, i])}
             >
@@ -279,7 +279,7 @@ function Heat({ weeks, people, totals, nameOf, selected, onOpen }: { weeks: stri
           {tr("Team")}
         </span>
         {totals.map((c) => (
-          <span key={c.week} role="gridcell" className="pj-heat-cell" data-level={c.level} title={`${hoursText(c.hours)} of ${hoursText(c.capacity)}`}>
+          <span key={c.week} role="gridcell" className="pj-heat-cell" data-level={c.level} title={tr("{value} of {value2}", { value: hoursText(c.hours), value2: hoursText(c.capacity) })}>
             {c.hours > 0 ? hoursText(c.hours).replace(" h", "") : ""}
             {c.hours > 0 && <small>{percent(c)}%</small>}
           </span>
@@ -330,7 +330,7 @@ function Capacity({ company }: { company: ReturnType<typeof useCompany> }) {
           <div className="segmented" role="group" aria-label={tr("How many weeks")}>
             {[8, 12].map((n) => (
               <button key={n} type="button" aria-pressed={n === count} onClick={() => setQuery({ weeks: n === 8 ? null : String(n) })}>
-                {n} weeks
+                {tr("{n} weeks", { n })}
               </button>
             ))}
           </div>
@@ -357,13 +357,13 @@ function Capacity({ company }: { company: ReturnType<typeof useCompany> }) {
         ) : (
           <>
             <p className="faint" aria-live="polite">
-              {over > 0 ? <strong className="pj-late">{over === 1 ? "1 person is" : `${over} people are`} {tr("booked beyond a week.")}</strong> : "Nobody is booked beyond a week."} {tr("A week is 40 hours; weekends are not counted.")}
+              {over > 0 ? <strong className="pj-late">{over === 1 ? tr("1 person is") : tr("{over} people are", { over })} {tr("booked beyond a week.")}</strong> : tr("Nobody is booked beyond a week.")} {tr("A week is 40 hours; weekends are not counted.")}
             </p>
             <Heat weeks={weeks} people={g.people} totals={g.totals} nameOf={names} selected={picked} onOpen={(person, week) => setPicked({ person, week })} />
             <ul className="pj-legend" aria-label={tr("Key")}>
               {(Object.keys(LEVELS) as Level[]).map((l) => (
                 <li key={l}>
-                  <span className="pj-swatch" data-level={l} /> {LEVELS[l]}
+                  <span className="pj-swatch" data-level={l} /> {isolate(LEVELS[l])}
                 </li>
               ))}
             </ul>
@@ -434,7 +434,7 @@ function Portfolios({ company }: { company: ReturnType<typeof useCompany> }) {
             <option value="">{tr("Every project")}</option>
             {(portfolios.data ?? []).map((p) => (
               <option key={p.id} value={p.id}>
-                {p.portfolio_name}
+                {isolate(p.portfolio_name ?? "")}
               </option>
             ))}
           </select>
@@ -454,7 +454,7 @@ function Portfolios({ company }: { company: ReturnType<typeof useCompany> }) {
       ) : !standing.data ? (
         <Spinner label={tr("Loading the portfolio")} />
       ) : !rows.length ? (
-        <EmptyState title={chosen ? "No projects in this portfolio" : "No projects yet"} icon="board">
+        <EmptyState title={chosen ? tr("No projects in this portfolio") : tr("No projects yet")} icon="board">
           {picked ? <Link to={`/e/Portfolio/${picked.id}`}>{tr("Add projects to it")}</Link> : <Link to="/e/Project/new">{tr("Start a project")}</Link>}
         </EmptyState>
       ) : (
@@ -467,7 +467,7 @@ function Portfolios({ company }: { company: ReturnType<typeof useCompany> }) {
             <div className="pj-tile">
               <span className="pj-tile-label">{tr("Tasks done")}</span>
               <span className="pj-tile-value">
-                {sum.done} <span className="faint">of {sum.tasks}</span>
+                {sum.done} <span className="faint">{tr("of {tasks}", { tasks: sum.tasks })}</span>
               </span>
             </div>
             <div className="pj-tile">
@@ -504,12 +504,12 @@ function Portfolios({ company }: { company: ReturnType<typeof useCompany> }) {
                   const p = byName.get(r.project);
                   return (
                     <tr key={r.project}>
-                      <td>{p ? <Link to={`/p/${p.id}`}>{r.project}</Link> : r.project}</td>
+                      <td>{p ? <Link to={`/p/${p.id}`}>{isolate(r.project)}</Link> : r.project}</td>
                       <td>
-                        <Badge tone={statusTone(r.status)}>{r.status}</Badge>
+                        <Badge tone={statusTone(r.status)}>{isolate(r.status ?? "")}</Badge>
                       </td>
                       <td>
-                        <Progress value={r.progress} label={`${r.project} complete`} />
+                        <Progress value={r.progress} label={tr("{project} complete", { project: r.project })} />
                       </td>
                       <td className="num">
                         {r.completed}/{r.tasks}
@@ -532,7 +532,7 @@ function Portfolios({ company }: { company: ReturnType<typeof useCompany> }) {
 }
 
 export function Planning() {
-  useShellTitle("Planning");
+  useShellTitle(tr("Planning"));
   const planner = usePlanner();
   const loaded = !!useMetaIndex().data;
   const [sp, setQuery] = useQueryState();

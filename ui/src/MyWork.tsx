@@ -5,7 +5,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { Link } from "react-router";
-import { api, docPath, formatMoment, todayIso, t as tr } from "@ferrum/client";
+import { api, docPath, formatMoment, todayIso, t as tr, isolate } from "@ferrum/client";
 import { Badge, EmptyState, ErrorState, Icon, Spinner, toast, useLiveEntity, useShellTitle } from "@ferrum/kit";
 import { can, useMe, useMetaIndex, usePeople } from "@ferrum/records";
 import { Due, PriorityFlag } from "./bits";
@@ -30,34 +30,34 @@ function Row({ task, today, writable, onPatch }: { task: Task; today: string; wr
   const push = (days: number) => onPatch(task, { exp_end_date: addDays(task.exp_end_date && task.exp_end_date > today ? task.exp_end_date : today, days) });
   return (
     <li className="pj-row" data-late={isLate || undefined}>
-      <button type="button" className="pj-tick" disabled={!writable} aria-label={`Done: ${task.subject}`} onClick={() => onPatch(task, { status: "Completed" }, true)}>
+      <button type="button" className="pj-tick" disabled={!writable} aria-label={tr("Done: {subject}", { subject: String(task.subject) })} onClick={() => onPatch(task, { status: "Completed" }, true)}>
         <Icon name="check" size={12} />
       </button>
       <div className="pj-row-body">
         <Link to={`/t/${task.id}`} className="pj-row-title">
           {task.is_milestone && <span aria-label={tr("Milestone")}>◆ </span>}
-          {task.subject}
+          {isolate(task.subject ?? "")}
         </Link>
         <div className="faint pj-row-sub">
-          {task.number}
+          {isolate(task.number ?? "")}
           {task._titles?.project && (
             <>
-              {" · "}
-              <Link to={`/p/${task.project}`}>{task._titles.project}</Link>
+              {isolate(" · ")}
+              <Link to={`/p/${task.project}`}>{isolate(task._titles.project)}</Link>
             </>
           )}
-          {left > 0 && ` · ${hoursText(left)} to go`}
+          {left > 0 && tr(" · {left} to go", { left: hoursText(left) })}
         </div>
       </div>
       <PriorityFlag priority={task.priority} />
       {writable ? (
-        <select className="select pj-status" aria-label={`Status of ${task.subject}`} value={task.status === "Overdue" ? "Open" : (task.status ?? "Open")} onChange={(e) => onPatch(task, { status: e.target.value }, e.target.value === "Completed")}>
+        <select className="select pj-status" aria-label={tr("Status of {subject}", { subject: String(task.subject) })} value={task.status === "Overdue" ? "Open" : (task.status ?? "Open")} onChange={(e) => onPatch(task, { status: e.target.value }, e.target.value === "Completed")}>
           {CHOOSABLE.map((s) => (
-            <option key={s}>{s}</option>
+            <option key={s}>{isolate(s)}</option>
           ))}
         </select>
       ) : (
-        <Badge tone="neutral">{task.status}</Badge>
+        <Badge tone="neutral">{isolate(task.status ?? "")}</Badge>
       )}
       <span className="pj-row-due">
         <Due day={task.exp_end_date} late={isLate} />
@@ -102,19 +102,19 @@ function Week({ who, today }: { who: string; today: string }) {
         {!planned.error && !planned.isLoading && (
           <div className="pj-meter">
             <span>{tr("Planned")}</span>
-            <span className="pj-meter-bar" role="img" aria-label={`${hoursText(booked)} planned of ${CAPACITY} hours`}>
+            <span className="pj-meter-bar" role="img" aria-label={tr("{booked} planned of {CAPACITY} hours", { booked: hoursText(booked), CAPACITY })}>
               <span data-over={booked > CAPACITY || undefined} style={{ width: `${Math.min(100, (booked / CAPACITY) * 100)}%` }} />
             </span>
-            <strong>{hoursText(booked)}</strong>
+            <strong>{isolate(hoursText(booked))}</strong>
           </div>
         )}
         {!logged.error && !logged.isLoading && (
           <div className="pj-meter">
             <span>{tr("Logged")}</span>
-            <span className="pj-meter-bar" role="img" aria-label={`${hoursText(logged.data ?? 0)} logged of ${CAPACITY} hours`}>
+            <span className="pj-meter-bar" role="img" aria-label={tr("{value} logged of {CAPACITY} hours", { value: hoursText(logged.data ?? 0), CAPACITY })}>
               <span data-kind="logged" style={{ width: `${Math.min(100, ((logged.data ?? 0) / CAPACITY) * 100)}%` }} />
             </span>
-            <strong>{hoursText(logged.data ?? 0)}</strong>
+            <strong>{isolate(hoursText(logged.data ?? 0))}</strong>
           </div>
         )}
         {planned.data && planned.data.length > 0 && (
@@ -122,12 +122,12 @@ function Week({ who, today }: { who: string; today: string }) {
             {planned.data.map((a) => (
               <li key={a.id}>
                 <span className="pj-line-title">
-                  {a.task ? <Link to={`/t/${a.task}`}>{a._titles?.task ?? "Task"}</Link> : (a._titles?.project ?? "Project")}
-                  {a.task && a._titles?.project && <span className="faint"> · {a._titles.project}</span>}
+                  {a.task ? <Link to={`/t/${a.task}`}>{a._titles?.task ?? tr("Task")}</Link> : (a._titles?.project ?? tr("Project"))}
+                  {a.task && a._titles?.project && <span className="faint"> · {isolate(a._titles.project)}</span>}
                 </span>
                 <span className="faint">
-                  {shortDay(a.from_date)}
-                  {a.to_date !== a.from_date && ` – ${shortDay(a.to_date)}`} · {hoursText(Number(a.hours_per_day))} {tr("a day")}
+                  {isolate(shortDay(a.from_date))}
+                  {a.to_date !== a.from_date && ` – ${shortDay(a.to_date)}`} · {isolate(hoursText(Number(a.hours_per_day)))} {tr("a day")}
                 </span>
               </li>
             ))}
@@ -140,7 +140,7 @@ function Week({ who, today }: { who: string; today: string }) {
 }
 
 export function MyWork() {
-  useShellTitle("My work");
+  useShellTitle(tr("My work"));
   const qc = useQueryClient();
   const me = (useMe().data?.user.email ?? "").toLowerCase();
   const meta = useMetaIndex().data?.entities.find((e) => e.name === "Task");
@@ -164,7 +164,7 @@ export function MyWork() {
   const sum = useMemo(() => plate(tasks, today), [tasks, today]);
   const writable = !!meta && can(meta.permissions, "write");
   const mine = who === me;
-  const name = mine ? "Your work" : `${everyone.find((p) => p.email.toLowerCase() === who)?.full_name ?? who}'s work`;
+  const name = mine ? tr("Your work") : tr("{value}'s work", { value: everyone.find((p) => p.email.toLowerCase() === who)?.full_name ?? who });
 
   /** A change to a task, shown at once; a task that is done leaves the list. */
   const patch = useCallback(
@@ -205,8 +205,8 @@ export function MyWork() {
       </header>
       <div className="page-head">
         <div>
-          <h1 className="page-title">{name}</h1>
-          <p className="page-sub">{formatMoment(new Date(), { weekday: "long", day: "numeric", month: "long" })}</p>
+          <h1 className="page-title">{isolate(name)}</h1>
+          <p className="page-sub">{isolate(formatMoment(new Date(), { weekday: "long", day: "numeric", month: "long" }))}</p>
         </div>
       </div>
       {q.error ? (
@@ -214,7 +214,7 @@ export function MyWork() {
       ) : !q.data ? (
         <Spinner label={tr("Loading the tasks")} />
       ) : !tasks.length ? (
-        <EmptyState title={mine ? "Nothing on your plate" : "Nothing on their plate"} icon="check">
+        <EmptyState title={mine ? tr("Nothing on your plate") : tr("Nothing on their plate")} icon="check">
           <Link to="/">{tr("See the projects")}</Link>
         </EmptyState>
       ) : (
@@ -235,7 +235,7 @@ export function MyWork() {
               </div>
               <div className="pj-tile">
                 <span className="pj-tile-label">{tr("Hours to go")}</span>
-                <span className="pj-tile-value">{hoursText(sum.hours)}</span>
+                <span className="pj-tile-value">{isolate(hoursText(sum.hours))}</span>
               </div>
             </section>
             <div className="segmented" role="group" aria-label={tr("Group by")}>
@@ -250,7 +250,7 @@ export function MyWork() {
             {groups.map((g) => (
               <section key={g.key} aria-label={g.label}>
                 <h2 className="pj-group">
-                  {g.label} {g.label === "Overdue" ? <Badge tone="red">{g.tasks.length}</Badge> : <span className="faint">{g.tasks.length}</span>}
+                  {isolate(g.label)} {g.label === "Overdue" ? <Badge tone="red">{g.tasks.length}</Badge> : <span className="faint">{g.tasks.length}</span>}
                 </h2>
                 <ul className="pj-rows" data-ferrum-nocard="">
                   {g.tasks.map((t) => (

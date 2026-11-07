@@ -6,7 +6,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, type ReactNode, Suspense, useCallback, useMemo } from "react";
 import { Link, useParams } from "react-router";
-import { api, ApiError, formatDecimal, todayIso, t as tr } from "@ferrum/client";
+import { api, ApiError, formatDecimal, todayIso, t as tr, isolate } from "@ferrum/client";
 import { Badge, EmptyState, ErrorState, PageLoading, Spinner, statusTone, TabPanel, Tabs, useLiveEntity, useShellTitle } from "@ferrum/kit";
 import { Progress } from "./bits";
 import { list, loadTasks, type Project, tasksKey, useQueryState } from "./data";
@@ -18,9 +18,9 @@ const Board = lazy(() => import("./Board").then((m) => ({ default: m.Board })));
 const Timeline = lazy(() => import("./Timeline").then((m) => ({ default: m.Timeline })));
 
 const TABS = [
-  { id: "board", label: "Board" },
-  { id: "timeline", label: "Timeline" },
-  { id: "time", label: "Time" },
+  { id: "board", get label() { return tr("Board"); } },
+  { id: "timeline", get label() { return tr("Timeline"); } },
+  { id: "time", get label() { return tr("Time"); } },
 ];
 
 /** An amount in the project's currency, whole units (these are for comparing). */
@@ -37,7 +37,7 @@ export function money(value: unknown, code?: string): string {
 function Tile({ label, to, children }: { label: string; to?: string; children: ReactNode }) {
   const inner = (
     <>
-      <span className="pj-tile-label">{label}</span>
+      <span className="pj-tile-label">{isolate(label)}</span>
       <span className="pj-tile-value">{children}</span>
     </>
   );
@@ -78,25 +78,25 @@ function Overview({ project: p, open, overdue }: { project: Project; open: numbe
         <Progress value={p.proj_percent_complete} />
       </Tile>
       <Tile label={tr("Tasks")}>
-        {open} open
-        {overdue > 0 && <span className="pj-late"> · {overdue} overdue</span>}
+        {tr("{open} open", { open })}
+        {overdue > 0 && <span className="pj-late"> {tr("· {overdue} overdue", { overdue })}</span>}
       </Tile>
       {(hours > 0 || estimate > 0) && (
         <Tile label={tr("Hours")} to={`/r/timesheet_summary?project=${p.id}`}>
-          <span className={estimate > 0 && hours > estimate ? "pj-late" : undefined}>{formatDecimal(String(hours), 1)} h</span>
-          {estimate > 0 && <span className="faint"> of {formatDecimal(String(estimate), 0)} h</span>}
+          <span className={estimate > 0 && hours > estimate ? "pj-late" : undefined}>{isolate(formatDecimal(String(hours), 1))} h</span>
+          {estimate > 0 && <span className="faint"> {tr("of {value} h", { value: formatDecimal(String(estimate), 0) })}</span>}
         </Tile>
       )}
       {cost != null && (budget > 0 || num(cost) > 0) && (
         <Tile label={tr("Cost so far")}>
-          <span className={budget > 0 && num(cost) > budget ? "pj-late" : undefined}>{money(cost, code)}</span>
-          {budget > 0 && <span className="faint"> of {money(budget, code)}</span>}
+          <span className={budget > 0 && num(cost) > budget ? "pj-late" : undefined}>{isolate(money(cost, code))}</span>
+          {budget > 0 && <span className="faint"> {tr("of {budget}", { budget: money(budget, code) })}</span>}
         </Tile>
       )}
       {billed != null && (num(billed) > 0 || billable > 0) && (
         <Tile label={tr("Billed")}>
-          {money(billed, code)}
-          {billable > 0 && <span className="faint"> of {money(billable, code)}</span>}
+          {isolate(money(billed, code))}
+          {billable > 0 && <span className="faint"> {tr("of {billable}", { billable: money(billable, code) })}</span>}
         </Tile>
       )}
       {watch.data?.risks != null && (
@@ -155,7 +155,7 @@ function Time({ project }: { project: Project }) {
             <tr>
               {columns.map((c) => (
                 <th key={c.name} className={NUMBER.includes(c.type) ? "num" : undefined}>
-                  {c.label}
+                  {isolate(c.label)}
                 </th>
               ))}
             </tr>
@@ -165,7 +165,7 @@ function Time({ project }: { project: Project }) {
               <tr key={i}>
                 {columns.map((c) => (
                   <td key={c.name} className={NUMBER.includes(c.type) ? "num" : undefined}>
-                    {String(r[c.name] ?? "")}
+                    {isolate(String(r[c.name] ?? ""))}
                   </td>
                 ))}
               </tr>
@@ -176,7 +176,7 @@ function Time({ project }: { project: Project }) {
               <tr>
                 {columns.map((c, i) => (
                   <td key={c.name} className={NUMBER.includes(c.type) ? "num" : undefined}>
-                    {i === 0 ? "Total" : String(totals[c.name] ?? "")}
+                    {i === 0 ? tr("Total") : String(totals[c.name] ?? "")}
                   </td>
                 ))}
               </tr>
@@ -242,11 +242,11 @@ function ProjectView({ id }: { id: string }) {
           <p className="crumbs">
             <Link to="/">{tr("Projects")}</Link>
           </p>
-          <h1 className="page-title">{p.project_name}</h1>
+          <h1 className="page-title">{isolate(p.project_name ?? "")}</h1>
           <p className="row pj-facts">
-            <Badge tone={statusTone(p.status)}>{p.status}</Badge>
-            {p.proj_priority && p.proj_priority !== "Medium" && <Badge tone="amber">{p.proj_priority}</Badge>}
-            <span className="faint">{[p._titles?.customer, p.start_date && p.end_date ? `${p.start_date} – ${p.end_date}` : null, p.proj_project_manager].filter(Boolean).join(" · ")}</span>
+            <Badge tone={statusTone(p.status)}>{isolate(p.status ?? "")}</Badge>
+            {p.proj_priority && p.proj_priority !== "Medium" && <Badge tone="amber">{isolate(p.proj_priority)}</Badge>}
+            <span className="faint">{isolate([p._titles?.customer, p.start_date && p.end_date ? `${p.start_date} – ${p.end_date}` : null, p.proj_project_manager].filter(Boolean).join(" · "))}</span>
           </p>
         </div>
         <div className="page-actions">
@@ -272,7 +272,7 @@ function ProjectView({ id }: { id: string }) {
             ) : !tasks.data ? (
               <Spinner label={tr("Loading tasks")} />
             ) : (
-              <Suspense fallback={<Spinner label={tab === "board" ? "Loading the board" : "Loading the timeline"} />}>
+              <Suspense fallback={<Spinner label={tab === "board" ? tr("Loading the board") : tr("Loading the timeline")} />}>
                 {tab === "board" ? <Board project={p} set={tasks.data} open={task} onOpen={open} /> : <Timeline project={p} set={tasks.data} open={task} onOpen={open} />}
               </Suspense>
             )}
