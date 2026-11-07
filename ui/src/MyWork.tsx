@@ -5,7 +5,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { Link } from "react-router";
-import { api, docPath, formatMoment, todayIso } from "@ferrum/client";
+import { api, docPath, formatMoment, todayIso, t as tr } from "@ferrum/client";
 import { Badge, EmptyState, ErrorState, Icon, Spinner, toast, useLiveEntity, useShellTitle } from "@ferrum/kit";
 import { can, useMe, useMetaIndex, usePeople } from "@ferrum/records";
 import { Due, PriorityFlag } from "./bits";
@@ -35,7 +35,7 @@ function Row({ task, today, writable, onPatch }: { task: Task; today: string; wr
       </button>
       <div className="pj-row-body">
         <Link to={`/t/${task.id}`} className="pj-row-title">
-          {task.is_milestone && <span aria-label="Milestone">◆ </span>}
+          {task.is_milestone && <span aria-label={tr("Milestone")}>◆ </span>}
           {task.subject}
         </Link>
         <div className="faint pj-row-sub">
@@ -64,11 +64,11 @@ function Row({ task, today, writable, onPatch }: { task: Task; today: string; wr
       </span>
       {writable && (
         <span className="pj-snooze">
-          <button type="button" className="btn btn-ghost btn-sm" title="Push the due date back a day" onClick={() => push(1)}>
-            +1 day
+          <button type="button" className="btn btn-ghost btn-sm" title={tr("Push the due date back a day")} onClick={() => push(1)}>
+            {tr("+1 day")}
           </button>
-          <button type="button" className="btn btn-ghost btn-sm" title="Push the due date back a week" onClick={() => push(7)}>
-            +1 week
+          <button type="button" className="btn btn-ghost btn-sm" title={tr("Push the due date back a week")} onClick={() => push(7)}>
+            {tr("+1 week")}
           </button>
         </span>
       )}
@@ -95,13 +95,13 @@ function Week({ who, today }: { who: string; today: string }) {
   return (
     <section className="card" aria-labelledby="pj-week">
       <div className="card-head">
-        <h2 id="pj-week">This week</h2>
+        <h2 id="pj-week">{tr("This week")}</h2>
       </div>
       <div className="card-body stack">
-        {(planned.isLoading || logged.isLoading) && <Spinner small label="Loading the week" />}
+        {(planned.isLoading || logged.isLoading) && <Spinner small label={tr("Loading the week")} />}
         {!planned.error && !planned.isLoading && (
           <div className="pj-meter">
-            <span>Planned</span>
+            <span>{tr("Planned")}</span>
             <span className="pj-meter-bar" role="img" aria-label={`${hoursText(booked)} planned of ${CAPACITY} hours`}>
               <span data-over={booked > CAPACITY || undefined} style={{ width: `${Math.min(100, (booked / CAPACITY) * 100)}%` }} />
             </span>
@@ -110,7 +110,7 @@ function Week({ who, today }: { who: string; today: string }) {
         )}
         {!logged.error && !logged.isLoading && (
           <div className="pj-meter">
-            <span>Logged</span>
+            <span>{tr("Logged")}</span>
             <span className="pj-meter-bar" role="img" aria-label={`${hoursText(logged.data ?? 0)} logged of ${CAPACITY} hours`}>
               <span data-kind="logged" style={{ width: `${Math.min(100, ((logged.data ?? 0) / CAPACITY) * 100)}%` }} />
             </span>
@@ -127,13 +127,13 @@ function Week({ who, today }: { who: string; today: string }) {
                 </span>
                 <span className="faint">
                   {shortDay(a.from_date)}
-                  {a.to_date !== a.from_date && ` – ${shortDay(a.to_date)}`} · {hoursText(Number(a.hours_per_day))} a day
+                  {a.to_date !== a.from_date && ` – ${shortDay(a.to_date)}`} · {hoursText(Number(a.hours_per_day))} {tr("a day")}
                 </span>
               </li>
             ))}
           </ul>
         )}
-        {planned.data && !planned.data.length && <p className="muted">Nothing is planned for the weeks ahead.</p>}
+        {planned.data && !planned.data.length && <p className="muted">{tr("Nothing is planned for the weeks ahead.")}</p>}
       </div>
     </section>
   );
@@ -189,9 +189,9 @@ export function MyWork() {
         <Nav />
         {sees && (
           <label className="pj-tools-pick">
-            <span className="faint">Showing</span>
+            <span className="faint">{tr("Showing")}</span>
             <select className="select pj-select" value={who} onChange={(e) => setQuery({ who: e.target.value === me ? null : e.target.value })}>
-              <option value={me}>Me</option>
+              <option value={me}>{tr("Me")}</option>
               {everyone
                 .filter((p) => p.email.toLowerCase() !== me)
                 .map((p) => (
@@ -210,43 +210,43 @@ export function MyWork() {
         </div>
       </div>
       {q.error ? (
-        <ErrorState error={q.error} onRetry={() => void q.refetch()} title="The tasks cannot be shown" />
+        <ErrorState error={q.error} onRetry={() => void q.refetch()} title={tr("The tasks cannot be shown")} />
       ) : !q.data ? (
-        <Spinner label="Loading the tasks" />
+        <Spinner label={tr("Loading the tasks")} />
       ) : !tasks.length ? (
         <EmptyState title={mine ? "Nothing on your plate" : "Nothing on their plate"} icon="check">
-          <Link to="/">See the projects</Link>
+          <Link to="/">{tr("See the projects")}</Link>
         </EmptyState>
       ) : (
         <div className="pj-plate-body">
           <div className="pj-plate-main">
-            <section className="pj-tiles" aria-label="Summary">
+            <section className="pj-tiles" aria-label={tr("Summary")}>
               <div className="pj-tile">
-                <span className="pj-tile-label">Open</span>
+                <span className="pj-tile-label">{tr("Open")}</span>
                 <span className="pj-tile-value">{sum.open}</span>
               </div>
               <div className="pj-tile">
-                <span className="pj-tile-label">Late</span>
+                <span className="pj-tile-label">{tr("Late")}</span>
                 <span className={`pj-tile-value${sum.late ? " pj-late" : ""}`}>{sum.late}</span>
               </div>
               <div className="pj-tile">
-                <span className="pj-tile-label">Due today</span>
+                <span className="pj-tile-label">{tr("Due today")}</span>
                 <span className="pj-tile-value">{sum.today}</span>
               </div>
               <div className="pj-tile">
-                <span className="pj-tile-label">Hours to go</span>
+                <span className="pj-tile-label">{tr("Hours to go")}</span>
                 <span className="pj-tile-value">{hoursText(sum.hours)}</span>
               </div>
             </section>
-            <div className="segmented" role="group" aria-label="Group by">
+            <div className="segmented" role="group" aria-label={tr("Group by")}>
               <button type="button" aria-pressed={by === "due"} onClick={() => setQuery({ by: null })}>
-                By when it is due
+                {tr("By when it is due")}
               </button>
               <button type="button" aria-pressed={by === "project"} onClick={() => setQuery({ by: "project" })}>
-                By project
+                {tr("By project")}
               </button>
             </div>
-            {q.data.total > tasks.length && <p className="faint">Showing the first {tasks.length} of {q.data.total} tasks.</p>}
+            {q.data.total > tasks.length && <p className="faint">{tr("Showing the first {length} of {total} tasks.", { length: tasks.length, total: q.data.total })}</p>}
             {groups.map((g) => (
               <section key={g.key} aria-label={g.label}>
                 <h2 className="pj-group">

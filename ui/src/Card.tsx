@@ -20,6 +20,7 @@ import {
 } from "@ferrum/kit/primitives";
 import { Avatars, Due, PriorityFlag } from "./bits";
 import { assignees, CHOOSABLE, late, PRIORITIES, type Task } from "./plan";
+import { t } from "@ferrum/client";
 
 export interface CardData {
   task: Task;
@@ -54,7 +55,7 @@ export function CardView({ data, selected, held, menu, ...rest }: { data: CardDa
     <article className="pj-card" data-selected={selected || undefined} data-held={held || undefined} data-late={isLate || undefined} aria-label={describe(data)} {...rest}>
       <div className="pj-card-top">
         <span className="pj-card-id">
-          {task.is_milestone && <Diamond size={11} role="img" aria-label="Milestone" className="pj-milestone-mark" />}
+          {task.is_milestone && <Diamond size={11} role="img" aria-label={t("Milestone")} className="pj-milestone-mark" />}
           {task.number}
         </span>
         {menu}
@@ -107,15 +108,15 @@ export function CardMenu({ task, me, canWrite, actions }: { task: Task; me: stri
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" {...apart}>
-        <DropdownMenuItem onSelect={() => actions.onOpen(task)}>Open</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => actions.onOpen(task)}>{t("Open")}</DropdownMenuItem>
         <DropdownMenuItem asChild>
-          <Link to={`/t/${task.id}`}>Open the task page</Link>
+          <Link to={`/t/${task.id}`}>{t("Open the task page")}</Link>
         </DropdownMenuItem>
         {canWrite && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuSub>
-              <DropdownMenuSubTrigger>Status</DropdownMenuSubTrigger>
+              <DropdownMenuSubTrigger>{t("Status")}</DropdownMenuSubTrigger>
               <DropdownMenuSubContent {...apart}>
                 <DropdownMenuRadioGroup value={task.status === "Overdue" ? "Open" : (task.status ?? "Open")} onValueChange={(s) => actions.onStatus(task, s)}>
                   {CHOOSABLE.map((s) => (
@@ -127,7 +128,7 @@ export function CardMenu({ task, me, canWrite, actions }: { task: Task; me: stri
               </DropdownMenuSubContent>
             </DropdownMenuSub>
             <DropdownMenuSub>
-              <DropdownMenuSubTrigger>Priority</DropdownMenuSubTrigger>
+              <DropdownMenuSubTrigger>{t("Priority")}</DropdownMenuSubTrigger>
               <DropdownMenuSubContent {...apart}>
                 <DropdownMenuRadioGroup value={task.priority ?? "Medium"} onValueChange={(p) => actions.onPriority(task, p)}>
                   {PRIORITIES.map((p) => (
@@ -141,7 +142,7 @@ export function CardMenu({ task, me, canWrite, actions }: { task: Task; me: stri
             {me && <DropdownMenuItem onSelect={() => actions.onMine(task)}>{mine ? "Take me off it" : "Assign to me"}</DropdownMenuItem>}
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onSelect={() => actions.onCancel(task)}>
-              Cancel this task…
+              {t("Cancel this task…")}
             </DropdownMenuItem>
           </>
         )}

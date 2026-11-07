@@ -6,7 +6,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, type KeyboardEvent, useCallback, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { api, ApiError, docPath, errorMessage, newKey, saveBlob, todayIso } from "@ferrum/client";
+import { api, ApiError, docPath, errorMessage, newKey, saveBlob, todayIso, t as tr } from "@ferrum/client";
 import { Alert, Badge, Button, confirmDialog, Dialog, EmptyState, ErrorState, Field, Icon, Spinner, statusTone, Tabs, TabPanel, useLiveEntity, useShellTitle } from "@ferrum/kit";
 import { LinkInput, useMe, useMetaIndex, usePeople } from "@ferrum/records";
 import { Progress } from "./bits";
@@ -46,9 +46,9 @@ function CompanyPick({ company }: { company: ReturnType<typeof useCompany> }) {
   if (company.choices.length < 2) return null;
   return (
     <label className="pj-tools-pick">
-      <span className="faint">Company</span>
+      <span className="faint">{tr("Company")}</span>
       <select className="select pj-select" value={company.id ?? ""} onChange={(e) => company.choose(e.target.value)}>
-        {!company.id && <option value="">Choose a company</option>}
+        {!company.id && <option value="">{tr("Choose a company")}</option>}
         {company.choices.map((c) => (
           <option key={c.id} value={c.id}>
             {c.name}
@@ -113,9 +113,9 @@ function AllocationDialog({ draft, onClose, onSaved }: { draft: Draft; onClose: 
     <Dialog open onClose={onClose} title={form.id ? "Change the allocation" : "Plan someone onto a project"}>
       <form className="stack" onSubmit={(e) => void submit(e)}>
         {failure && <Alert tone="error">{failure}</Alert>}
-        <Field label="Person" htmlFor="al-person" required error={errors.person}>
+        <Field label={tr("Person")} htmlFor="al-person" required error={errors.person}>
           <select id="al-person" className="select" required value={form.person} onChange={(e) => set({ person: e.target.value })}>
-            <option value="">Choose someone</option>
+            <option value="">{tr("Choose someone")}</option>
             {people.map((p) => (
               <option key={p.id} value={p.email}>
                 {p.full_name || p.email}
@@ -123,33 +123,33 @@ function AllocationDialog({ draft, onClose, onSaved }: { draft: Draft; onClose: 
             ))}
           </select>
         </Field>
-        <Field label="Project" htmlFor="al-project" required error={errors.project}>
+        <Field label={tr("Project")} htmlFor="al-project" required error={errors.project}>
           <LinkInput to="Project" id="al-project" value={form.project} title={form.titles?.project} required onChange={(id) => set({ project: id, task: id === form.project ? form.task : null })} />
         </Field>
-        <Field label="Task" htmlFor="al-task" hint="Optional: what they will be working on." error={errors.task}>
+        <Field label={tr("Task")} htmlFor="al-task" hint={tr("Optional: what they will be working on.")} error={errors.task}>
           <LinkInput to="Task" id="al-task" value={form.task} title={form.titles?.task} disabled={!form.project} linkFilters={form.project ? { project: form.project } : undefined} onChange={(id) => set({ task: id })} />
         </Field>
         <div className="pj-fields">
-          <Field label="From" htmlFor="al-from" required error={errors.from_date}>
+          <Field label={tr("From")} htmlFor="al-from" required error={errors.from_date}>
             <input id="al-from" className="input" type="date" required value={form.from_date} onChange={(e) => set({ from_date: e.target.value, to_date: form.to_date < e.target.value ? e.target.value : form.to_date })} />
           </Field>
-          <Field label="To" htmlFor="al-to" required error={errors.to_date}>
+          <Field label={tr("To")} htmlFor="al-to" required error={errors.to_date}>
             <input id="al-to" className="input" type="date" required min={form.from_date} value={form.to_date} onChange={(e) => set({ to_date: e.target.value })} />
           </Field>
-          <Field label="Hours a day" htmlFor="al-hours" required error={errors.hours_per_day}>
+          <Field label={tr("Hours a day")} htmlFor="al-hours" required error={errors.hours_per_day}>
             <input id="al-hours" className="input" type="number" inputMode="decimal" step="0.25" min="0.25" max="24" required value={form.hours_per_day} onChange={(e) => set({ hours_per_day: e.target.value })} />
           </Field>
         </div>
         <div className="row pj-dialog-foot">
           {form.id && (
             <Button variant="danger" onClick={() => void remove()}>
-              Remove
+              {tr("Remove")}
             </Button>
           )}
           <span className="spacer" />
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{tr("Cancel")}</Button>
           <Button type="submit" variant="primary" loading={busy}>
-            Save
+            {tr("Save")}
           </Button>
         </div>
       </form>
@@ -176,21 +176,21 @@ function Drawer({ person, week, name, onClose, onEdit, onAdd }: { person: string
           <h2>{name}</h2>
           <span className="faint">{weekLabel(week)}</span>
         </div>
-        <button type="button" className="icon-btn" aria-label="Close" title="Close (Esc)" onClick={onClose}>
+        <button type="button" className="icon-btn" aria-label={tr("Close")} title={tr("Close (Esc)")} onClick={onClose}>
           <Icon name="x" size={15} />
         </button>
       </header>
       <div className="peek-body">
         {q.error ? (
-          <ErrorState error={q.error} onRetry={() => void q.refetch()} title="The allocations cannot be shown" />
+          <ErrorState error={q.error} onRetry={() => void q.refetch()} title={tr("The allocations cannot be shown")} />
         ) : !q.data ? (
-          <Spinner label="Loading the allocations" />
+          <Spinner label={tr("Loading the allocations")} />
         ) : (
           <>
             <p className="pj-hours">
-              <strong>{hoursText(total)}</strong> <span className="faint">planned this week</span>
+              <strong>{hoursText(total)}</strong> <span className="faint">{tr("planned this week")}</span>
             </p>
-            {!rows.length && <p className="muted">Nothing is planned for {name.split(" ")[0]} this week.</p>}
+            {!rows.length && <p className="muted">{tr("Nothing is planned for")} {name.split(" ")[0]} {tr("this week.")}</p>}
             <ul className="pj-lines">
               {rows.map((a) => (
                 <li key={a.id}>
@@ -198,11 +198,11 @@ function Drawer({ person, week, name, onClose, onEdit, onAdd }: { person: string
                     {a._titles?.project ?? "Project"}
                     {a.task && <span className="faint"> · {a._titles?.task ?? "Task"}</span>}
                     <span className="faint pj-line-sub">
-                      {a.from_date} – {a.to_date} · {hoursText(Number(a.hours_per_day))} a day · {hoursText(hoursIn(a, week, weekEnd(week)))} this week
+                      {a.from_date} – {a.to_date} · {hoursText(Number(a.hours_per_day))} {tr("a day ·")} {hoursText(hoursIn(a, week, weekEnd(week)))} {tr("this week")}
                     </span>
                   </span>
                   <Button size="sm" onClick={() => onEdit(a)} aria-label={`Change the allocation to ${a._titles?.project ?? "the project"}`}>
-                    Change
+                    {tr("Change")}
                   </Button>
                 </li>
               ))}
@@ -211,7 +211,7 @@ function Drawer({ person, week, name, onClose, onEdit, onAdd }: { person: string
         )}
         <p>
           <Button variant="primary" icon="plus" onClick={onAdd}>
-            Plan {name.split(" ")[0]} onto a project
+            {tr("Plan")} {name.split(" ")[0]} {tr("onto a project")}
           </Button>
         </p>
       </div>
@@ -237,10 +237,10 @@ function Heat({ weeks, people, totals, nameOf, selected, onOpen }: { weeks: stri
     e.currentTarget.querySelector<HTMLElement>(`[data-r="${to[0]}"][data-c="${to[1]}"]`)?.focus();
   };
   return (
-    <div className="pj-heat" role="grid" aria-label="Hours planned by person and week" style={{ "--weeks": weeks.length } as React.CSSProperties} onKeyDown={onKeyDown}>
+    <div className="pj-heat" role="grid" aria-label={tr("Hours planned by person and week")} style={{ "--weeks": weeks.length } as React.CSSProperties} onKeyDown={onKeyDown}>
       <div role="row" className="pj-heat-row pj-heat-head">
         <span role="columnheader" className="pj-heat-who">
-          Person
+          {tr("Person")}
         </span>
         {weeks.map((w) => (
           <span key={w} role="columnheader" className="pj-heat-week" title={`Week of ${weekLabel(w)}`}>
@@ -276,7 +276,7 @@ function Heat({ weeks, people, totals, nameOf, selected, onOpen }: { weeks: stri
       ))}
       <div role="row" className="pj-heat-row pj-heat-total">
         <span role="rowheader" className="pj-heat-who">
-          Team
+          {tr("Team")}
         </span>
         {totals.map((c) => (
           <span key={c.week} role="gridcell" className="pj-heat-cell" data-level={c.level} title={`${hoursText(c.hours)} of ${hoursText(c.capacity)}`}>
@@ -320,14 +320,14 @@ function Capacity({ company }: { company: ReturnType<typeof useCompany> }) {
   return (
     <div className="pj-capacity" data-drawer={picked ? "" : undefined}>
       <div className="pj-capacity-main">
-        <div className="pj-tools" role="toolbar" aria-label="Weeks shown">
+        <div className="pj-tools" role="toolbar" aria-label={tr("Weeks shown")}>
           <CompanyPick company={company} />
-          <Button size="sm" icon="left" aria-label="Earlier weeks" onClick={() => shift(-7 * count)} />
-          <Button size="sm" icon="chevronRight" aria-label="Later weeks" onClick={() => shift(7 * count)} />
+          <Button size="sm" icon="left" aria-label={tr("Earlier weeks")} onClick={() => shift(-7 * count)} />
+          <Button size="sm" icon="chevronRight" aria-label={tr("Later weeks")} onClick={() => shift(7 * count)} />
           <Button size="sm" onClick={() => setQuery({ from: null })}>
-            This week
+            {tr("This week")}
           </Button>
-          <div className="segmented" role="group" aria-label="How many weeks">
+          <div className="segmented" role="group" aria-label={tr("How many weeks")}>
             {[8, 12].map((n) => (
               <button key={n} type="button" aria-pressed={n === count} onClick={() => setQuery({ weeks: n === 8 ? null : String(n) })}>
                 {n} weeks
@@ -336,31 +336,31 @@ function Capacity({ company }: { company: ReturnType<typeof useCompany> }) {
           </div>
           <label className="pj-check">
             <input type="checkbox" checked={all} onChange={(e) => setQuery({ all: e.target.checked ? "1" : null })} />
-            Include people with nothing planned
+            {tr("Include people with nothing planned")}
           </label>
           <span className="pj-tools-gap" />
           <Button size="sm" onClick={download} disabled={!g.people.length}>
-            Export CSV
+            {tr("Export CSV")}
           </Button>
           <Button size="sm" variant="primary" icon="plus" onClick={() => setEditing({ person: "", project: null, task: null, from_date: today, to_date: addDays(today, 4), hours_per_day: "8" })}>
-            Plan someone
+            {tr("Plan someone")}
           </Button>
         </div>
         {q.error ? (
-          <ErrorState error={q.error} onRetry={() => void q.refetch()} title="The workload cannot be shown" />
+          <ErrorState error={q.error} onRetry={() => void q.refetch()} title={tr("The workload cannot be shown")} />
         ) : !q.data ? (
-          <Spinner label="Loading the workload" />
+          <Spinner label={tr("Loading the workload")} />
         ) : !g.people.length ? (
-          <EmptyState title="Nobody is planned in these weeks" icon="calendar">
-            <p className="muted">Plan someone onto a project to see how full their weeks are.</p>
+          <EmptyState title={tr("Nobody is planned in these weeks")} icon="calendar">
+            <p className="muted">{tr("Plan someone onto a project to see how full their weeks are.")}</p>
           </EmptyState>
         ) : (
           <>
             <p className="faint" aria-live="polite">
-              {over > 0 ? <strong className="pj-late">{over === 1 ? "1 person is" : `${over} people are`} booked beyond a week.</strong> : "Nobody is booked beyond a week."} A week is 40 hours; weekends are not counted.
+              {over > 0 ? <strong className="pj-late">{over === 1 ? "1 person is" : `${over} people are`} {tr("booked beyond a week.")}</strong> : "Nobody is booked beyond a week."} {tr("A week is 40 hours; weekends are not counted.")}
             </p>
             <Heat weeks={weeks} people={g.people} totals={g.totals} nameOf={names} selected={picked} onOpen={(person, week) => setPicked({ person, week })} />
-            <ul className="pj-legend" aria-label="Key">
+            <ul className="pj-legend" aria-label={tr("Key")}>
               {(Object.keys(LEVELS) as Level[]).map((l) => (
                 <li key={l}>
                   <span className="pj-swatch" data-level={l} /> {LEVELS[l]}
@@ -426,12 +426,12 @@ function Portfolios({ company }: { company: ReturnType<typeof useCompany> }) {
   const picked = portfolios.data?.find((p) => p.id === chosen);
   return (
     <div className="stack">
-      <div className="pj-tools" role="toolbar" aria-label="Portfolio">
+      <div className="pj-tools" role="toolbar" aria-label={tr("Portfolio")}>
         <CompanyPick company={company} />
         <label className="pj-tools-pick">
-          <span className="faint">Portfolio</span>
+          <span className="faint">{tr("Portfolio")}</span>
           <select className="select pj-select" value={chosen} onChange={(e) => setQuery({ portfolio: e.target.value || null })}>
-            <option value="">Every project</option>
+            <option value="">{tr("Every project")}</option>
             {(portfolios.data ?? []).map((p) => (
               <option key={p.id} value={p.id}>
                 {p.portfolio_name}
@@ -442,61 +442,61 @@ function Portfolios({ company }: { company: ReturnType<typeof useCompany> }) {
         <span className="pj-tools-gap" />
         {picked && (
           <Link className="btn btn-md" to={`/e/Portfolio/${picked.id}`}>
-            Edit this portfolio
+            {tr("Edit this portfolio")}
           </Link>
         )}
         <Link className="btn btn-md" to="/e/Portfolio/new">
-          New portfolio
+          {tr("New portfolio")}
         </Link>
       </div>
       {standing.error ? (
-        <ErrorState error={standing.error} onRetry={() => void standing.refetch()} title="The portfolio cannot be shown" />
+        <ErrorState error={standing.error} onRetry={() => void standing.refetch()} title={tr("The portfolio cannot be shown")} />
       ) : !standing.data ? (
-        <Spinner label="Loading the portfolio" />
+        <Spinner label={tr("Loading the portfolio")} />
       ) : !rows.length ? (
         <EmptyState title={chosen ? "No projects in this portfolio" : "No projects yet"} icon="board">
-          {picked ? <Link to={`/e/Portfolio/${picked.id}`}>Add projects to it</Link> : <Link to="/e/Project/new">Start a project</Link>}
+          {picked ? <Link to={`/e/Portfolio/${picked.id}`}>{tr("Add projects to it")}</Link> : <Link to="/e/Project/new">{tr("Start a project")}</Link>}
         </EmptyState>
       ) : (
         <>
-          <section className="pj-tiles" aria-label="Summary">
+          <section className="pj-tiles" aria-label={tr("Summary")}>
             <div className="pj-tile">
-              <span className="pj-tile-label">Projects</span>
+              <span className="pj-tile-label">{tr("Projects")}</span>
               <span className="pj-tile-value">{rows.length}</span>
             </div>
             <div className="pj-tile">
-              <span className="pj-tile-label">Tasks done</span>
+              <span className="pj-tile-label">{tr("Tasks done")}</span>
               <span className="pj-tile-value">
                 {sum.done} <span className="faint">of {sum.tasks}</span>
               </span>
             </div>
             <div className="pj-tile">
-              <span className="pj-tile-label">Overdue</span>
+              <span className="pj-tile-label">{tr("Overdue")}</span>
               <span className={`pj-tile-value${sum.overdue ? " pj-late" : ""}`}>{sum.overdue}</span>
             </div>
             <div className="pj-tile">
-              <span className="pj-tile-label">Open risks</span>
+              <span className="pj-tile-label">{tr("Open risks")}</span>
               <span className="pj-tile-value">{sum.risks}</span>
             </div>
             <div className="pj-tile">
-              <span className="pj-tile-label">Open issues</span>
+              <span className="pj-tile-label">{tr("Open issues")}</span>
               <span className="pj-tile-value">{sum.issues}</span>
             </div>
           </section>
           <div className="pj-table-wrap" data-ferrum-nocard="">
             <table className="pj-table">
-              <caption className="sr-only">Projects, the ones needing attention first</caption>
+              <caption className="sr-only">{tr("Projects, the ones needing attention first")}</caption>
               <thead>
                 <tr>
-                  <th>Project</th>
-                  <th>Status</th>
-                  <th>Progress</th>
-                  <th className="num">Tasks done</th>
-                  <th className="num">Overdue</th>
-                  <th className="num">Risks</th>
-                  <th className="num">Issues</th>
-                  <th>Due</th>
-                  <th>Manager</th>
+                  <th>{tr("Project")}</th>
+                  <th>{tr("Status")}</th>
+                  <th>{tr("Progress")}</th>
+                  <th className="num">{tr("Tasks done")}</th>
+                  <th className="num">{tr("Overdue")}</th>
+                  <th className="num">{tr("Risks")}</th>
+                  <th className="num">{tr("Issues")}</th>
+                  <th>{tr("Due")}</th>
+                  <th>{tr("Manager")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -544,15 +544,15 @@ export function Planning() {
         <Nav />
       </header>
       {loaded && !planner ? (
-        <EmptyState title="Planning is for people who plan others' time" icon="alert">
-          <p className="muted">Ask an administrator for the Projects Manager role.</p>
+        <EmptyState title={tr("Planning is for people who plan others' time")} icon="alert">
+          <p className="muted">{tr("Ask an administrator for the Projects Manager role.")}</p>
         </EmptyState>
       ) : (
         <>
           <div className="page-head">
             <div>
-              <h1 className="page-title">Planning</h1>
-              <p className="page-sub">Who is booked when, and how the portfolios stand.</p>
+              <h1 className="page-title">{tr("Planning")}</h1>
+              <p className="page-sub">{tr("Who is booked when, and how the portfolios stand.")}</p>
             </div>
           </div>
           <Tabs id="pl" value={tab} onChange={(t) => setQuery({ tab: t === "capacity" ? null : t, from: null })} tabs={TABS} />

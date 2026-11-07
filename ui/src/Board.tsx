@@ -28,7 +28,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Plus } from "lucide-react";
 import { type CSSProperties, type FormEvent, type HTMLAttributes, type KeyboardEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
-import { todayIso } from "@ferrum/client";
+import { todayIso, t as tr } from "@ferrum/client";
 import { Alert, Badge, Button, confirmDialog, EmptyState, statusTone, toast, useDebounced } from "@ferrum/kit";
 import { can, useMe, useMetaIndex } from "@ferrum/records";
 import { Avatar, Keys } from "./bits";
@@ -90,54 +90,54 @@ function Bar({ filters, lanes, order, people, parents, names, set, shown, total 
   const change = (patch: Partial<Filters>) => set(filterParams({ ...filters, ...patch }));
   const on = filtersOn(filters) + (filters.q ? 1 : 0);
   return (
-    <div className="pj-tools" role="search" aria-label="Filter the board">
-      <input className="input pj-search" type="search" placeholder="Find a task…" aria-label="Find a task" value={text} onChange={(e) => setText(e.target.value)} />
-      <select className="select pj-select" aria-label="Assignee" value={filters.who} onChange={(e) => change({ who: e.target.value })}>
-        <option value="">Anyone</option>
-        <option value="me">Me</option>
-        <option value="none">Nobody</option>
+    <div className="pj-tools" role="search" aria-label={tr("Filter the board")}>
+      <input className="input pj-search" type="search" placeholder={tr("Find a task…")} aria-label={tr("Find a task")} value={text} onChange={(e) => setText(e.target.value)} />
+      <select className="select pj-select" aria-label={tr("Assignee")} value={filters.who} onChange={(e) => change({ who: e.target.value })}>
+        <option value="">{tr("Anyone")}</option>
+        <option value="me">{tr("Me")}</option>
+        <option value="none">{tr("Nobody")}</option>
         {people.map((p) => (
           <option key={p} value={p}>
             {names(p)}
           </option>
         ))}
       </select>
-      <select className="select pj-select" aria-label="Priority" value={filters.priority} onChange={(e) => change({ priority: e.target.value })}>
-        <option value="">Any priority</option>
+      <select className="select pj-select" aria-label={tr("Priority")} value={filters.priority} onChange={(e) => change({ priority: e.target.value })}>
+        <option value="">{tr("Any priority")}</option>
         {PRIORITIES.map((p) => (
           <option key={p}>{p}</option>
         ))}
       </select>
-      <select className="select pj-select" aria-label="Due" value={filters.due} onChange={(e) => change({ due: e.target.value as Filters["due"] })}>
-        <option value="">Any due date</option>
-        <option value="late">Late</option>
-        <option value="week">Due this week</option>
-        <option value="none">No due date</option>
+      <select className="select pj-select" aria-label={tr("Due")} value={filters.due} onChange={(e) => change({ due: e.target.value as Filters["due"] })}>
+        <option value="">{tr("Any due date")}</option>
+        <option value="late">{tr("Late")}</option>
+        <option value="week">{tr("Due this week")}</option>
+        <option value="none">{tr("No due date")}</option>
       </select>
-      <select className="select pj-select" aria-label="Sub-tasks" value={filters.parent} onChange={(e) => change({ parent: e.target.value })}>
-        <option value="">All tasks</option>
-        <option value="top">Hide sub-tasks</option>
+      <select className="select pj-select" aria-label={tr("Sub-tasks")} value={filters.parent} onChange={(e) => change({ parent: e.target.value })}>
+        <option value="">{tr("All tasks")}</option>
+        <option value="top">{tr("Hide sub-tasks")}</option>
         {parents.map((p) => (
           <option key={p.id} value={p.id}>
-            Under {p.number} {p.subject}
+            {tr("Under {number} {subject}", { number: p.number ?? "", subject: p.subject ?? "" })}
           </option>
         ))}
       </select>
       <span className="pj-tools-gap" />
       <label className="pj-tools-pick">
-        <span className="faint">Swimlanes</span>
+        <span className="faint">{tr("Swimlanes")}</span>
         <select className="select pj-select" value={lanes} onChange={(e) => set({ lanes: e.target.value === "none" ? null : e.target.value })}>
-          <option value="none">None</option>
-          <option value="assignee">Person</option>
-          <option value="priority">Priority</option>
+          <option value="none">{tr("None")}</option>
+          <option value="assignee">{tr("Person")}</option>
+          <option value="priority">{tr("Priority")}</option>
         </select>
       </label>
       <label className="pj-tools-pick">
-        <span className="faint">Order</span>
+        <span className="faint">{tr("Order")}</span>
         <select className="select pj-select" value={order} onChange={(e) => set({ order: e.target.value === "manual" ? null : e.target.value })}>
-          <option value="manual">Manual</option>
-          <option value="due">Due soonest</option>
-          <option value="priority">Priority</option>
+          <option value="manual">{tr("Manual")}</option>
+          <option value="due">{tr("Due soonest")}</option>
+          <option value="priority">{tr("Priority")}</option>
         </select>
       </label>
       <Keys
@@ -162,7 +162,7 @@ function Bar({ filters, lanes, order, people, parents, names, set, shown, total 
                 set(filterParams(NO_FILTERS));
               }}
             >
-              Clear {on === 1 ? "the filter" : "filters"}
+              {tr("Clear")} {on === 1 ? "the filter" : "filters"}
             </button>
           </>
         )}
@@ -191,7 +191,7 @@ function Adder({ status, onCreate, onClose }: { status: string; onCreate: (subje
         autoFocus
         className="input"
         aria-label={`New task in ${status}`}
-        placeholder="Title, then Enter"
+        placeholder={tr("Title, then Enter")}
         value={text}
         readOnly={busy}
         onChange={(e) => setText(e.target.value)}
@@ -340,7 +340,7 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
       if (!canWrite) return;
       const to = keyMove(model, card.key, way, order);
       if (!to) {
-        if (order !== "manual" && (way === "up" || way === "down")) toast("The cards are ordered by a sort. Choose Manual order to move them up and down.", "info");
+        if (order !== "manual" && (way === "up" || way === "down")) toast(tr("The cards are ordered by a sort. Choose Manual order to move them up and down."), "info");
         return;
       }
       const move = dropPlan(model, card.key, to.to, to.at, lanes, order);
@@ -473,36 +473,36 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
   return (
     <div className="pj-board-wrap">
       <Bar filters={filters} lanes={lanes} order={order} people={people} parents={parents} names={names} set={setQuery} shown={model.shown} total={model.total} />
-      {closed && <Alert tone="info">This project is {project.status?.toLowerCase()}. Its tasks cannot be changed until it is reopened.</Alert>}
+      {closed && <Alert tone="info">{tr("This project is")} {project.status?.toLowerCase()}{tr(". Its tasks cannot be changed until it is reopened.")}</Alert>}
       {tasks.total > tasks.rows.length && (
         <Alert tone="warning">
-          The board shows the first {TASK_LIMIT} of {tasks.total} tasks. <Link to={`/e/Task?f.project=${project.id}`}>Open the list</Link> to see them all.
+          {tr("The board shows the first {TASK_LIMIT} of {total} tasks.", { TASK_LIMIT, total: tasks.total })} <Link to={`/e/Task?f.project=${project.id}`}>{tr("Open the list")}</Link> {tr("to see them all.")}
         </Alert>
       )}
       <p className="sr-only" role="status" aria-live="polite">
         {note}
       </p>
       <p className="sr-only" id="pj-board-help">
-        Press Enter to open a task. Hold Shift and use the arrow keys to move it to another column or place. Use the arrow keys or J and K to go from card to card.
+        {tr("Press Enter to open a task. Hold Shift and use the arrow keys to move it to another column or place. Use the arrow keys or J and K to go from card to card.")}
       </p>
       {!model.total && (
-        <EmptyState title="No tasks yet" icon="board">
+        <EmptyState title={tr("No tasks yet")} icon="board">
           <p className="muted">{canCreate ? "Add the first one with the plus above a column." : "Nothing has been planned in this project."}</p>
         </EmptyState>
       )}
       {model.total > 0 && !model.shown && (
-        <EmptyState title="No task matches" icon="search">
+        <EmptyState title={tr("No task matches")} icon="search">
           <Button
             onClick={() => {
               setQuery(filterParams(NO_FILTERS));
             }}
           >
-            Clear the filters
+            {tr("Clear the filters")}
           </Button>
         </EmptyState>
       )}
       <DndContext sensors={sensors} collisionDetection={detect} measuring={{ droppable: { strategy: MeasuringStrategy.Always } }} accessibility={{ announcements, screenReaderInstructions: { draggable: "Press Enter to open the task." } }} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd} onDragCancel={cancel}>
-        <div className="pj-board" data-ferrum-nocard="" role="region" aria-label="Tasks by status" aria-describedby="pj-board-help" style={{ "--cols": model.statuses.length } as CSSProperties}>
+        <div className="pj-board" data-ferrum-nocard="" role="region" aria-label={tr("Tasks by status")} aria-describedby="pj-board-help" style={{ "--cols": model.statuses.length } as CSSProperties}>
           <div className="pj-heads">
             {model.statuses.map((s) => {
               const n = model.lanes.reduce((sum, l) => sum + (l.cells.find((c) => c.status === s)?.cards.length ?? 0), 0);

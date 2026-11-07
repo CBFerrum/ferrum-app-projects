@@ -6,7 +6,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, type ReactNode, Suspense, useCallback, useMemo } from "react";
 import { Link, useParams } from "react-router";
-import { api, ApiError, formatDecimal, todayIso } from "@ferrum/client";
+import { api, ApiError, formatDecimal, todayIso, t as tr } from "@ferrum/client";
 import { Badge, EmptyState, ErrorState, PageLoading, Spinner, statusTone, TabPanel, Tabs, useLiveEntity, useShellTitle } from "@ferrum/kit";
 import { Progress } from "./bits";
 import { list, loadTasks, type Project, tasksKey, useQueryState } from "./data";
@@ -73,44 +73,44 @@ function Overview({ project: p, open, overdue }: { project: Project; open: numbe
   const billed = p.proj_billed_amount;
   const billable = num(p.proj_contract_value) || num(p.proj_billable_amount);
   return (
-    <section className="pj-tiles" aria-label="How the project stands">
-      <Tile label="Complete">
+    <section className="pj-tiles" aria-label={tr("How the project stands")}>
+      <Tile label={tr("Complete")}>
         <Progress value={p.proj_percent_complete} />
       </Tile>
-      <Tile label="Tasks">
+      <Tile label={tr("Tasks")}>
         {open} open
         {overdue > 0 && <span className="pj-late"> · {overdue} overdue</span>}
       </Tile>
       {(hours > 0 || estimate > 0) && (
-        <Tile label="Hours" to={`/r/timesheet_summary?project=${p.id}`}>
+        <Tile label={tr("Hours")} to={`/r/timesheet_summary?project=${p.id}`}>
           <span className={estimate > 0 && hours > estimate ? "pj-late" : undefined}>{formatDecimal(String(hours), 1)} h</span>
           {estimate > 0 && <span className="faint"> of {formatDecimal(String(estimate), 0)} h</span>}
         </Tile>
       )}
       {cost != null && (budget > 0 || num(cost) > 0) && (
-        <Tile label="Cost so far">
+        <Tile label={tr("Cost so far")}>
           <span className={budget > 0 && num(cost) > budget ? "pj-late" : undefined}>{money(cost, code)}</span>
           {budget > 0 && <span className="faint"> of {money(budget, code)}</span>}
         </Tile>
       )}
       {billed != null && (num(billed) > 0 || billable > 0) && (
-        <Tile label="Billed">
+        <Tile label={tr("Billed")}>
           {money(billed, code)}
           {billable > 0 && <span className="faint"> of {money(billable, code)}</span>}
         </Tile>
       )}
       {watch.data?.risks != null && (
-        <Tile label="Open risks" to={`/e/ProjectRisk?f.project=${p.id}`}>
+        <Tile label={tr("Open risks")} to={`/e/ProjectRisk?f.project=${p.id}`}>
           {watch.data.risks}
         </Tile>
       )}
       {watch.data?.issues != null && (
-        <Tile label="Open issues" to={`/e/ProjectIssue?f.project=${p.id}`}>
+        <Tile label={tr("Open issues")} to={`/e/ProjectIssue?f.project=${p.id}`}>
           {watch.data.issues}
         </Tile>
       )}
       {watch.data?.changes != null && watch.data.changes > 0 && (
-        <Tile label="Changes to decide" to={`/e/ChangeRequest?f.project=${p.id}&f.decision=Pending`}>
+        <Tile label={tr("Changes to decide")} to={`/e/ChangeRequest?f.project=${p.id}&f.decision=Pending`}>
           {watch.data.changes}
         </Tile>
       )}
@@ -132,16 +132,16 @@ function Time({ project }: { project: Project }) {
     queryKey: ["projects", "time", project.id],
     queryFn: ({ signal }) => api.get<Report>("/api/reports/timesheet_summary", { company: project.company, project: project.id, from_date: "2000-01-01", to_date: addDays(todayIso(), 366) }, signal),
   });
-  if (q.error) return <ErrorState error={q.error} onRetry={() => void q.refetch()} title="The time logged cannot be shown" />;
-  if (!q.data) return <Spinner label="Loading the time logged" />;
+  if (q.error) return <ErrorState error={q.error} onRetry={() => void q.refetch()} title={tr("The time logged cannot be shown")} />;
+  if (!q.data) return <Spinner label={tr("Loading the time logged")} />;
   const logTime = (
     <Link className="btn btn-primary btn-md" to={`/e/Timesheet/new?project=${project.id}`}>
-      Log time
+      {tr("Log time")}
     </Link>
   );
   if (!q.data.rows.length) {
     return (
-      <EmptyState title="No time logged yet" icon="calendar">
+      <EmptyState title={tr("No time logged yet")} icon="calendar">
         {logTime}
       </EmptyState>
     );
@@ -187,7 +187,7 @@ function Time({ project }: { project: Project }) {
       <p className="row">
         {logTime}
         <Link className="btn btn-md" to={`/r/timesheet_summary?project=${project.id}`}>
-          The full timesheet summary
+          {tr("The full timesheet summary")}
         </Link>
       </p>
     </div>
@@ -226,21 +226,21 @@ function ProjectView({ id }: { id: string }) {
   if (project.error) {
     if (project.error instanceof ApiError && project.error.status === 404) {
       return (
-        <EmptyState title="This project no longer exists">
-          <Link to="/">Back to projects</Link>
+        <EmptyState title={tr("This project no longer exists")}>
+          <Link to="/">{tr("Back to projects")}</Link>
         </EmptyState>
       );
     }
     return <ErrorState error={project.error} onRetry={() => void project.refetch()} />;
   }
-  if (!project.data) return <PageLoading label="Loading the project" />;
+  if (!project.data) return <PageLoading label={tr("Loading the project")} />;
   const p = project.data;
   return (
     <div className="pj-page">
       <div className="page-head">
         <div>
           <p className="crumbs">
-            <Link to="/">Projects</Link>
+            <Link to="/">{tr("Projects")}</Link>
           </p>
           <h1 className="page-title">{p.project_name}</h1>
           <p className="row pj-facts">
@@ -251,11 +251,11 @@ function ProjectView({ id }: { id: string }) {
         </div>
         <div className="page-actions">
           <Link className="btn btn-md" to={`/e/Project/${p.id}`}>
-            Edit the project
+            {tr("Edit the project")}
           </Link>
           {p.status !== "Completed" && p.status !== "Cancelled" && (
             <Link className="btn btn-primary btn-md" to={`/e/Task/new?project=${p.id}`}>
-              New task
+              {tr("New task")}
             </Link>
           )}
         </div>
@@ -268,9 +268,9 @@ function ProjectView({ id }: { id: string }) {
             {tab === "time" ? (
               <Time project={p} />
             ) : tasks.error ? (
-              <ErrorState error={tasks.error} onRetry={() => void tasks.refetch()} title="The tasks cannot be shown" />
+              <ErrorState error={tasks.error} onRetry={() => void tasks.refetch()} title={tr("The tasks cannot be shown")} />
             ) : !tasks.data ? (
-              <Spinner label="Loading tasks" />
+              <Spinner label={tr("Loading tasks")} />
             ) : (
               <Suspense fallback={<Spinner label={tab === "board" ? "Loading the board" : "Loading the timeline"} />}>
                 {tab === "board" ? <Board project={p} set={tasks.data} open={task} onOpen={open} /> : <Timeline project={p} set={tasks.data} open={task} onOpen={open} />}

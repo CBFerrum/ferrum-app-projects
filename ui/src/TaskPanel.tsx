@@ -10,6 +10,7 @@ import { can, CollabPanel, type Doc, type EntityMeta, RecordFields, useEntityMet
 import { Avatar } from "./bits";
 import { tasksKey, useNames } from "./data";
 import { CHOOSABLE, type Task, waitsFor } from "./plan";
+import { t as tr } from "@ferrum/client";
 
 type Rows = { id?: string; user?: string | null }[];
 
@@ -21,8 +22,8 @@ export function People({ doc, canWrite, save }: { doc: Doc; canWrite: boolean; s
   const keep = (r: Rows[number]) => ({ id: r.id, user: r.user });
   const on = new Set(rows.map((r) => (r.user ?? "").toLowerCase()));
   return (
-    <section className="peek-section" aria-label="People">
-      <h3>People</h3>
+    <section className="peek-section" aria-label={tr("People")}>
+      <h3>{tr("People")}</h3>
       <ul className="pj-people">
         {rows.map((r) => (
           <li key={r.id ?? r.user}>
@@ -35,16 +36,16 @@ export function People({ doc, canWrite, save }: { doc: Doc; canWrite: boolean; s
             )}
           </li>
         ))}
-        {!rows.length && <li className="faint">Nobody yet</li>}
+        {!rows.length && <li className="faint">{tr("Nobody yet")}</li>}
       </ul>
       {canWrite && (
         <select
           className="select pj-select"
-          aria-label="Put someone on this task"
+          aria-label={tr("Put someone on this task")}
           value=""
           onChange={(e) => e.target.value && void save("assigned_to", [...rows.map(keep), { user: e.target.value }])}
         >
-          <option value="">Add someone…</option>
+          <option value="">{tr("Add someone…")}</option>
           {everyone
             .filter((u) => !on.has(u.email.toLowerCase()))
             .map((u) => (
@@ -120,15 +121,15 @@ function Panel({ meta, id, project, tasks, onOpen, onClose }: { meta: EntityMeta
           <h2>{doc ? String(doc.subject ?? doc.number) : "…"}</h2>
           {doc && <span className="faint pj-mono">{String(doc.number ?? "")}</span>}
         </div>
-        <Link className="icon-btn" to={`/t/${id}`} aria-label="Open the task page" title="Open the task page">
+        <Link className="icon-btn" to={`/t/${id}`} aria-label={tr("Open the task page")} title={tr("Open the task page")}>
           <Icon name="expand" size={15} />
         </Link>
-        <button type="button" className="icon-btn" aria-label="Close" title="Close (Esc)" onClick={onClose}>
+        <button type="button" className="icon-btn" aria-label={tr("Close")} title={tr("Close (Esc)")} onClick={onClose}>
           <Icon name="x" size={15} />
         </button>
       </header>
       {writable && doc && (
-        <div className="pj-steps" role="group" aria-label="Status">
+        <div className="pj-steps" role="group" aria-label={tr("Status")}>
           {CHOOSABLE.map((s) => (
             <button key={s} type="button" aria-pressed={s === status || (status === "Overdue" && s === "Open")} onClick={() => s !== status && void save("status", s)}>
               {s}
@@ -145,9 +146,9 @@ function Panel({ meta, id, project, tasks, onOpen, onClose }: { meta: EntityMeta
       </div>
       <div className="peek-body">
         {record.error ? (
-          <ErrorState error={record.error} onRetry={() => void record.refetch()} title="The task cannot be shown" />
+          <ErrorState error={record.error} onRetry={() => void record.refetch()} title={tr("The task cannot be shown")} />
         ) : !doc ? (
-          <PageLoading label="Loading the task" />
+          <PageLoading label={tr("Loading the task")} />
         ) : tab === "discussion" ? (
           <CollabPanel entity="Task" id={id} canWrite={writable} />
         ) : (
@@ -155,10 +156,10 @@ function Panel({ meta, id, project, tasks, onOpen, onClose }: { meta: EntityMeta
             <People doc={doc} canWrite={writable} save={save} />
             <RecordFields meta={meta} doc={doc} save={save} />
             <Related title={kids.length ? `Sub-tasks, ${kids.filter((k) => k.status === "Completed").length} of ${kids.length} done` : "Sub-tasks"} tasks={kids} onOpen={onOpen} />
-            <Related title="Waits for" tasks={waits} onOpen={onOpen} />
-            <Related title="Others wait for this" tasks={blocks} onOpen={onOpen} />
+            <Related title={tr("Waits for")} tasks={waits} onOpen={onOpen} />
+            <Related title={tr("Others wait for this")} tasks={blocks} onOpen={onOpen} />
             <p className="pj-panel-foot">
-              <Link to={`/t/${id}`}>Open the whole story</Link>
+              <Link to={`/t/${id}`}>{tr("Open the whole story")}</Link>
             </p>
           </>
         )}
@@ -170,6 +171,6 @@ function Panel({ meta, id, project, tasks, onOpen, onClose }: { meta: EntityMeta
 export function TaskPanel(props: { id: string; project: string; tasks: Task[]; onOpen: (id: string | null) => void; onClose: () => void }) {
   const meta = useEntityMeta("Task");
   if (meta.error) return <ErrorState error={meta.error} onRetry={() => void meta.refetch()} />;
-  if (!meta.data) return <PageLoading label="Loading the task" />;
+  if (!meta.data) return <PageLoading label={tr("Loading the task")} />;
   return <Panel key={props.id} meta={meta.data} {...props} />;
 }

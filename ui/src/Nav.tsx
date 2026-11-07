@@ -3,6 +3,7 @@
 
 import { NavLink } from "react-router";
 import { useMetaIndex } from "@ferrum/records";
+import { t } from "@ferrum/client";
 
 /** Whether the person may see everyone's allocations, which the planning screen is about. */
 export function usePlanner(): boolean {
@@ -13,12 +14,12 @@ export function usePlanner(): boolean {
 export function Nav() {
   const planner = usePlanner();
   return (
-    <nav className="pj-tabs" aria-label="Projects">
+    <nav className="pj-tabs" aria-label={t("Projects")}>
       <NavLink to="/" end>
-        Projects
+        {t("Projects")}
       </NavLink>
-      <NavLink to="/my">My work</NavLink>
-      {planner && <NavLink to="/plan">Planning</NavLink>}
+      <NavLink to="/my">{t("My work")}</NavLink>
+      {planner && <NavLink to="/plan">{t("Planning")}</NavLink>}
     </nav>
   );
 }
