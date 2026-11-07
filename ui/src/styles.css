@@ -182,7 +182,7 @@
 }
 
 .pj-avatars .pj-avatar + .pj-avatar {
-  margin-left: -0.375rem;
+  margin-inline-start: -0.375rem;
   box-shadow: 0 0 0 2px var(--surface);
 }
 
@@ -273,7 +273,7 @@ a.pj-tile:focus-visible {
 
 .pj-keys dl {
   position: absolute;
-  right: 0;
+  inset-inline-end: 0;
   z-index: 12;
   display: grid;
   gap: 0.375rem;
@@ -334,7 +334,7 @@ a.pj-tile:focus-visible {
 .pj-table td {
   padding: 0.375rem 0.5rem;
   border-bottom: 1px solid var(--border);
-  text-align: left;
+  text-align: start;
   white-space: nowrap;
 }
 
@@ -350,7 +350,7 @@ a.pj-tile:focus-visible {
 }
 
 .pj-table .num {
-  text-align: right;
+  text-align: end;
   font-variant-numeric: tabular-nums;
 }
 
@@ -546,7 +546,7 @@ a.pj-tile:focus-visible {
   place-items: center;
   width: 1.5rem;
   height: 1.5rem;
-  margin-left: auto;
+  margin-inline-start: auto;
   border: 0;
   border-radius: var(--radius-sm);
   background: none;
@@ -741,7 +741,7 @@ a.pj-tile:focus-visible {
 }
 
 .pj-card-facts .pj-avatars {
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 
 @media (max-width: 720px) {
@@ -1480,7 +1480,7 @@ button.pj-fold:hover {
   position: absolute;
   top: 0.75rem;
   bottom: 0.75rem;
-  left: 0.8125rem;
+  inset-inline-start: 0.8125rem;
   width: 1px;
   background: var(--border);
   content: "";
@@ -1630,7 +1630,7 @@ button.pj-fold:hover {
 .pj-row-due {
   min-width: 3.5rem;
   font-size: 12.5px;
-  text-align: right;
+  text-align: end;
 }
 
 /* Moving a due date is one more thing on a row: it appears when the row is in use. */
@@ -1658,7 +1658,7 @@ button.pj-fold:hover {
 }
 
 .pj-meter strong {
-  text-align: right;
+  text-align: end;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1746,10 +1746,11 @@ button.pj-fold:hover {
 
 .pj-heat-who {
   position: sticky;
-  left: 0;
+  inset-inline-start: 0;
   z-index: 1;
   align-self: center;
-  padding: 0 0.5rem 0 0;
+  padding-block: 0 0;
+  padding-inline: 0 0.5rem;
   overflow: hidden;
   background: var(--bg);
   font-size: 13px;
