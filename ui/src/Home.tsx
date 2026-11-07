@@ -4,7 +4,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { Link } from "react-router";
-import { todayIso } from "@ferrum/client";
+import { todayIso, t as tr } from "@ferrum/client";
 import { Badge, EmptyState, ErrorState, Spinner, statusTone, useLiveEntity, useShellTitle } from "@ferrum/kit";
 import { can, useMe, useMetaIndex } from "@ferrum/records";
 import { Due, PriorityFlag, Progress } from "./bits";
@@ -28,12 +28,12 @@ function Projects() {
     for (const t of overdue.data?.rows ?? []) if (t.project) n.set(t.project, (n.get(t.project) ?? 0) + 1);
     return n;
   }, [overdue.data]);
-  if (projects.error) return <ErrorState error={projects.error} onRetry={() => void projects.refetch()} title="The projects cannot be shown" />;
-  if (!projects.data) return <Spinner label="Loading projects" />;
+  if (projects.error) return <ErrorState error={projects.error} onRetry={() => void projects.refetch()} title={tr("The projects cannot be shown")} />;
+  if (!projects.data) return <Spinner label={tr("Loading projects")} />;
   if (!projects.data.rows.length) {
     return (
-      <EmptyState title="No open projects" icon="board">
-        <Link to="e/Project/new">Start a project</Link>
+      <EmptyState title={tr("No open projects")} icon="board">
+        <Link to="e/Project/new">{tr("Start a project")}</Link>
       </EmptyState>
     );
   }
@@ -44,7 +44,7 @@ function Projects() {
           <Link className="pj-project" to={`p/${p.id}`}>
             <span className="pj-project-top">
               <span className="pj-project-name">{p.project_name}</span>
-              {p.status === "On Hold" && <Badge tone="amber">On hold</Badge>}
+              {p.status === "On Hold" && <Badge tone="amber">{tr("On hold")}</Badge>}
               <PriorityFlag priority={p.proj_priority} />
             </span>
             <span className="faint">{[p._titles?.customer, p.end_date && `due ${p.end_date}`, p.proj_project_manager].filter(Boolean).join(" · ")}</span>
@@ -65,9 +65,9 @@ function MyTasks({ me }: { me: string }) {
     queryFn: ({ signal }) =>
       list<Task>("Task", { titles: true, filters: JSON.stringify([["assigned_to.user", "=", me], ["status", "not in", DONE]]), sort: "exp_end_date asc", limit: 8, count: true, fields: "number,subject,status,priority,exp_end_date,project" }, signal),
   });
-  if (q.error) return <p className="muted">Your tasks cannot be shown.</p>;
-  if (!q.data) return <Spinner small label="Loading your tasks" />;
-  if (!q.data.rows.length) return <p className="muted">Nothing open on your plate.</p>;
+  if (q.error) return <p className="muted">{tr("Your tasks cannot be shown.")}</p>;
+  if (!q.data) return <Spinner small label={tr("Loading your tasks")} />;
+  if (!q.data.rows.length) return <p className="muted">{tr("Nothing open on your plate.")}</p>;
   const now = todayIso();
   return (
     <>
@@ -100,8 +100,8 @@ export function ProjectsHome() {
   useLiveEntity("Project", refresh);
   if (meta && !(project && can(project.permissions, "read"))) {
     return (
-      <EmptyState title="No projects for you" icon="alert">
-        <p className="muted">Ask an administrator for a Projects role.</p>
+      <EmptyState title={tr("No projects for you")} icon="alert">
+        <p className="muted">{tr("Ask an administrator for a Projects role.")}</p>
       </EmptyState>
     );
   }
@@ -111,7 +111,7 @@ export function ProjectsHome() {
         <Nav />
         {project && can(project.permissions, "create") && (
           <Link className="btn btn-primary btn-md" to="e/Project/new">
-            New project
+            {tr("New project")}
           </Link>
         )}
       </header>
@@ -119,7 +119,7 @@ export function ProjectsHome() {
       {me && (
         <section className="card" aria-labelledby="pj-mine">
           <div className="card-head">
-            <h2 id="pj-mine">Your soonest tasks</h2>
+            <h2 id="pj-mine">{tr("Your soonest tasks")}</h2>
           </div>
           <div className="card-body">
             <MyTasks me={me} />

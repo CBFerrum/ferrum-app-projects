@@ -2,7 +2,7 @@
 // priority flag, a due date.
 
 import { Flag } from "lucide-react";
-import { initials } from "@ferrum/client";
+import { initials, t } from "@ferrum/client";
 import { shortDay } from "./days";
 import { mark, num } from "./plan";
 
@@ -59,7 +59,7 @@ export function PriorityFlag({ priority, always }: { priority: string | null | u
 export function Keys({ keys }: { keys: [string, string][] }) {
   return (
     <details className="pj-keys">
-      <summary>Keyboard</summary>
+      <summary>{t("Keyboard")}</summary>
       <dl className="card">
         {keys.map(([key, what]) => (
           <div key={key}>

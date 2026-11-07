@@ -6,7 +6,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useCallback, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
-import { api, ApiError, docPath, errorMessage, formatDate, formatMoment, newKey, todayIso } from "@ferrum/client";
+import { api, ApiError, docPath, errorMessage, formatDate, formatMoment, newKey, todayIso, t } from "@ferrum/client";
 import { Alert, Badge, Button, EmptyState, ErrorState, Icon, PageLoading, Spinner, statusTone, toast, useLiveEntity, useShellTitle } from "@ferrum/kit";
 import { can, CollabPanel, Composer, type EntityMeta, LinkInput, RecordFields, useEntityMeta, usePeople, useRecord } from "@ferrum/records";
 import { Avatars, Due, PriorityFlag, Progress } from "./bits";
@@ -47,7 +47,7 @@ function Waiting({ q, what }: { q: { isLoading: boolean; error: unknown; refetch
   if (q.error) {
     return (
       <p className="muted">
-        {what} cannot be shown. <button type="button" className="link-btn" onClick={() => void q.refetch()}>Try again</button>
+        {t("{what} cannot be shown.", { what })} <button type="button" className="link-btn" onClick={() => void q.refetch()}>{t("Try again")}</button>
       </p>
     );
   }
@@ -91,9 +91,9 @@ function SubTasks({ task, canWrite, changed }: { task: Task; canWrite: boolean; 
   };
   const now = todayIso();
   return (
-    <Card title={kids.length ? `Sub-tasks, ${done} of ${kids.length} done` : "Sub-tasks"} aside={kids.length > 0 ? <Progress value={(done / kids.length) * 100} label="Sub-tasks done" /> : undefined}>
+    <Card title={kids.length ? `Sub-tasks, ${done} of ${kids.length} done` : "Sub-tasks"} aside={kids.length > 0 ? <Progress value={(done / kids.length) * 100} label={t("Sub-tasks done")} /> : undefined}>
       <Waiting q={q} what="The sub-tasks" />
-      {q.data && !kids.length && <p className="muted">It is not split into smaller tasks.</p>}
+      {q.data && !kids.length && <p className="muted">{t("It is not split into smaller tasks.")}</p>}
       <ul className="pj-lines">
         {kids.map((k) => (
           <li key={k.id}>
@@ -110,9 +110,9 @@ function SubTasks({ task, canWrite, changed }: { task: Task; canWrite: boolean; 
       </ul>
       {canWrite && (
         <form className="pj-add" onSubmit={(e) => void add(e)}>
-          <input className="input" aria-label="Add a sub-task" placeholder="Add a sub-task" value={text} readOnly={busy} onChange={(e) => setText(e.target.value)} />
+          <input className="input" aria-label={t("Add a sub-task")} placeholder={t("Add a sub-task")} value={text} readOnly={busy} onChange={(e) => setText(e.target.value)} />
           <Button type="submit" size="sm" loading={busy} disabled={!text.trim()}>
-            Add
+            {t("Add")}
           </Button>
         </form>
       )}
@@ -131,14 +131,14 @@ function Waits({ task, project, rows, canWrite, save }: { task: Task; project: s
   const holding = before.filter((b) => b.status !== "Completed");
   const keep = (r: (typeof rows)[number]) => ({ id: r.id, task: r.task });
   return (
-    <Card title="Order of work">
+    <Card title={t("Order of work")}>
       <Waiting q={first.q} what="What it waits for" />
       {holding.length > 0 && task.status !== "Completed" && (
         <Alert tone="warning">
-          It cannot start until {holding.map((h) => h.number ?? h.subject).join(", ")} {holding.length === 1 ? "is" : "are"} completed.
+          {t("It cannot start until")} {holding.map((h) => h.number ?? h.subject).join(", ")} {holding.length === 1 ? "is" : "are"} completed.
         </Alert>
       )}
-      <h3 className="pj-minor">Waits for</h3>
+      <h3 className="pj-minor">{t("Waits for")}</h3>
       <ul className="pj-lines">
         {before.map((b) => (
           <li key={b.id}>
@@ -154,14 +154,14 @@ function Waits({ task, project, rows, canWrite, save }: { task: Task; project: s
             )}
           </li>
         ))}
-        {first.q.data && !before.length && <li className="faint">Nothing. It can start whenever.</li>}
+        {first.q.data && !before.length && <li className="faint">{t("Nothing. It can start whenever.")}</li>}
       </ul>
       {canWrite && (
         <div className="pj-pick">
-          <LinkInput to="Task" value={null} label="Waits for another task" placeholder="Wait for another task…" linkFilters={{ project }} onChange={(picked) => picked && picked !== task.id && void save("depends_on", [...rows.map(keep), { task: picked }])} />
+          <LinkInput to="Task" value={null} label={t("Waits for another task")} placeholder={t("Wait for another task…")} linkFilters={{ project }} onChange={(picked) => picked && picked !== task.id && void save("depends_on", [...rows.map(keep), { task: picked }])} />
         </div>
       )}
-      <h3 className="pj-minor">Others wait for it</h3>
+      <h3 className="pj-minor">{t("Others wait for it")}</h3>
       <Waiting q={after.q} what="The tasks after it" />
       <ul className="pj-lines">
         {(after.q.data ?? []).map((b) => (
@@ -173,7 +173,7 @@ function Waits({ task, project, rows, canWrite, save }: { task: Task; project: s
             <Due day={b.exp_end_date} late={late(b, todayIso())} />
           </li>
         ))}
-        {after.q.data && !after.q.data.length && <li className="faint">Nothing waits for it.</li>}
+        {after.q.data && !after.q.data.length && <li className="faint">{t("Nothing waits for it.")}</li>}
       </ul>
     </Card>
   );
@@ -191,10 +191,10 @@ function TimeLogged({ task, doc }: { task: Task; doc: Record<string, unknown> })
   const shared = typeof doc.project === "string" ? doc.project : "";
   return (
     <Card
-      title="Time"
+      title={t("Time")}
       aside={
         <Link className="btn btn-sm" to={`/e/Timesheet/new?project=${shared}`}>
-          Log time
+          {t("Log time")}
         </Link>
       }
     >
@@ -205,7 +205,7 @@ function TimeLogged({ task, doc }: { task: Task; doc: Record<string, unknown> })
           <span className="faint"> logged{estimate > 0 ? ` of ${estimate} h expected` : ""}</span>
         </p>
       )}
-      {q.data && !logs.length && <p className="muted">No time logged on it yet.</p>}
+      {q.data && !logs.length && <p className="muted">{t("No time logged on it yet.")}</p>}
       <ul className="pj-lines">
         {logs.slice(0, 8).map((l) => (
           <li key={l.key}>
@@ -213,12 +213,12 @@ function TimeLogged({ task, doc }: { task: Task; doc: Record<string, unknown> })
               {l.hours} h · {names(l.user)}
               {l.what && <span className="faint"> · {l.what}</span>}
             </span>
-            {!l.counted && <Badge tone="amber">Not submitted</Badge>}
+            {!l.counted && <Badge tone="amber">{t("Not submitted")}</Badge>}
             <span className="faint">{l.at ? formatDate(l.at.slice(0, 10)) : ""}</span>
           </li>
         ))}
       </ul>
-      {logs.length > 8 && <p className="faint">and {logs.length - 8} more in the timesheets.</p>}
+      {logs.length > 8 && <p className="faint">and {logs.length - 8} {t("more in the timesheets.")}</p>}
     </Card>
   );
 }
@@ -229,7 +229,7 @@ function Issues({ task }: { task: Task }) {
   const { q, hidden } = useSection(task.id, "issues", (signal) => list<{ id: string; title?: string; severity?: string; status?: string }>("ProjectIssue", { filters: JSON.stringify([["task", "=", task.id]]), fields: "title,severity,status", limit: 50 }, signal).then((r) => r.rows));
   if (hidden || (q.data && !q.data.length)) return null;
   return (
-    <Card title="Issues raised against it">
+    <Card title={t("Issues raised against it")}>
       <Waiting q={q} what="The issues" />
       <ul className="pj-lines">
         {(q.data ?? []).map((i) => (
@@ -273,9 +273,9 @@ function Story({ id, changed }: { id: string; changed: () => void }) {
     <div className="stack">
       {writable && <Composer people={people} onPost={post} />}
       {failed ? (
-        <ErrorState error={failed.error} onRetry={() => void failed.refetch()} title="The story cannot be shown" />
+        <ErrorState error={failed.error} onRetry={() => void failed.refetch()} title={t("The story cannot be shown")} />
       ) : loading ? (
-        <PageLoading label="Loading the story" />
+        <PageLoading label={t("Loading the story")} />
       ) : items.length ? (
         <ol className="pj-events">
           {items.map((i) => (
@@ -295,7 +295,7 @@ function Story({ id, changed }: { id: string; changed: () => void }) {
           ))}
         </ol>
       ) : (
-        <p className="muted">Nothing has happened yet.</p>
+        <p className="muted">{t("Nothing has happened yet.")}</p>
       )}
     </div>
   );
@@ -326,14 +326,14 @@ function TaskPage({ meta, id }: { meta: EntityMeta; id: string }) {
   if (record.error) {
     if (record.error instanceof ApiError && record.error.status === 404) {
       return (
-        <EmptyState title="This task no longer exists">
-          <Link to="/my">Back to your work</Link>
+        <EmptyState title={t("This task no longer exists")}>
+          <Link to="/my">{t("Back to your work")}</Link>
         </EmptyState>
       );
     }
     return <ErrorState error={record.error} onRetry={() => void record.refetch()} />;
   }
-  if (!doc) return <PageLoading label="Loading the task" />;
+  if (!doc) return <PageLoading label={t("Loading the task")} />;
 
   const status = String(doc.status ?? "Open");
   const done = status === "Completed" || status === "Cancelled";
@@ -346,9 +346,9 @@ function TaskPage({ meta, id }: { meta: EntityMeta; id: string }) {
   return (
     <div className="pj-page pj-task-page">
       <div className="crumbs">
-        <Link to="/">Projects</Link>
+        <Link to="/">{t("Projects")}</Link>
         <Icon name="chevronRight" size={12} />
-        {project ? <Link to={`/p/${project}`}>{where ?? "Project"}</Link> : <span>Project</span>}
+        {project ? <Link to={`/p/${project}`}>{where ?? "Project"}</Link> : <span>{t("Project")}</span>}
       </div>
       <header className="pj-task-head">
         <div className="pj-task-title">
@@ -378,16 +378,16 @@ function TaskPage({ meta, id }: { meta: EntityMeta; id: string }) {
         <div className="page-actions">
           {writable && !done && (
             <Button variant="primary" icon="check" onClick={() => void save("status", "Completed")}>
-              Mark complete
+              {t("Mark complete")}
             </Button>
           )}
-          {writable && status === "Completed" && <Button onClick={() => void save("status", "Open")}>Reopen</Button>}
-          <Link className="icon-btn" to={`/e/Task/${id}`} title="Open the full form" aria-label="Open the full form">
+          {writable && status === "Completed" && <Button onClick={() => void save("status", "Open")}>{t("Reopen")}</Button>}
+          <Link className="icon-btn" to={`/e/Task/${id}`} title={t("Open the full form")} aria-label={t("Open the full form")}>
             <Icon name="expand" size={15} />
           </Link>
         </div>
       </header>
-      <ol className="pj-strip" aria-label="Status">
+      <ol className="pj-strip" aria-label={t("Status")}>
         {CHOOSABLE.map((s, i) => {
           const at = CHOOSABLE.indexOf(status === "Overdue" ? "Open" : status);
           return (
@@ -399,10 +399,10 @@ function TaskPage({ meta, id }: { meta: EntityMeta; id: string }) {
           );
         })}
       </ol>
-      {status === "Cancelled" && <Alert tone="info">This task was cancelled.</Alert>}
+      {status === "Cancelled" && <Alert tone="info">{t("This task was cancelled.")}</Alert>}
       <div className="pj-task-body">
         <div className="pj-task-main">
-          <div className="pj-switch" role="tablist" aria-label="View">
+          <div className="pj-switch" role="tablist" aria-label={t("View")}>
             {(["story", "discussion"] as const).map((v) => (
               <button key={v} type="button" role="tab" aria-selected={view === v} onClick={() => setView(v)}>
                 {v === "story" ? "Story" : "Discussion"}
@@ -417,13 +417,13 @@ function TaskPage({ meta, id }: { meta: EntityMeta; id: string }) {
               <Waits task={task} project={project} rows={waits} canWrite={writable} save={save} />
               <TimeLogged task={task} doc={doc} />
               <Issues task={task} />
-              <Card title="What happened">
+              <Card title={t("What happened")}>
                 <Story id={id} changed={changed} />
               </Card>
             </>
           )}
         </div>
-        <aside className="pj-task-side" aria-label="Task details">
+        <aside className="pj-task-side" aria-label={t("Task details")}>
           <People doc={doc} canWrite={writable} save={save} />
           <RecordFields meta={meta} doc={doc} save={save} />
         </aside>
