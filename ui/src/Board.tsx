@@ -314,7 +314,7 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
   const said = (card: Card, move: Move, to: string, at: number) => {
     const cell = model.lanes.flatMap((l) => l.cells).find((c) => c.id === to);
     const n = (cell?.cards.filter((c) => c.task.id !== card.task.id).length ?? 0) + 1;
-    return `Moved ${card.task.subject ?? "the task"}${move.patch.status ? ` to ${move.patch.status}` : ""}, position ${at + 1} of ${n}.`;
+    return (move.patch.status ? tr("Moved {task} to {status}, position {position} of {n}.", { task: card.task.subject ?? tr("the task"), status: String(move.patch.status), position: at + 1, n }) : tr("Moved {task}, position {position} of {n}.", { task: card.task.subject ?? tr("the task"), position: at + 1, n }));
   };
 
   const drop = (key: string, to: string, at: number) => {
@@ -363,7 +363,7 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
       const lane = found && model.lanes.find((l) => l.id === found.lane);
       const cell = lane?.cells.find((c) => c.status === status);
       const move = found && cell && dropPlan(model, found.key, cell.id, cell.cards.filter((c) => c.task.id !== t.id).length, lanes, order);
-      if (found && move) apply(found, move, `Moved ${t.subject ?? "the task"} to ${status}.`);
+      if (found && move) apply(found, move, tr("Moved {value} to {status}.", { value: t.subject ?? "the task", status }));
       else if (found && !cell) void changeTask(qc, project.id, t, { status });
     },
     onPriority: (t, priority) => void changeTask(qc, project.id, t, { priority }),
@@ -460,14 +460,14 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
   const label = (key: string) => cards.get(key)?.task.subject ?? "the task";
   const cellName = (id: string) => cellById.get(where.get(id) ?? "")?.status ?? "a column";
   const announcements: Announcements = {
-    onDragStart: ({ active }) => `Picked up ${label(String(active.id))}.`,
-    onDragOver: ({ active, over }) => (over ? `${label(String(active.id))} is over ${cellName(String(over.id))}.` : undefined),
-    onDragEnd: ({ active, over }) => (over ? `${label(String(active.id))} dropped in ${cellName(String(over.id))}.` : `${label(String(active.id))} put back.`),
-    onDragCancel: ({ active }) => `Moving ${label(String(active.id))} was cancelled.`,
+    onDragStart: ({ active }) => tr("Picked up {value}.", { value: label(String(active.id)) }),
+    onDragOver: ({ active, over }) => (over ? tr("{value} is over {value2}.", { value: label(String(active.id)), value2: cellName(String(over.id)) }) : undefined),
+    onDragEnd: ({ active, over }) => (over ? tr("{value} dropped in {value2}.", { value: label(String(active.id)), value2: cellName(String(over.id)) }) : tr("{value} put back.", { value: label(String(active.id)) })),
+    onDragCancel: ({ active }) => tr("Moving {value} was cancelled.", { value: label(String(active.id)) }),
   };
 
   const overlay = held ? cards.get(held) : undefined;
-  const sortNote = order === "manual" ? null : `Sorted by ${order === "due" ? "due date" : "priority"}: a drop moves the card between columns only.`;
+  const sortNote = order === "manual" ? null : (order === "due" ? tr("Sorted by due date: a drop moves the card between columns only.") : tr("Sorted by priority: a drop moves the card between columns only."));
   const laneName = (id: string) => (id === NOBODY ? tr("Nobody") : lanes === "priority" ? tr("{id} priority", { id }) : names(id));
 
   return (

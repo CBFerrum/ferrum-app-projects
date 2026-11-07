@@ -146,7 +146,7 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
     for (const c of p.changes.filter((x) => x.kind !== "dragged")) void send(c, true, first);
     setPast((h) => [...h.slice(-19), prior]);
     setPending(null);
-    setNote(p.changes.length === 1 ? "Dates changed." : `Dates changed for ${p.changes.length} tasks.`);
+    setNote(p.changes.length === 1 ? "Dates changed." : tr("Dates changed for {length} tasks.", { length: p.changes.length }));
   };
 
   const undo = () => {
@@ -532,7 +532,7 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
                 "data-carried": drag?.id === t.id || undefined,
                 role: "button",
                 tabIndex: 0,
-                "aria-label": `${t.number ?? ""} ${t.subject ?? ""}, ${s.start === s.end ? s.end : `${s.start} to ${s.end}`}${editable ? ". Arrow keys move it; Alt and the arrow keys change its end." : ""}`,
+                "aria-label": `${t.number ?? ""} ${t.subject ?? ""}, ${s.start === s.end ? s.end : tr("{start} to {end}", { start: s.start, end: s.end })}${editable ? ". Arrow keys move it; Alt and the arrow keys change its end." : ""}`,
                 onKeyDown: (e: KeyboardEvent<HTMLElement>) => onBarKey(e, r),
                 onPointerDown: editable ? (e: PointerEvent<HTMLDivElement>) => onDown(e, r) : undefined,
                 onPointerMove: editable ? onMove : undefined,
