@@ -1,6 +1,6 @@
 id: projects
 name: Projects
-version: 0.6.13
+version: 0.6.14
 publisher: cbferrum
 summary: Projects, task trees with dependencies, timesheets, time and milestone billing, profitability
 description: README.md
@@ -38,3 +38,17 @@ contributes:
     - {id: tasks, title: Your tasks, endpoint: /api/app/projects/work}
   shell.notification:
     - {id: assigned, label: Tasks assigned to you, default: [inapp, email]}
+  # What the assistant should know in Projects's pages, and what it suggests asking there.
+  shell.assistant:
+    - id: projects
+      title: "Projects"
+      instructions: >-
+        A project's tasks (Open, Working, Pending Review, Overdue, Completed, Cancelled) form a tree with
+        dependencies. A submitted Timesheet records time against tasks and is billed by the project's billing method.
+        A ChangeRequest changes the scope once approved. Risks (ProjectRisk) and issues (ProjectIssue) are kept for
+        each project. Profitability compares what was billed with the costs of timesheets and purchases.
+      suggestions:
+        - "Which tasks on my projects are overdue?"
+        - "How many hours were logged this week, by project?"
+        - "Which projects are over budget?"
+        - "What time is not billed yet?"
