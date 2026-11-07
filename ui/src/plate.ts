@@ -3,6 +3,7 @@
 
 import { diffDays } from "./days";
 import { DONE, hoursLeft, PRIORITIES, priorityOf, type Task } from "./plan";
+import { t as tr } from "@ferrum/client";
 
 export type Horizon = "Overdue" | "Today" | "Next 7 days" | "Later" | "No date";
 export const HORIZONS: Horizon[] = ["Overdue", "Today", "Next 7 days", "Later", "No date"];
@@ -43,7 +44,7 @@ export function byProject(tasks: Task[], name: (t: Task) => string): Group[] {
   const groups = new Map<string, Group>();
   for (const t of open(tasks).sort(soonest)) {
     const key = t.project ?? "";
-    const g = groups.get(key) ?? { key, label: name(t) || "No project", tasks: [] };
+    const g = groups.get(key) ?? { key, label: name(t) || tr("No project"), tasks: [] };
     g.tasks.push(t);
     groups.set(key, g);
   }

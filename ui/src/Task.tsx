@@ -6,7 +6,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useCallback, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
-import { api, ApiError, docPath, errorMessage, formatDate, formatMoment, newKey, todayIso, t } from "@ferrum/client";
+import { api, ApiError, docPath, errorMessage, formatDate, formatMoment, newKey, todayIso, t, isolate } from "@ferrum/client";
 import { Alert, Badge, Button, EmptyState, ErrorState, Icon, PageLoading, Spinner, statusTone, toast, useLiveEntity, useShellTitle } from "@ferrum/kit";
 import { can, CollabPanel, Composer, type EntityMeta, LinkInput, RecordFields, useEntityMeta, usePeople, useRecord } from "@ferrum/records";
 import { Avatars, Due, PriorityFlag, Progress } from "./bits";
@@ -33,7 +33,7 @@ function Card({ title, aside, children }: { title: string; aside?: React.ReactNo
   return (
     <section className="card pj-section" data-ferrum-nocard="" aria-label={title}>
       <div className="card-head">
-        <h2>{title}</h2>
+        <h2>{isolate(title)}</h2>
         <span className="spacer" />
         {aside}
       </div>
@@ -51,7 +51,7 @@ function Waiting({ q, what }: { q: { isLoading: boolean; error: unknown; refetch
       </p>
     );
   }
-  return q.isLoading ? <Spinner small label={`Loading ${what.toLowerCase()}`} /> : null;
+  return q.isLoading ? <Spinner small label={t("Loading {what}", { what: what.toLowerCase() })} /> : null;
 }
 
 // ── sub-tasks ──
@@ -91,7 +91,7 @@ function SubTasks({ task, canWrite, changed }: { task: Task; canWrite: boolean; 
   };
   const now = todayIso();
   return (
-    <Card title={kids.length ? `Sub-tasks, ${done} of ${kids.length} done` : "Sub-tasks"} aside={kids.length > 0 ? <Progress value={(done / kids.length) * 100} label={t("Sub-tasks done")} /> : undefined}>
+    <Card title={kids.length ? t("Sub-tasks, {done} of {length} done", { done, length: kids.length }) : t("Sub-tasks")} aside={kids.length > 0 ? <Progress value={(done / kids.length) * 100} label={t("Sub-tasks done")} /> : undefined}>
       <Waiting q={q} what="The sub-tasks" />
       {q.data && !kids.length && <p className="muted">{t("It is not split into smaller tasks.")}</p>}
       <ul className="pj-lines">
@@ -101,7 +101,7 @@ function SubTasks({ task, canWrite, changed }: { task: Task; canWrite: boolean; 
               <Icon name="check" size={12} />
             </button>
             <Link to={`/t/${k.id}`} className="pj-line-title">
-              {k.subject}
+              {isolate(k.subject ?? "")}
             </Link>
             <PriorityFlag priority={k.priority} />
             <Due day={k.exp_end_date} late={late(k, now)} />
@@ -135,20 +135,20 @@ function Waits({ task, project, rows, canWrite, save }: { task: Task; project: s
       <Waiting q={first.q} what="What it waits for" />
       {holding.length > 0 && task.status !== "Completed" && (
         <Alert tone="warning">
-          {t("It cannot start until")} {holding.map((h) => h.number ?? h.subject).join(", ")} {holding.length === 1 ? "is" : "are"} completed.
+          {t("It cannot start until")} {isolate(holding.map((h) => h.number ?? h.subject).join(", "))} {holding.length === 1 ? t("is") : t("are")} {t("completed.")}
         </Alert>
       )}
       <h3 className="pj-minor">{t("Waits for")}</h3>
       <ul className="pj-lines">
         {before.map((b) => (
           <li key={b.id}>
-            <Badge tone={statusTone(b.status)}>{b.status}</Badge>
+            <Badge tone={statusTone(b.status)}>{isolate(b.status ?? "")}</Badge>
             <Link to={`/t/${b.id}`} className="pj-line-title">
-              {b.number} {b.subject}
+              {isolate(b.number ?? "")} {isolate(b.subject ?? "")}
             </Link>
             <Due day={b.exp_end_date} late={late(b, todayIso())} />
             {canWrite && (
-              <button type="button" className="icon-btn icon-btn-sm" aria-label={`It no longer waits for ${b.subject}`} onClick={() => void save("depends_on", rows.filter((r) => r.task !== b.id).map(keep))}>
+              <button type="button" className="icon-btn icon-btn-sm" aria-label={t("It no longer waits for {subject}", { subject: String(b.subject) })} onClick={() => void save("depends_on", rows.filter((r) => r.task !== b.id).map(keep))}>
                 <Icon name="x" size={13} />
               </button>
             )}
@@ -166,9 +166,9 @@ function Waits({ task, project, rows, canWrite, save }: { task: Task; project: s
       <ul className="pj-lines">
         {(after.q.data ?? []).map((b) => (
           <li key={b.id}>
-            <Badge tone={statusTone(b.status)}>{b.status}</Badge>
+            <Badge tone={statusTone(b.status)}>{isolate(b.status ?? "")}</Badge>
             <Link to={`/t/${b.id}`} className="pj-line-title">
-              {b.number} {b.subject}
+              {isolate(b.number ?? "")} {isolate(b.subject ?? "")}
             </Link>
             <Due day={b.exp_end_date} late={late(b, todayIso())} />
           </li>
@@ -202,7 +202,7 @@ function TimeLogged({ task, doc }: { task: Task; doc: Record<string, unknown> })
       {q.data && (
         <p className="pj-hours">
           <strong className={estimate > 0 && logged > estimate ? "pj-late" : undefined}>{logged} h</strong>
-          <span className="faint"> logged{estimate > 0 ? ` of ${estimate} h expected` : ""}</span>
+          <span className="faint"> {t("logged")}{estimate > 0 ? t(" of {estimate} h expected", { estimate }) : ""}</span>
         </p>
       )}
       {q.data && !logs.length && <p className="muted">{t("No time logged on it yet.")}</p>}
@@ -210,15 +210,15 @@ function TimeLogged({ task, doc }: { task: Task; doc: Record<string, unknown> })
         {logs.slice(0, 8).map((l) => (
           <li key={l.key}>
             <span className="pj-line-title">
-              {l.hours} h · {names(l.user)}
-              {l.what && <span className="faint"> · {l.what}</span>}
+              {l.hours} h · {isolate(names(l.user))}
+              {l.what && <span className="faint"> · {isolate(l.what)}</span>}
             </span>
             {!l.counted && <Badge tone="amber">{t("Not submitted")}</Badge>}
             <span className="faint">{l.at ? formatDate(l.at.slice(0, 10)) : ""}</span>
           </li>
         ))}
       </ul>
-      {logs.length > 8 && <p className="faint">and {logs.length - 8} {t("more in the timesheets.")}</p>}
+      {logs.length > 8 && <p className="faint">{t("and")} {logs.length - 8} {t("more in the timesheets.")}</p>}
     </Card>
   );
 }
@@ -234,11 +234,11 @@ function Issues({ task }: { task: Task }) {
       <ul className="pj-lines">
         {(q.data ?? []).map((i) => (
           <li key={i.id}>
-            <Badge tone={i.severity === "Critical" || i.severity === "High" ? "red" : "neutral"}>{i.severity}</Badge>
+            <Badge tone={i.severity === "Critical" || i.severity === "High" ? "red" : "neutral"}>{isolate(i.severity ?? "")}</Badge>
             <Link to={`/e/ProjectIssue/${i.id}`} className="pj-line-title">
-              {i.title}
+              {isolate(i.title ?? "")}
             </Link>
-            <Badge tone={statusTone(i.status)}>{i.status}</Badge>
+            <Badge tone={statusTone(i.status)}>{isolate(i.status ?? "")}</Badge>
           </li>
         ))}
       </ul>
@@ -285,11 +285,11 @@ function Story({ id, changed }: { id: string; changed: () => void }) {
               </span>
               <div className="pj-event-body">
                 <div className="pj-event-line">
-                  <strong>{i.title}</strong>
-                  <time className="faint">{when(i.at)}</time>
+                  <strong>{isolate(i.title)}</strong>
+                  <time className="faint">{isolate(when(i.at))}</time>
                 </div>
-                {i.detail && <p className="pj-event-detail">{i.detail}</p>}
-                {i.who && <div className="faint pj-event-who">{names(i.who)}</div>}
+                {i.detail && <p className="pj-event-detail">{isolate(i.detail)}</p>}
+                {i.who && <div className="faint pj-event-who">{isolate(names(i.who))}</div>}
               </div>
             </li>
           ))}
@@ -348,28 +348,28 @@ function TaskPage({ meta, id }: { meta: EntityMeta; id: string }) {
       <div className="crumbs">
         <Link to="/">{t("Projects")}</Link>
         <Icon name="chevronRight" size={12} />
-        {project ? <Link to={`/p/${project}`}>{where ?? "Project"}</Link> : <span>{t("Project")}</span>}
+        {project ? <Link to={`/p/${project}`}>{where ?? t("Project")}</Link> : <span>{t("Project")}</span>}
       </div>
       <header className="pj-task-head">
         <div className="pj-task-title">
           <p className="faint pj-mono">
-            {task.number}
-            {doc.is_milestone ? " · Milestone" : ""}
+            {isolate(task.number ?? "")}
+            {doc.is_milestone ? t(" · Milestone") : ""}
             {doc.parent_task && doc._titles?.parent_task ? (
               <>
-                {" · in "}
-                <Link to={`/t/${String(doc.parent_task)}`}>{doc._titles.parent_task}</Link>
+                {t(" · in ")}
+                <Link to={`/t/${String(doc.parent_task)}`}>{isolate(doc._titles.parent_task)}</Link>
               </>
             ) : null}
           </p>
-          <h1 className="page-title">{task.subject}</h1>
+          <h1 className="page-title">{isolate(task.subject ?? "")}</h1>
           <p className="row pj-facts">
-            <Badge tone={statusTone(status)}>{status}</Badge>
+            <Badge tone={statusTone(status)}>{isolate(status)}</Badge>
             <PriorityFlag priority={doc.priority as string} always />
             {typeof doc.exp_end_date === "string" && (
               <span className={overdue ? "pj-late" : "faint"}>
-                {doc.exp_start_date ? `${formatDate(doc.exp_start_date)} – ` : "Due "}
-                {formatDate(doc.exp_end_date)}
+                {doc.exp_start_date ? `${formatDate(doc.exp_start_date)} – ` : t("Due ")}
+                {isolate(formatDate(doc.exp_end_date))}
               </span>
             )}
             <Avatars emails={people.map((p) => p.user ?? "").filter(Boolean)} names={names} max={4} />
@@ -393,7 +393,7 @@ function TaskPage({ meta, id }: { meta: EntityMeta; id: string }) {
           return (
             <li key={s} data-state={i < at ? "past" : i === at ? "current" : undefined}>
               <button type="button" disabled={!writable || status === "Cancelled" || s === status} aria-current={i === at ? "step" : undefined} onClick={() => void save("status", s)}>
-                {s}
+                {isolate(s)}
               </button>
             </li>
           );
@@ -405,7 +405,7 @@ function TaskPage({ meta, id }: { meta: EntityMeta; id: string }) {
           <div className="pj-switch" role="tablist" aria-label={t("View")}>
             {(["story", "discussion"] as const).map((v) => (
               <button key={v} type="button" role="tab" aria-selected={view === v} onClick={() => setView(v)}>
-                {v === "story" ? "Story" : "Discussion"}
+                {v === "story" ? t("Story") : t("Discussion")}
               </button>
             ))}
           </div>

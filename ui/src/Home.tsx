@@ -4,7 +4,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { Link } from "react-router";
-import { todayIso, t as tr } from "@ferrum/client";
+import { todayIso, t as tr, isolate } from "@ferrum/client";
 import { Badge, EmptyState, ErrorState, Spinner, statusTone, useLiveEntity, useShellTitle } from "@ferrum/kit";
 import { can, useMe, useMetaIndex } from "@ferrum/records";
 import { Due, PriorityFlag, Progress } from "./bits";
@@ -43,14 +43,14 @@ function Projects() {
         <li key={p.id}>
           <Link className="pj-project" to={`p/${p.id}`}>
             <span className="pj-project-top">
-              <span className="pj-project-name">{p.project_name}</span>
+              <span className="pj-project-name">{isolate(p.project_name ?? "")}</span>
               {p.status === "On Hold" && <Badge tone="amber">{tr("On hold")}</Badge>}
               <PriorityFlag priority={p.proj_priority} />
             </span>
-            <span className="faint">{[p._titles?.customer, p.end_date && `due ${p.end_date}`, p.proj_project_manager].filter(Boolean).join(" · ")}</span>
+            <span className="faint">{isolate([p._titles?.customer, p.end_date && `due ${p.end_date}`, p.proj_project_manager].filter(Boolean).join(" · "))}</span>
             <span className="pj-project-foot">
               <Progress value={p.proj_percent_complete} />
-              {(lateBy.get(p.id) ?? 0) > 0 && <span className="pj-late">{lateBy.get(p.id)} late</span>}
+              {(lateBy.get(p.id) ?? 0) > 0 && <span className="pj-late">{tr("{lateBy} late", { lateBy: lateBy.get(p.id) ?? "" })}</span>}
             </span>
           </Link>
         </li>
@@ -74,23 +74,23 @@ function MyTasks({ me }: { me: string }) {
       <ul className="pj-mine" data-ferrum-nocard>
         {q.data.rows.map((t) => (
           <li key={t.id}>
-            <Link to={`t/${t.id}`}>{t.subject}</Link>
-            <span className="faint pj-mine-project">{t._titles?.project}</span>
+            <Link to={`t/${t.id}`}>{isolate(t.subject ?? "")}</Link>
+            <span className="faint pj-mine-project">{isolate(t._titles?.project ?? "")}</span>
             <PriorityFlag priority={t.priority} />
-            <Badge tone={statusTone(t.status)}>{t.status}</Badge>
+            <Badge tone={statusTone(t.status)}>{isolate(t.status ?? "")}</Badge>
             <Due day={t.exp_end_date} late={late(t, now)} />
           </li>
         ))}
       </ul>
       <p>
-        <Link to="my">{(q.data.total ?? 0) > q.data.rows.length ? `All ${q.data.total} of your tasks` : "Everything on your plate"}</Link>
+        <Link to="my">{(q.data.total ?? 0) > q.data.rows.length ? tr("All {total} of your tasks", { total: String(q.data.total) }) : tr("Everything on your plate")}</Link>
       </p>
     </>
   );
 }
 
 export function ProjectsHome() {
-  useShellTitle("Projects");
+  useShellTitle(tr("Projects"));
   const me = useMe().data?.user.email;
   const meta = useMetaIndex().data;
   const project = meta?.entities.find((e) => e.name === "Project");

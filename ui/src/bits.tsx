@@ -2,7 +2,7 @@
 // priority flag, a due date.
 
 import { Flag } from "lucide-react";
-import { initials, t } from "@ferrum/client";
+import { initials, t, isolate } from "@ferrum/client";
 import { shortDay } from "./days";
 import { mark, num } from "./plan";
 
@@ -48,9 +48,9 @@ export function PriorityFlag({ priority, always }: { priority: string | null | u
   const p = priority ?? "Medium";
   if (p === "Medium" && !always) return null;
   return (
-    <span className="pj-flag" data-priority={p} title={`${p} priority`}>
+    <span className="pj-flag" data-priority={p} title={t("{p} priority", { p })}>
       <Flag size={12} aria-hidden="true" />
-      <span className="sr-only">{p} priority</span>
+      <span className="sr-only">{t("{p} priority", { p })}</span>
     </span>
   );
 }
@@ -64,9 +64,9 @@ export function Keys({ keys }: { keys: [string, string][] }) {
         {keys.map(([key, what]) => (
           <div key={key}>
             <dt>
-              <kbd className="kbd">{key}</kbd>
+              <kbd className="kbd">{isolate(key)}</kbd>
             </dt>
-            <dd>{what}</dd>
+            <dd>{isolate(what)}</dd>
           </div>
         ))}
       </dl>
@@ -79,7 +79,7 @@ export function Due({ day, late, label = "Due" }: { day: string | null | undefin
   if (!day) return null;
   return (
     <span className={late ? "pj-late" : "faint"} title={`${late ? "Late: " : ""}${label.toLowerCase()} ${day}`}>
-      {shortDay(day)}
+      {isolate(shortDay(day))}
     </span>
   );
 }

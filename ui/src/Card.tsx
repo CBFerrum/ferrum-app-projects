@@ -20,7 +20,7 @@ import {
 } from "@ferrum/kit/primitives";
 import { Avatars, Due, PriorityFlag } from "./bits";
 import { assignees, CHOOSABLE, late, PRIORITIES, type Task } from "./plan";
-import { t } from "@ferrum/client";
+import { t, isolate } from "@ferrum/client";
 
 export interface CardData {
   task: Task;
@@ -56,22 +56,22 @@ export function CardView({ data, selected, held, menu, ...rest }: { data: CardDa
       <div className="pj-card-top">
         <span className="pj-card-id">
           {task.is_milestone && <Diamond size={11} role="img" aria-label={t("Milestone")} className="pj-milestone-mark" />}
-          {task.number}
+          {isolate(task.number ?? "")}
         </span>
         {menu}
       </div>
-      <p className="pj-card-title">{task.subject}</p>
+      <p className="pj-card-title">{isolate(task.subject ?? "")}</p>
       <div className="pj-card-facts">
         <PriorityFlag priority={task.priority} />
         <Due day={task.exp_end_date} late={isLate} />
         {subtasks && (
-          <span className="pj-chip" title={`${subtasks.done} of ${subtasks.total} sub-tasks done`}>
+          <span className="pj-chip" title={t("{done} of {total} sub-tasks done", { done: subtasks.done, total: subtasks.total })}>
             <ListChecks size={12} aria-hidden="true" />
             {subtasks.done}/{subtasks.total}
           </span>
         )}
         {blockedBy.length > 0 && (
-          <span className="pj-chip pj-chip-lock" title={`Waits for ${blockedBy.map((b) => `${b.number ?? ""} ${b.subject ?? ""}`.trim()).join(", ")}`}>
+          <span className="pj-chip pj-chip-lock" title={t("Waits for {value}", { value: blockedBy.map((b) => `${b.number ?? ""} ${b.subject ?? ""}`.trim()).join(", ") })}>
             <Lock size={11} aria-hidden="true" />
           </span>
         )}
@@ -103,7 +103,7 @@ export function CardMenu({ task, me, canWrite, actions }: { task: Task; me: stri
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button type="button" className="pj-card-menu" aria-label={`Actions for ${task.number ?? ""} ${task.subject ?? "task"}`} {...apart}>
+        <button type="button" className="pj-card-menu" aria-label={t("Actions for {value} {value2}", { value: task.number ?? "", value2: task.subject ?? "task" })} {...apart}>
           <Ellipsis size={15} aria-hidden="true" />
         </button>
       </DropdownMenuTrigger>
@@ -121,7 +121,7 @@ export function CardMenu({ task, me, canWrite, actions }: { task: Task; me: stri
                 <DropdownMenuRadioGroup value={task.status === "Overdue" ? "Open" : (task.status ?? "Open")} onValueChange={(s) => actions.onStatus(task, s)}>
                   {CHOOSABLE.map((s) => (
                     <DropdownMenuRadioItem key={s} value={s}>
-                      {s}
+                      {isolate(s)}
                     </DropdownMenuRadioItem>
                   ))}
                 </DropdownMenuRadioGroup>
@@ -133,13 +133,13 @@ export function CardMenu({ task, me, canWrite, actions }: { task: Task; me: stri
                 <DropdownMenuRadioGroup value={task.priority ?? "Medium"} onValueChange={(p) => actions.onPriority(task, p)}>
                   {PRIORITIES.map((p) => (
                     <DropdownMenuRadioItem key={p} value={p}>
-                      {p}
+                      {isolate(p)}
                     </DropdownMenuRadioItem>
                   ))}
                 </DropdownMenuRadioGroup>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
-            {me && <DropdownMenuItem onSelect={() => actions.onMine(task)}>{mine ? "Take me off it" : "Assign to me"}</DropdownMenuItem>}
+            {me && <DropdownMenuItem onSelect={() => actions.onMine(task)}>{mine ? t("Take me off it") : t("Assign to me")}</DropdownMenuItem>}
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onSelect={() => actions.onCancel(task)}>
               {t("Cancel this task…")}
