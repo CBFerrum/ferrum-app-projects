@@ -100,7 +100,7 @@ export function changes(e: AuditEvent, name: (field: string, value: unknown) => 
     const c = label ? changed(diff) : null;
     if (!label || !c) continue;
     const [was, now] = [name(field, c[0]), name(field, c[1])];
-    out.push(was && now ? `${label}: ${was} → ${now}` : now ? `${label}: ${now}` : `${label} cleared`);
+    out.push(was && now ? `${label}: ${was} → ${now}` : now ? `${label}: ${now}` : tr("{label} cleared", { label }));
   }
   return out;
 }

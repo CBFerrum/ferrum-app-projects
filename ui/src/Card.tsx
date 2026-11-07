@@ -38,11 +38,11 @@ export function describe({ task, today, blockedBy, subtasks, names }: CardData):
     task.number,
     task.subject,
     task.status,
-    task.priority && task.priority !== "Medium" ? `${task.priority} priority` : null,
+    task.priority && task.priority !== "Medium" ? t("{priority} priority", { priority: task.priority }) : null,
     task.exp_end_date ? `${late(task, today) ? "late, was due" : "due"} ${task.exp_end_date}` : null,
-    subtasks ? `${subtasks.done} of ${subtasks.total} sub-tasks done` : null,
-    blockedBy.length ? `waits for ${blockedBy.map((b) => b.number ?? b.subject).join(", ")}` : null,
-    people.length ? `assigned to ${people.join(", ")}` : null,
+    subtasks ? t("{done} of {total} sub-tasks done", { done: subtasks.done, total: subtasks.total }) : null,
+    blockedBy.length ? t("waits for {value}", { value: blockedBy.map((b) => b.number ?? b.subject).join(", ") }) : null,
+    people.length ? t("assigned to {people}", { people: people.join(", ") }) : null,
   ]
     .filter(Boolean)
     .join(", ");
