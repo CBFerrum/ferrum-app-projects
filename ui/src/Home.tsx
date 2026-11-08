@@ -47,7 +47,7 @@ function Projects() {
               {p.status === "On Hold" && <Badge tone="amber">{tr("On hold")}</Badge>}
               <PriorityFlag priority={p.proj_priority} />
             </span>
-            <span className="faint">{isolate([p._titles?.customer, p.end_date && `due ${p.end_date}`, p.proj_project_manager].filter(Boolean).join(" · "))}</span>
+            <span className="faint">{isolate([p._titles?.customer, p.end_date && tr("due {end_date}", { end_date: p.end_date }), p.proj_project_manager].filter(Boolean).join(" · "))}</span>
             <span className="pj-project-foot">
               <Progress value={p.proj_percent_complete} />
               {(lateBy.get(p.id) ?? 0) > 0 && <span className="pj-late">{tr("{lateBy} late", { lateBy: lateBy.get(p.id) ?? "" })}</span>}

@@ -7,7 +7,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useCallback, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 import { api, ApiError, docPath, errorMessage, formatDate, formatMoment, newKey, todayIso, t, isolate } from "@ferrum/client";
-import { Alert, Badge, Button, EmptyState, ErrorState, Icon, PageLoading, Spinner, statusTone, toast, useLiveEntity, useShellTitle } from "@ferrum/kit";
+import { Alert, Badge, Button, EmptyState, ErrorState, Icon, PageLoading, Spinner, statusTone, toast, useLiveEntity, useShellTitle, placed } from "@ferrum/kit";
 import { can, CollabPanel, Composer, type EntityMeta, LinkInput, RecordFields, useEntityMeta, usePeople, useRecord } from "@ferrum/records";
 import { Avatars, Due, PriorityFlag, Progress } from "./bits";
 import { list, tasksKey, useNames } from "./data";
@@ -92,7 +92,7 @@ function SubTasks({ task, canWrite, changed }: { task: Task; canWrite: boolean; 
   const now = todayIso();
   return (
     <Card title={kids.length ? t("Sub-tasks, {done} of {length} done", { done, length: kids.length }) : t("Sub-tasks")} aside={kids.length > 0 ? <Progress value={(done / kids.length) * 100} label={t("Sub-tasks done")} /> : undefined}>
-      <Waiting q={q} what="The sub-tasks" />
+      <Waiting q={q} what={t("The sub-tasks")} />
       {q.data && !kids.length && <p className="muted">{t("It is not split into smaller tasks.")}</p>}
       <ul className="pj-lines">
         {kids.map((k) => (
@@ -132,10 +132,10 @@ function Waits({ task, project, rows, canWrite, save }: { task: Task; project: s
   const keep = (r: (typeof rows)[number]) => ({ id: r.id, task: r.task });
   return (
     <Card title={t("Order of work")}>
-      <Waiting q={first.q} what="What it waits for" />
+      <Waiting q={first.q} what={t("What it waits for")} />
       {holding.length > 0 && task.status !== "Completed" && (
         <Alert tone="warning">
-          {t("It cannot start until")} {isolate(holding.map((h) => h.number ?? h.subject).join(", "))} {holding.length === 1 ? t("is") : t("are")} {t("completed.")}
+          {placed(t("It cannot start until {p1} {p2} completed."), { p1: isolate(holding.map((h) => h.number ?? h.subject).join(", ")), p2: holding.length === 1 ? t("is") : t("are") })}
         </Alert>
       )}
       <h3 className="pj-minor">{t("Waits for")}</h3>
@@ -162,7 +162,7 @@ function Waits({ task, project, rows, canWrite, save }: { task: Task; project: s
         </div>
       )}
       <h3 className="pj-minor">{t("Others wait for it")}</h3>
-      <Waiting q={after.q} what="The tasks after it" />
+      <Waiting q={after.q} what={t("The tasks after it")} />
       <ul className="pj-lines">
         {(after.q.data ?? []).map((b) => (
           <li key={b.id}>
@@ -198,11 +198,11 @@ function TimeLogged({ task, doc }: { task: Task; doc: Record<string, unknown> })
         </Link>
       }
     >
-      <Waiting q={q} what="The time logged" />
+      <Waiting q={q} what={t("The time logged")} />
       {q.data && (
         <p className="pj-hours">
           <strong className={estimate > 0 && logged > estimate ? "pj-late" : undefined}>{logged} h</strong>
-          <span className="faint"> {t("logged")}{estimate > 0 ? t(" of {estimate} h expected", { estimate }) : ""}</span>
+          <span className="faint"> {(estimate > 0 ? t("logged of {estimate} h expected", { estimate }) : t("logged"))}</span>
         </p>
       )}
       {q.data && !logs.length && <p className="muted">{t("No time logged on it yet.")}</p>}
@@ -218,7 +218,7 @@ function TimeLogged({ task, doc }: { task: Task; doc: Record<string, unknown> })
           </li>
         ))}
       </ul>
-      {logs.length > 8 && <p className="faint">{t("and")} {logs.length - 8} {t("more in the timesheets.")}</p>}
+      {logs.length > 8 && <p className="faint">{placed(t("and {p1} more in the timesheets."), { p1: logs.length - 8 })}</p>}
     </Card>
   );
 }
@@ -230,7 +230,7 @@ function Issues({ task }: { task: Task }) {
   if (hidden || (q.data && !q.data.length)) return null;
   return (
     <Card title={t("Issues raised against it")}>
-      <Waiting q={q} what="The issues" />
+      <Waiting q={q} what={t("The issues")} />
       <ul className="pj-lines">
         {(q.data ?? []).map((i) => (
           <li key={i.id}>

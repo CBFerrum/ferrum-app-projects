@@ -87,7 +87,7 @@ const known = (saved: Record<string, unknown>): Partial<Task> => Object.fromEntr
 export const stale = (e: unknown): boolean => e instanceof ApiError && (e.status === 409 || e.status === 412);
 
 /** What to tell a person whose change was refused. */
-export const refusal = (e: unknown): string => (stale(e) ? "Someone else changed this task; it is shown as it stands now." : errorMessage(e));
+export const refusal = (e: unknown): string => (stale(e) ? tr("Someone else changed this task; it is shown as it stands now.") : errorMessage(e));
 
 /** Changes to one task go one after the other, each with the version the one before it left. */
 const queue = new Map<string, Promise<unknown>>();

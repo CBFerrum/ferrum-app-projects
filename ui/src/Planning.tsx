@@ -7,7 +7,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, type KeyboardEvent, useCallback, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { api, ApiError, docPath, errorMessage, newKey, saveBlob, todayIso, t as tr, isolate } from "@ferrum/client";
-import { Alert, Badge, Button, confirmDialog, Dialog, EmptyState, ErrorState, Field, Icon, Spinner, statusTone, Tabs, TabPanel, useLiveEntity, useShellTitle } from "@ferrum/kit";
+import { Alert, Badge, Button, confirmDialog, Dialog, EmptyState, ErrorState, Field, Icon, Spinner, statusTone, Tabs, TabPanel, useLiveEntity, useShellTitle, placed } from "@ferrum/kit";
 import { LinkInput, useMe, useMetaIndex, usePeople } from "@ferrum/records";
 import { Progress } from "./bits";
 import { list, type Project, useNames, useQueryState } from "./data";
@@ -15,7 +15,7 @@ import { addDays } from "./days";
 import { Nav, usePlanner } from "./Nav";
 import { type Allocation, type Cell, grid, hoursIn, hoursText, type Level, type Person, touches, weekEnd, weekLabel, type WorkloadRow, weeksFrom } from "./workload";
 
-const LEVELS: Record<Level, string> = { free: "Nothing planned", ok: "Up to 80 % of the week", busy: "80 to 100 %", over: "Over the week" };
+const LEVELS: Record<Level, string> = { get free() { return tr("Nothing planned"); }, get ok() { return tr("Up to 80 % of the week"); }, busy: "80 to 100 %", get over() { return tr("Over the week"); } };
 const TABS = [
   { id: "capacity", get label() { return tr("Capacity"); } },
   { id: "portfolios", get label() { return tr("Portfolios"); } },
@@ -190,7 +190,7 @@ function Drawer({ person, week, name, onClose, onEdit, onAdd }: { person: string
             <p className="pj-hours">
               <strong>{isolate(hoursText(total))}</strong> <span className="faint">{tr("planned this week")}</span>
             </p>
-            {!rows.length && <p className="muted">{tr("Nothing is planned for")} {isolate(name.split(" ")[0])} {tr("this week.")}</p>}
+            {!rows.length && <p className="muted">{placed(tr("Nothing is planned for {p1} this week."), { p1: isolate(name.split(" ")[0]) })}</p>}
             <ul className="pj-lines">
               {rows.map((a) => (
                 <li key={a.id}>
@@ -201,7 +201,7 @@ function Drawer({ person, week, name, onClose, onEdit, onAdd }: { person: string
                       {isolate(a.from_date)} – {isolate(a.to_date)} · {isolate(hoursText(Number(a.hours_per_day)))} {tr("a day ·")} {isolate(hoursText(hoursIn(a, week, weekEnd(week))))} {tr("this week")}
                     </span>
                   </span>
-                  <Button size="sm" onClick={() => onEdit(a)} aria-label={tr("Change the allocation to {value}", { value: a._titles?.project ?? "the project" })}>
+                  <Button size="sm" onClick={() => onEdit(a)} aria-label={tr("Change the allocation to {value}", { value: a._titles?.project ?? tr("the project") })}>
                     {tr("Change")}
                   </Button>
                 </li>
@@ -211,7 +211,7 @@ function Drawer({ person, week, name, onClose, onEdit, onAdd }: { person: string
         )}
         <p>
           <Button variant="primary" icon="plus" onClick={onAdd}>
-            {tr("Plan")} {isolate(name.split(" ")[0])} {tr("onto a project")}
+            {placed(tr("Plan {p1} onto a project"), { p1: isolate(name.split(" ")[0]) })}
           </Button>
         </p>
       </div>
@@ -264,7 +264,7 @@ function Heat({ weeks, people, totals, nameOf, selected, onOpen }: { weeks: stri
               data-c={i}
               data-selected={(selected?.person === p.email && selected.week === c.week) || undefined}
               tabIndex={cur[0] === r && cur[1] === i ? 0 : -1}
-              aria-label={tr("{value}, week of {value2}: {value3}. {value4}.", { value: nameOf(p.email), value2: weekLabel(c.week), value3: c.hours ? `${hoursText(c.hours)} of ${c.capacity}, ${percent(c)} per cent` : "nothing planned", value4: LEVELS[c.level] })}
+              aria-label={(c.hours ? tr("{value}, week of {value2}: {value1} of {capacity}, {value5} per cent. {value4}.", { value: nameOf(p.email), value2: weekLabel(c.week), value4: LEVELS[c.level], value1: hoursText(c.hours), capacity: c.capacity, value5: percent(c) }) : tr("{value}, week of {value2}: nothing planned. {value4}.", { value: nameOf(p.email), value2: weekLabel(c.week), value4: LEVELS[c.level] }))}
               onClick={() => onOpen(p.email, c.week)}
               onFocus={() => setCur([r, i])}
             >
@@ -357,7 +357,7 @@ function Capacity({ company }: { company: ReturnType<typeof useCompany> }) {
         ) : (
           <>
             <p className="faint" aria-live="polite">
-              {over > 0 ? <strong className="pj-late">{over === 1 ? tr("1 person is") : tr("{over} people are", { over })} {tr("booked beyond a week.")}</strong> : tr("Nobody is booked beyond a week.")} {tr("A week is 40 hours; weekends are not counted.")}
+              {over > 0 ? <strong className="pj-late">{(over === 1 ? tr("1 person is booked beyond a week.") : tr("{over} people are booked beyond a week.", { over }))}</strong> : tr("Nobody is booked beyond a week.")} {tr("A week is 40 hours; weekends are not counted.")}
             </p>
             <Heat weeks={weeks} people={g.people} totals={g.totals} nameOf={names} selected={picked} onOpen={(person, week) => setPicked({ person, week })} />
             <ul className="pj-legend" aria-label={tr("Key")}>
