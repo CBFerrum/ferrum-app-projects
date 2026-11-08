@@ -75,10 +75,10 @@ const TOLD: Record<string, string> = {
 };
 
 const SAID: Record<string, string> = {
-  assigned_to: "The people on it changed",
-  depends_on: "What it waits for changed",
-  parent_task: "It moved under another task",
-  project: "It moved to another project",
+  get assigned_to() { return tr("The people on it changed"); },
+  get depends_on() { return tr("What it waits for changed"); },
+  get parent_task() { return tr("It moved under another task"); },
+  get project() { return tr("It moved to another project"); },
   get description() { return tr("The description changed"); },
 };
 
@@ -108,7 +108,7 @@ export function changes(e: AuditEvent, name: (field: string, value: unknown) => 
 export function story(events: AuditEvent[], comments: Comment[], logs: Log[], name: (field: string, value: unknown) => string): Item[] {
   const items: Item[] = [];
   for (const e of events) {
-    const who = e.actor_name ?? (e.actor ? "Someone" : "Ferrum");
+    const who = e.actor_name ?? (e.actor ? tr("Someone") : "Ferrum");
     if (e.action === "create") {
       items.push({ key: `e-${e.id ?? e.at}`, at: e.at, kind: "created", title: tr("Task created"), who });
       continue;
@@ -117,6 +117,6 @@ export function story(events: AuditEvent[], comments: Comment[], logs: Log[], na
     if (told.length) items.push({ key: `e-${e.id ?? e.at}`, at: e.at, kind: told.some((t) => t.startsWith("Status:")) ? "status" : "change", title: told.join(" · "), who });
   }
   for (const c of comments) items.push({ key: `c-${c.id}`, at: c.created_at, kind: "comment", title: tr("Commented"), detail: c.body, who: c.author ?? "Someone" });
-  for (const l of logs) items.push({ key: l.key, at: l.at, kind: "time", title: tr("{hours} h logged{value}", { hours: l.hours, value: l.counted ? "" : " (timesheet not submitted)" }), detail: l.what || null, who: l.user });
+  for (const l of logs) items.push({ key: l.key, at: l.at, kind: "time", title: tr("{hours} h logged{value}", { hours: l.hours, value: l.counted ? "" : tr(" (timesheet not submitted)") }), detail: l.what || null, who: l.user });
   return items.sort((a, b) => b.at.localeCompare(a.at));
 }

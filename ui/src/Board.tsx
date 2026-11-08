@@ -29,7 +29,7 @@ import { ChevronDown, ChevronRight, Plus } from "lucide-react";
 import { type CSSProperties, type FormEvent, type HTMLAttributes, type KeyboardEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { todayIso, t as tr, isolate } from "@ferrum/client";
-import { Alert, Badge, Button, confirmDialog, EmptyState, statusTone, toast, useDebounced } from "@ferrum/kit";
+import { Alert, Badge, Button, confirmDialog, EmptyState, statusTone, toast, useDebounced, placed } from "@ferrum/kit";
 import { can, useMe, useMetaIndex } from "@ferrum/records";
 import { Avatar, Keys } from "./bits";
 import {
@@ -142,11 +142,11 @@ function Bar({ filters, lanes, order, people, parents, names, set, shown, total 
       </label>
       <Keys
         keys={[
-          ["Enter", "Open the task"],
-          ["↑ ↓ ← → or J K", "Go to another card"],
-          ["Shift + ← →", "Move the card to the next column"],
-          ["Shift + ↑ ↓", "Move it up or down its column"],
-          ["Esc", "Close the panel"],
+          [tr("Enter"), tr("Open the task")],
+          [tr("↑ ↓ ← → or J K"), tr("Go to another card")],
+          [tr("Shift + ← →"), tr("Move the card to the next column")],
+          [tr("Shift + ↑ ↓"), tr("Move it up or down its column")],
+          [tr("Esc"), tr("Close the panel")],
         ]}
       />
       <p className="pj-tools-count faint" aria-live="polite">
@@ -162,7 +162,7 @@ function Bar({ filters, lanes, order, people, parents, names, set, shown, total 
                 set(filterParams(NO_FILTERS));
               }}
             >
-              {tr("Clear")} {on === 1 ? tr("the filter") : tr("filters")}
+              {(on === 1 ? tr("Clear the filter") : tr("Clear filters"))}
             </button>
           </>
         )}
@@ -363,7 +363,7 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
       const lane = found && model.lanes.find((l) => l.id === found.lane);
       const cell = lane?.cells.find((c) => c.status === status);
       const move = found && cell && dropPlan(model, found.key, cell.id, cell.cards.filter((c) => c.task.id !== t.id).length, lanes, order);
-      if (found && move) apply(found, move, tr("Moved {value} to {status}.", { value: t.subject ?? "the task", status }));
+      if (found && move) apply(found, move, tr("Moved {value} to {status}.", { value: t.subject ?? tr("the task"), status }));
       else if (found && !cell) void changeTask(qc, project.id, t, { status });
     },
     onPriority: (t, priority) => void changeTask(qc, project.id, t, { priority }),
@@ -373,7 +373,7 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
       void changeTask(qc, project.id, t, { assigned_to: mine ? rows : [...rows, { user: me }] });
     },
     onCancel: async (t) => {
-      const ok = await confirmDialog({ title: tr("Cancel “{value}”?", { value: t.subject ?? "this task" }), message: tr("It leaves the board. Its record stays, and can be reopened from the task's page."), confirmLabel: tr("Cancel the task"), cancelLabel: tr("Keep it"), danger: true });
+      const ok = await confirmDialog({ title: tr("Cancel “{value}”?", { value: t.subject ?? tr("this task") }), message: tr("It leaves the board. Its record stays, and can be reopened from the task's page."), confirmLabel: tr("Cancel the task"), cancelLabel: tr("Keep it"), danger: true });
       if (ok) void changeTask(qc, project.id, t, { status: "Cancelled" });
     },
   };
@@ -457,8 +457,8 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
     setHover(null);
   };
 
-  const label = (key: string) => cards.get(key)?.task.subject ?? "the task";
-  const cellName = (id: string) => cellById.get(where.get(id) ?? "")?.status ?? "a column";
+  const label = (key: string) => cards.get(key)?.task.subject ?? tr("the task");
+  const cellName = (id: string) => cellById.get(where.get(id) ?? "")?.status ?? tr("a column");
   const announcements: Announcements = {
     onDragStart: ({ active }) => tr("Picked up {value}.", { value: label(String(active.id)) }),
     onDragOver: ({ active, over }) => (over ? tr("{value} is over {value2}.", { value: label(String(active.id)), value2: cellName(String(over.id)) }) : undefined),
@@ -473,10 +473,10 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
   return (
     <div className="pj-board-wrap">
       <Bar filters={filters} lanes={lanes} order={order} people={people} parents={parents} names={names} set={setQuery} shown={model.shown} total={model.total} />
-      {closed && <Alert tone="info">{tr("This project is")} {isolate(project.status?.toLowerCase() ?? "")}{tr(". Its tasks cannot be changed until it is reopened.")}</Alert>}
+      {closed && <Alert tone="info">{placed(tr("This project is {p1}. Its tasks cannot be changed until it is reopened."), { p1: isolate(project.status?.toLowerCase() ?? "") })}</Alert>}
       {tasks.total > tasks.rows.length && (
         <Alert tone="warning">
-          {tr("The board shows the first {TASK_LIMIT} of {total} tasks.", { TASK_LIMIT, total: tasks.total })} <Link to={`/e/Task?f.project=${project.id}`}>{tr("Open the list")}</Link> {tr("to see them all.")}
+          {placed(tr("The board shows the first {TASK_LIMIT} of {total} tasks. {p1} to see them all."), { TASK_LIMIT: TASK_LIMIT, total: tasks.total, p1: <Link to={`/e/Task?f.project=${project.id}`}>{tr("Open the list")}</Link> })}
         </Alert>
       )}
       <p className="sr-only" role="status" aria-live="polite">
@@ -501,7 +501,7 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
           </Button>
         </EmptyState>
       )}
-      <DndContext sensors={sensors} collisionDetection={detect} measuring={{ droppable: { strategy: MeasuringStrategy.Always } }} accessibility={{ announcements, screenReaderInstructions: { draggable: "Press Enter to open the task." } }} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd} onDragCancel={cancel}>
+      <DndContext sensors={sensors} collisionDetection={detect} measuring={{ droppable: { strategy: MeasuringStrategy.Always } }} accessibility={{ announcements, screenReaderInstructions: { draggable: tr("Press Enter to open the task.") } }} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd} onDragCancel={cancel}>
         <div className="pj-board" data-ferrum-nocard="" role="region" aria-label={tr("Tasks by status")} aria-describedby="pj-board-help" style={{ "--cols": model.statuses.length } as CSSProperties}>
           <div className="pj-heads">
             {model.statuses.map((s) => {

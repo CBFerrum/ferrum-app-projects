@@ -11,7 +11,7 @@ import { ChevronDown, ChevronRight, Diamond, Undo2 } from "lucide-react";
 import { type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { todayIso, t as tr, isolate } from "@ferrum/client";
-import { Alert, Button, EmptyState, toast } from "@ferrum/kit";
+import { Alert, Button, EmptyState, toast, placed } from "@ferrum/kit";
 import { can, useMetaIndex } from "@ferrum/records";
 import { Keys } from "./bits";
 import { changeTask, type Project, type TaskSet, useQueryState } from "./data";
@@ -146,7 +146,7 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
     for (const c of p.changes.filter((x) => x.kind !== "dragged")) void send(c, true, first);
     setPast((h) => [...h.slice(-19), prior]);
     setPending(null);
-    setNote(p.changes.length === 1 ? "Dates changed." : tr("Dates changed for {length} tasks.", { length: p.changes.length }));
+    setNote(p.changes.length === 1 ? tr("Dates changed.") : tr("Dates changed for {length} tasks.", { length: p.changes.length }));
   };
 
   const undo = () => {
@@ -157,7 +157,7 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
       const task = byId.get(u.id);
       if (task) void changeTask(qc, project.id, task, { exp_start_date: u.start, exp_end_date: u.end });
     }
-    setNote("Undone.");
+    setNote(tr("Undone."));
   };
 
   /** Asks the question when others would move too (Alt skips it); otherwise just does it. */
@@ -349,23 +349,23 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
         )}
         <Keys
           keys={[
-            ["← →", "Move the bar a day (with Shift, a week)"],
-            ["Alt + ← →", "Change when it ends"],
-            ["Enter", "Open the task"],
-            ["D W M Q", "Zoom to days, weeks, months, quarters"],
-            ["+ −", "Zoom in or out"],
-            ["T", "Go to today"],
-            ["C", "Show the critical path"],
-            ["Ctrl or ⌘ + Z", "Undo the last change"],
-            ["Esc", "Let go of a bar, or cancel the move"],
+            ["← →", tr("Move the bar a day (with Shift, a week)")],
+            [tr("Alt + ← →"), tr("Change when it ends")],
+            [tr("Enter"), tr("Open the task")],
+            ["D W M Q", tr("Zoom to days, weeks, months, quarters")],
+            ["+ −", tr("Zoom in or out")],
+            ["T", tr("Go to today")],
+            ["C", tr("Show the critical path")],
+            [tr("Ctrl or ⌘ + Z"), tr("Undo the last change")],
+            [tr("Esc"), tr("Let go of a bar, or cancel the move")],
           ]}
         />
         <span className="faint pj-time-hint">{canWrite ? tr("Drag a bar to move it, its ends to resize it, the dot to link it. The arrow keys work too.") : tr("Open a task to see it beside the timeline.")}</span>
       </div>
-      {closed && <Alert tone="info">{tr("This project is")} {isolate(project.status?.toLowerCase() ?? "")}{tr(". Its tasks cannot be changed until it is reopened.")}</Alert>}
+      {closed && <Alert tone="info">{placed(tr("This project is {p1}. Its tasks cannot be changed until it is reopened."), { p1: isolate(project.status?.toLowerCase() ?? "") })}</Alert>}
       {tasks.total > tasks.rows.length && (
         <Alert tone="warning">
-          {tr("The timeline shows the first {length} of {total} tasks.", { length: tasks.rows.length, total: tasks.total })} <Link to={`/e/Task?f.project=${project.id}`}>{tr("Open the list")}</Link> {tr("to see them all.")}
+          {placed(tr("The timeline shows the first {length} of {total} tasks. {p1} to see them all."), { length: tasks.rows.length, total: tasks.total, p1: <Link to={`/e/Task?f.project=${project.id}`}>{tr("Open the list")}</Link> })}
         </Alert>
       )}
       <p className="sr-only" role="status" aria-live="polite">
@@ -400,7 +400,7 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
                       type="button"
                       className="pj-fold"
                       aria-expanded={!folded.has(t.id)}
-                      aria-label={tr("{value} the {kids} sub-tasks of {subject}", { value: folded.has(t.id) ? "Show" : "Hide", kids: r.kids, subject: String(t.subject) })}
+                      aria-label={tr("{value} the {kids} sub-tasks of {subject}", { value: folded.has(t.id) ? tr("Show") : tr("Hide"), kids: r.kids, subject: String(t.subject) })}
                       onClick={() =>
                         setFolded((f) => {
                           const n = new Set(f);
@@ -585,18 +585,17 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
         <div className="pj-decide card" role="alertdialog" aria-label={tr("Confirm the move")} aria-describedby="pj-decide-text">
           <p id="pj-decide-text">
             {pending.days === 0 ? (
-              <>{tr("To keep the new link,")} {decide.others.length === 1 ? tr("1 task moves") : tr("{length} tasks move", { length: decide.others.length })} {tr("later.")}</>
+              <>{placed(tr("To keep the new link, {p1} later."), { p1: decide.others.length === 1 ? tr("1 task moves") : tr("{length} tasks move", { length: decide.others.length }) })}</>
             ) : (
               <>
-                {tr("Moving")} <strong>{isolate(decide.task.subject ?? "")}</strong> {isolate(describeShift(pending))} {tr("also moves")} {decide.others.length === 1 ? tr("1 task") : tr("{length} tasks", { length: decide.others.length })} {tr("linked to it:")} {isolate(decide.others.slice(0, 3).map((c) => byId.get(c.id)?.subject).join(", "))}
-                {decide.others.length > 3 ? ", …" : ""}.
+                {placed(tr("Moving {p1} {p2} also moves {p3} linked to it: {p4}{p5}"), { p1: <strong>{isolate(decide.task.subject ?? "")}</strong>, p2: isolate(describeShift(pending)), p3: decide.others.length === 1 ? tr("1 task") : tr("{length} tasks", { length: decide.others.length }), p4: isolate(decide.others.slice(0, 3).map((c) => byId.get(c.id)?.subject).join(", ")), p5: decide.others.length > 3 ? ", …" : "" })}.
               </>
             )}
             {plan.skipped.length > 0 && <span className="faint"> {plan.skipped.length === 1 ? tr("1 linked task without dates stays.") : tr("{length} linked tasks without dates stay.", { length: plan.skipped.length })}</span>}
           </p>
           <div className="row">
             <Button variant="primary" size="sm" autoFocus onClick={() => commit(plan)}>
-              {tr("Move")} {plan.changes.length === 1 ? tr("it") : tr("{length} tasks", { length: plan.changes.length })}
+              {(plan.changes.length === 1 ? tr("Move it") : tr("Move {length} tasks", { length: plan.changes.length }))}
             </Button>
             <Button size="sm" onClick={() => setPending(null)}>
               {tr("Cancel")}
