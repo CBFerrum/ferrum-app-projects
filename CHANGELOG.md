@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.7.0
+
+An approved change request moves its project's plan by its effects (FEO-029):
+- the expected end date by its days;
+- the estimated hours by its hours;
+- the estimated cost, and a budget that is set, by its cost;
+- a fixed price's contract value by its new Effect on Contract Value.
+
+Before the first approved change, the plan as it was is kept as the project's baseline (end date, hours, cost, budget, contract value), with the day it was kept and a count of the changes approved since. The project's own rules still hold: a change that would make it end before it starts is not approved, nor a contract value on a time and materials project.
+
+What follows from it:
+- A milestone billed afterwards bills its share of the new contract value.
+- Project Profitability shows each fixed price project's estimated cost and forecast margin.
+
+Workload's capacity is now the working days of a business calendar (its weekends and holidays), or Monday to Friday without one, at the working hours a day (8 unless said), week by week. Hours planned on a day nobody works count for nothing. Leave is not known here.
+
+Rebuilt with Ferrum-Frontend 9f5a466, with the new names in Arabic and Hindi.
+
 ## 0.6.17
 
 The reports it defines in code (their titles and parameters) have names in Arabic and Hindi too, with its models' and manifest's (221 each in ui/src/locales/names). Translated by the model, to be reviewed by native speakers.

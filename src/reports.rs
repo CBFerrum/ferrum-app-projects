@@ -3,7 +3,7 @@
 
 use crate::logic::{percent, task_bucket};
 use async_trait::async_trait;
-use chrono::{Datelike, NaiveDate, Utc};
+use chrono::{NaiveDate, Utc};
 use ferrum_domain::reports::{Params, ReportCompany, ReportSource, col, param_def, period, read_tx, resolve_company};
 use ferrum_domain::util::money;
 use ferrum_kernel::{Access, Action, Ctx, Error, Kernel, Result, Tx};
@@ -38,7 +38,8 @@ impl ReportSource for Reports {
             json!({"name": "task_overview", "label": "Task Overview", "module": "projects", "entity": "Task",
                 "params": [param_def("company"), link("project", "Project", "Project"), text("user", "Assignee (email)")]}),
             json!({"name": "workload", "label": "Workload", "module": "projects", "entity": "ResourceAllocation",
-                "params": [param_def("company"), param_def("from_date"), param_def("to_date"), text("user", "Person (email)")]}),
+                "params": [param_def("company"), param_def("from_date"), param_def("to_date"), text("user", "Person (email)"),
+                    text("calendar", "Business Calendar"), {"name": "hours_per_day", "label": "Working Hours a Day", "type": "float", "default": 8}]}),
             json!({"name": "portfolio_overview", "label": "Portfolio Overview", "module": "projects", "entity": "Project",
                 "params": [param_def("company"), link("portfolio", "Portfolio", "Portfolio")]}),
         ]
@@ -65,11 +66,33 @@ impl ReportSource for Reports {
     }
 }
 
-/// Hours a person is planned for, week by week, against a 40-hour week: who is over it, and when.
-/// Weekends count for nothing.
+/// Hours a person is planned for, week by week, against the hours they can work that week: the
+/// working days of a business calendar (its weekends and holidays, FEO-029), or Monday to Friday
+/// without one, at the working hours a day (8 unless said). Who is over it, and when. Days that are
+/// not worked count for nothing. Leave is not known here (it is HR's).
 async fn workload(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Params<'_>) -> Result<Value> {
-    const CAPACITY: i64 = 40;
     let (from, to) = period(p, co)?;
+    let per_day = match p.str("hours_per_day") {
+        Some(h) => h
+            .parse::<Decimal>()
+            .ok()
+            .filter(|h| *h > Decimal::ZERO && *h <= Decimal::from(24))
+            .ok_or_else(|| Error::field("hours_per_day", "must be more than 0 and at most 24"))?,
+        None => Decimal::from(8),
+    };
+    let (weekends, holidays): (Vec<String>, Vec<NaiveDate>) = match p.str("calendar") {
+        Some(name) => sqlx::query_as("select weekends, holidays from logic_calendar where tenant_id = $1 and name = $2")
+            .bind(ctx.tenant)
+            .bind(name)
+            .fetch_optional(&mut **tx)
+            .await?
+            .ok_or_else(|| Error::field("calendar", format!("there is no business calendar named {name}")))?,
+        None => (vec!["sat".into(), "sun".into()], vec![]),
+    };
+    let worked = |day: NaiveDate| {
+        let name = day.format("%a").to_string().to_lowercase();
+        !weekends.contains(&name) && !holidays.contains(&day)
+    };
     let who = p.raw.get("user").map(|u| u.trim().to_lowercase()).filter(|u| !u.is_empty());
     let rows: Vec<(String, NaiveDate, NaiveDate, Decimal)> = sqlx::query_as(
         "select lower(person), from_date, to_date, hours_per_day from e_resource_allocation \
@@ -86,7 +109,7 @@ async fn workload(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Params<'_>) ->
     for (person, start, end, hours) in rows {
         let mut day = start.max(from);
         while day <= end.min(to) {
-            if day.weekday().num_days_from_monday() < 5 {
+            if worked(day) {
                 *weeks.entry((person.clone(), crate::planning::week_of(day))).or_default() += hours;
             }
             day = match day.succ_opt() {
@@ -95,14 +118,22 @@ async fn workload(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Params<'_>) ->
             };
         }
     }
+    // A week's capacity: its worked days within the period, at the hours a day.
+    let capacity = |week: NaiveDate| {
+        let days = (0..7).filter_map(|i| week.checked_add_days(chrono::Days::new(i))).filter(|d| *d >= from && *d <= to && worked(*d)).count();
+        per_day * Decimal::from(days as i64)
+    };
     let rows: Vec<Value> = weeks
         .into_iter()
-        .map(|((person, week), hours)| json!({"person": person, "week": week, "hours": money(hours), "capacity": CAPACITY, "over": hours > Decimal::from(CAPACITY)}))
+        .map(|((person, week), hours)| {
+            let can = capacity(week);
+            json!({"person": person, "week": week, "hours": money(hours), "capacity": money(can), "over": hours > can})
+        })
         .collect();
     Ok(json!({
         "columns": [col("person", "Person", "data"), col("week", "Week Of", "date"), col("hours", "Planned Hours", "float"), col("capacity", "Capacity", "float"), col("over", "Over", "check")],
         "rows": rows,
-        "meta": {"from_date": from, "to_date": to},
+        "meta": {"from_date": from, "to_date": to, "calendar": p.str("calendar"), "hours_per_day": money(per_day)},
     }))
 }
 
@@ -166,8 +197,9 @@ async fn profitability(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Params<'_
         return Err(Error::field("from_date", "must not be after the to date"));
     }
     #[allow(clippy::type_complexity)]
-    let projects: Vec<(Uuid, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, Option<Decimal>)> = sqlx::query_as(
-        "select p.id, p.number, p.project_name, p.status, c.customer_name, p.ext->>'proj_billing_method', nullif(p.ext->>'proj_contract_value', '')::numeric \
+    let projects: Vec<(Uuid, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, Option<Decimal>, Option<Decimal>)> = sqlx::query_as(
+        "select p.id, p.number, p.project_name, p.status, c.customer_name, p.ext->>'proj_billing_method', nullif(p.ext->>'proj_contract_value', '')::numeric, \
+         nullif(p.ext->>'proj_estimated_cost', '')::numeric \
          from e_project p left join e_customer c on c.tenant_id = p.tenant_id and c.id = p.customer \
          where p.tenant_id = $1 and p.company = $2 and ($3::uuid is null or p.id = $3) and ($4::uuid is null or p.customer = $4) \
          and ($5::text is null or p.status = $5) order by p.number nulls last, p.project_name limit $6",
@@ -231,8 +263,9 @@ async fn profitability(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Params<'_
     let r = |v: Decimal| money(v.round_dp(co.precision));
     let names = ["contract_value", "billed_revenue", "timesheet_cost", "expense_cost", "total_cost", "margin", "unbilled_time"];
     let mut totals = [Decimal::ZERO; 7];
+    let mut forecast_total: Option<Decimal> = None;
     let mut rows = Vec::new();
-    for (pid, number, name, status, customer, method, contract) in projects.into_iter().take(MAX_ROWS as usize) {
+    for (pid, number, name, status, customer, method, contract, estimated) in projects.into_iter().take(MAX_ROWS as usize) {
         let billed = revenue.get(&pid).copied().unwrap_or_default();
         let (time_cost, unbilled) = time.get(&pid).copied().unwrap_or_default();
         let expense_cost = expense.get(&pid).copied().unwrap_or_default();
@@ -244,15 +277,24 @@ async fn profitability(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Params<'_
             totals[i] += v;
             row[names[i]] = r(v);
         }
+        // What a fixed price is expected to leave once its estimated cost is spent (FEO-029).
+        let forecast = (method.as_deref() == Some("Fixed Price")).then(|| contract.zip(estimated).map(|(c, e)| c - e)).flatten();
+        row["estimated_cost"] = estimated.map_or(Value::Null, r);
+        row["forecast_margin"] = forecast.map_or(Value::Null, r);
+        if let Some(f) = forecast {
+            *forecast_total.get_or_insert(Decimal::ZERO) += f;
+        }
         rows.push(row);
     }
     let mut total_obj: serde_json::Map<String, Value> = names.iter().zip(totals).map(|(n, v)| (n.to_string(), r(v))).collect();
     total_obj.insert("margin_pct".into(), if totals[1].is_zero() { Value::Null } else { money(percent(totals[5], totals[1])) });
+    total_obj.insert("forecast_margin".into(), forecast_total.map_or(Value::Null, r));
     Ok(json!({
         "columns": [col("project", "Project", "data"), col("customer", "Customer", "data"), col("status", "Status", "data"), col("billing_method", "Billing", "data"),
             col("contract_value", "Contract Value", "currency"), col("billed_revenue", "Billed Revenue", "currency"), col("timesheet_cost", "Timesheet Cost", "currency"),
             col("expense_cost", "Expense Cost", "currency"), col("total_cost", "Total Cost", "currency"), col("margin", "Margin", "currency"),
-            col("margin_pct", "Margin %", "decimal"), col("unbilled_time", "Unbilled Time", "currency")],
+            col("margin_pct", "Margin %", "decimal"), col("unbilled_time", "Unbilled Time", "currency"), col("estimated_cost", "Estimated Cost", "currency"),
+            col("forecast_margin", "Forecast Margin", "currency")],
         "rows": rows,
         "totals": total_obj,
         "meta": {"from_date": from, "to_date": to, "truncated": truncated},
