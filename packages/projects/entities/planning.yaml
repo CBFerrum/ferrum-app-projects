@@ -53,6 +53,7 @@
     - {name: hours_impact, type: decimal, label: Effect on Hours, in_list: true}
     - {name: cost_impact, type: currency, label: Effect on Cost, in_list: true, perm_group: costing}
     - {name: days_impact, type: int, label: Effect on Schedule (Days), in_list: true}
+    - {name: price_impact, type: currency, label: Effect on Contract Value, perm_group: costing, description: "For a fixed price project: what the change adds to the contract value"}
     - {name: decision, type: select, options: [Pending, Approved, Rejected], default: Pending, read_only: true, no_copy: true, in_list: true, in_filter: true}
     - {name: decided_by, type: email, read_only: true, no_copy: true}
     - {name: decided_at, type: datetime, read_only: true, no_copy: true}

@@ -705,6 +705,73 @@ async fn scenario() {
     let cr = pm.get("ChangeRequest", change).await;
     assert_eq!((cr["decided_by"].as_str(), cr["decision_note"].as_str()), (Some(admin.ctx.email.as_str()), Some("Fine")));
     assert!(admin.try_action("ChangeRequest", change, "reject", json!({})).await.is_err(), "decided once");
+    assert_eq!(dec(&pm.get("Project", web).await["proj_estimated_hours"]), n("100"), "its 40 hours are the project's now");
+
+    // ───────────── an approved change moves the plan, the money and the margin (FEO-029) ─────────────
+    // The fixed price project's plan, then a variation that adds 20 hours, 1,500 of cost, 2,000 of
+    // price and two weeks: the plan moves with it, and the plan before it is kept as the baseline.
+    let ends = d1 + Duration::days(60);
+    pm.update(
+        "Project",
+        erp,
+        json!({"start_date": d1.to_string(), "end_date": ends.to_string(), "proj_estimated_cost": "6000", "proj_estimated_hours": "100", "budget": "6500"}),
+    )
+    .await;
+    let raise = |project: Uuid, title: &str, more: Value| {
+        let mut body = json!({"title": title, "project": project.to_string(), "reason": "The client asked"});
+        body.as_object_mut().unwrap().extend(more.as_object().unwrap().clone());
+        let pm = &pm;
+        async move {
+            let id = uid(&pm.insert("ChangeRequest", body).await);
+            pm.submit("ChangeRequest", id).await;
+            id
+        }
+    };
+    let variation = raise(erp, "Add a warehouse", json!({"hours_impact": "20", "cost_impact": "1500", "price_impact": "2000", "days_impact": 14})).await;
+    admin.action("ChangeRequest", variation, "approve", json!({})).await;
+    let p = pm.get("Project", erp).await;
+    assert_eq!(
+        (p["end_date"].clone(), dec(&p["proj_estimated_hours"]), dec(&p["proj_estimated_cost"]), dec(&p["budget"]), dec(&p["proj_contract_value"])),
+        (json!((ends + Duration::days(14)).to_string()), n("120"), n("7500"), n("8000"), n("12000")),
+        "{p:?}"
+    );
+    assert_eq!(
+        (
+            p["proj_baseline_end_date"].clone(),
+            dec(&p["proj_baseline_hours"]),
+            dec(&p["proj_baseline_cost"]),
+            dec(&p["proj_baseline_budget"]),
+            dec(&p["proj_baseline_value"])
+        ),
+        (json!(ends.to_string()), n("100"), n("6000"), n("6500"), n("10000")),
+        "the plan as it was"
+    );
+    assert_eq!((p["proj_approved_changes"].clone(), p["proj_baselined_on"].clone()), (json!(1), json!(today.to_string())));
+    // What is billed follows: the milestone still open bills its half of the new contract value.
+    let hypercare = uid(&pm.find_one("Task", json!({"subject": "Hypercare"})).await);
+    let si = acc.get("SalesInvoice", vid(&pm.action("Task", hypercare, "make_milestone_invoice", json!({})).await)).await;
+    assert_eq!(dec(&si["net_total"]), n("6000"), "50% of 12,000");
+    // So does the forecast margin: 12,000 less the 7,500 it is now expected to cost.
+    let pr = acc.report("project_profitability", std::slice::from_ref(&company_param)).await.expect("profitability");
+    let e = row(&pr, "ERP Rollout");
+    assert_eq!((dec(&e["contract_value"]), dec(&e["estimated_cost"]), dec(&e["forecast_margin"])), (n("12000"), n("7500"), n("4500")));
+    assert!(row(&pr, "Website")["forecast_margin"].is_null(), "time and materials has no price to forecast against");
+    // A later change moves the plan again; the baseline stays the first one's.
+    let shorter = raise(erp, "Fewer reports", json!({"days_impact": -4})).await;
+    admin.action("ChangeRequest", shorter, "approve", json!({})).await;
+    let p = pm.get("Project", erp).await;
+    assert_eq!(
+        (p["end_date"].clone(), p["proj_baseline_end_date"].clone(), p["proj_approved_changes"].clone()),
+        (json!((ends + Duration::days(10)).to_string()), json!(ends.to_string()), json!(2))
+    );
+    // What a project cannot take is not approved: a price on time and materials, an end before the start.
+    let priced = raise(web, "A price", json!({"price_impact": "100"})).await;
+    let r = admin.try_action("ChangeRequest", priced, "approve", json!({})).await;
+    assert!(field_error(&r, "price_impact", "fixed price"), "{r:?}");
+    assert_eq!(pm.get("ChangeRequest", priced).await["decision"], json!("Pending"), "not decided");
+    let backwards = raise(erp, "Back in time", json!({"days_impact": -200})).await;
+    assert!(admin.try_action("ChangeRequest", backwards, "approve", json!({})).await.is_err(), "it would end before it starts");
+    assert_eq!(pm.get("Project", erp).await["proj_approved_changes"], json!(2));
 
     // ───────────── who is planned for what ─────────────
     let monday = crate_week(today);
@@ -732,6 +799,43 @@ async fn scenario() {
         "however it was typed, and weekends count for nothing"
     );
     assert_eq!((dec(&of("bob@acme.test")["hours"]), of("bob@acme.test")["over"].as_bool()), (n("40"), Some(false)));
+    // With a business calendar, its holiday that week is worked by nobody: planned hours and capacity
+    // both leave it out (FEO-029).
+    let mut tx = k.db.tenant_tx(tenant).await.unwrap();
+    sqlx::query(
+        "insert into logic_calendar (tenant_id, name, zone, weekends, holidays) values ($1, 'acme_india', 'Asia/Kolkata', '{sat,sun}', array[$2::date])",
+    )
+    .bind(tenant)
+    .bind(monday + Duration::days(2))
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    let week = [
+        company_param.clone(),
+        ("from_date", monday.to_string()),
+        ("to_date", (monday + Duration::days(6)).to_string()),
+        ("calendar", "acme_india".to_string()),
+    ];
+    let load = pm.report("workload", &week).await.expect("workload");
+    let rows = load["rows"].as_array().unwrap();
+    let of = |who: &str| rows.iter().find(|r| r["person"] == json!(who)).unwrap();
+    assert_eq!(
+        (dec(&of("alice@acme.test")["hours"]), dec(&of("alice@acme.test")["capacity"]), of("alice@acme.test")["over"].as_bool()),
+        (n("40"), n("32"), Some(true))
+    );
+    assert_eq!(
+        (dec(&of("bob@acme.test")["hours"]), dec(&of("bob@acme.test")["capacity"]), of("bob@acme.test")["over"].as_bool()),
+        (n("32"), n("32"), Some(false))
+    );
+    let mut shorter_days = week.to_vec();
+    shorter_days.push(("hours_per_day", "7".to_string()));
+    let load = pm.report("workload", &shorter_days).await.expect("workload");
+    let bob = load["rows"].as_array().unwrap().iter().find(|r| r["person"] == json!("bob@acme.test")).cloned().unwrap();
+    assert_eq!((dec(&bob["capacity"]), bob["over"].as_bool()), (n("28"), Some(true)), "seven hours a day");
+    let mut unknown = week.to_vec();
+    unknown[3] = ("calendar", "nowhere".to_string());
+    assert!(matches!(pm.report("workload", &unknown).await, Err(Error::Validation(_))), "a calendar that is not there");
 
     // ───────────── a portfolio ─────────────
     let portfolio = pm.insert("Portfolio", json!({"portfolio_name": "Digital", "projects": [{"project": web.to_string()}]})).await;
