@@ -1,14 +1,16 @@
 //! Planning around tasks: risks, change requests, allocations, and tasks that repeat.
 //!
-//! A change request is decided by someone other than whoever raised it. A repeating task makes its
+//! A change request is decided by someone other than whoever raised it, and once approved moves its
+//! project's plan by its effects, the plan as it was first kept as the project's baseline. A repeating task makes its
 //! next occurrence when it falls due: its key (the task it came from, and the day) keeps replicas
 //! running at once, or a run repeated, from making it twice.
 
 use async_trait::async_trait;
 use chrono::{Datelike, Months, NaiveDate, Utc};
-use ferrum_domain::util::{id, rows, s, sys};
+use ferrum_domain::util::{d, id, money, rows, s, sys};
 use ferrum_kernel::value::parse_date;
 use ferrum_kernel::{Ctx, Doc, DocHook, Error, HookCtx, Kernel, Result};
+use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -60,8 +62,62 @@ impl DocHook for ChangeRequestHook {
         v.insert("decision_note".into(), params.get("note").cloned().unwrap_or(Value::Null));
         let cr = id(doc, "id").unwrap_or_default();
         hc.kernel.set_values_tx(&sys(hc.ctx), hc.tx, "ChangeRequest", cr, v).await?;
+        if decision == "Approved" {
+            apply(hc, doc).await?;
+        }
         Ok(Some(json!({"decision": decision})))
     }
+}
+
+/// What an approved change does to its project (FEO-029): the expected end date moves by its days,
+/// the estimated hours by its hours, the estimated cost and a budget that is set by its cost, and a
+/// fixed price's contract value by its price. Before the first approved change the plan as it was
+/// is kept as the project's baseline. The project's own rules still hold: a change that would make
+/// it end before it starts, or cost less than nothing, is not approved.
+async fn apply(hc: &mut HookCtx<'_>, cr: &Doc) -> Result<()> {
+    let project = id(cr, "project").ok_or_else(|| Error::invalid("the change request has no project"))?;
+    let sctx = sys(hc.ctx);
+    let p = hc.kernel.get_tx(&sctx, hc.tx, "Project", project, true).await?;
+    let mut v = Doc::new();
+    if s(&p, "proj_baselined_on").is_none() {
+        for (baseline, from) in [
+            ("proj_baseline_end_date", "end_date"),
+            ("proj_baseline_hours", "proj_estimated_hours"),
+            ("proj_baseline_cost", "proj_estimated_cost"),
+            ("proj_baseline_budget", "budget"),
+            ("proj_baseline_value", "proj_contract_value"),
+        ] {
+            v.insert(baseline.into(), p.get(from).cloned().unwrap_or(Value::Null));
+        }
+        v.insert("proj_baselined_on".into(), json!(hc.ctx.today().to_string()));
+    }
+    let days = cr.get("days_impact").and_then(Value::as_i64).unwrap_or(0);
+    if let Some(end) = s(&p, "end_date").and_then(|e| parse_date(e).ok())
+        && days != 0
+    {
+        v.insert("end_date".into(), json!((end + chrono::Duration::days(days)).to_string()));
+    }
+    let moved = |field: &str, by: Decimal| money(d(&p, field) + by);
+    let (hours, cost, price) = (d(cr, "hours_impact"), d(cr, "cost_impact"), d(cr, "price_impact"));
+    if !hours.is_zero() {
+        v.insert("proj_estimated_hours".into(), moved("proj_estimated_hours", hours));
+    }
+    if !cost.is_zero() {
+        v.insert("proj_estimated_cost".into(), moved("proj_estimated_cost", cost));
+        if p.get("budget").is_some_and(|b| !b.is_null()) {
+            v.insert("budget".into(), moved("budget", cost));
+        }
+    }
+    if !price.is_zero() {
+        if s(&p, "proj_billing_method") != Some("Fixed Price") {
+            return Err(Error::field("price_impact", "changes a contract value, which only a fixed price project has"));
+        }
+        v.insert("proj_contract_value".into(), moved("proj_contract_value", price));
+    }
+    let approved = p.get("proj_approved_changes").and_then(Value::as_i64).unwrap_or(0);
+    v.insert("proj_approved_changes".into(), json!(approved + 1));
+    hc.kernel.update_tx(&sctx, hc.tx, "Project", project, v, None).await?;
+    Ok(())
 }
 
 /// The day after `from` that a repetition lands on. A month's end stays within its month.
