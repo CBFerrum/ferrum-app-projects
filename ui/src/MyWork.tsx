@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { Link } from "react-router";
 import { api, docPath, formatMoment, todayIso, t as tr, isolate } from "@ferrum/client";
-import { Badge, EmptyState, ErrorState, Icon, Spinner, toast, useLiveEntity, useShellTitle } from "@ferrum/kit";
+import { Badge, EmptyState, ErrorState, Icon, ListSkeleton, Spinner, toast, useLiveEntity, useShellTitle } from "@ferrum/kit";
 import { can, useMe, useMetaIndex, usePeople } from "@ferrum/records";
 import { Due, PriorityFlag } from "./bits";
 import { list, refusal, useQueryState } from "./data";
@@ -212,7 +212,7 @@ export function MyWork() {
       {q.error ? (
         <ErrorState error={q.error} onRetry={() => void q.refetch()} title={tr("The tasks cannot be shown")} />
       ) : !q.data ? (
-        <Spinner label={tr("Loading the tasks")} />
+        <ListSkeleton rows={6} />
       ) : !tasks.length ? (
         <EmptyState title={mine ? tr("Nothing on your plate") : tr("Nothing on their plate")} icon="check">
           <Link to="/">{tr("See the projects")}</Link>
