@@ -7,11 +7,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, type ReactNode, Suspense, useCallback, useMemo } from "react";
 import { Link, useParams } from "react-router";
 import { api, ApiError, formatDecimal, todayIso, t as tr, isolate } from "@ferrum/client";
-import { Badge, EmptyState, ErrorState, PageLoading, Spinner, statusTone, TabPanel, Tabs, useLiveEntity, useShellTitle } from "@ferrum/kit";
+import { Badge, EmptyState, ErrorState, ListSkeleton, PageLoading, statusTone, TabPanel, Tabs, useLiveEntity, useShellTitle } from "@ferrum/kit";
 import { Progress } from "./bits";
 import { list, loadTasks, type Project, tasksKey, useQueryState } from "./data";
 import { addDays } from "./days";
-import { late, num } from "./plan";
+import { late, num, PROJECT_TONES } from "./plan";
 import { TaskPanel } from "./TaskPanel";
 
 const Board = lazy(() => import("./Board").then((m) => ({ default: m.Board })));
@@ -133,7 +133,7 @@ function Time({ project }: { project: Project }) {
     queryFn: ({ signal }) => api.get<Report>("/api/reports/timesheet_summary", { company: project.company, project: project.id, from_date: "2000-01-01", to_date: addDays(todayIso(), 366) }, signal),
   });
   if (q.error) return <ErrorState error={q.error} onRetry={() => void q.refetch()} title={tr("The time logged cannot be shown")} />;
-  if (!q.data) return <Spinner label={tr("Loading the time logged")} />;
+  if (!q.data) return <ListSkeleton rows={5} />;
   const logTime = (
     <Link className="btn btn-primary btn-md" to={`/e/Timesheet/new?project=${project.id}`}>
       {tr("Log time")}
@@ -244,7 +244,7 @@ function ProjectView({ id }: { id: string }) {
           </p>
           <h1 className="page-title">{isolate(p.project_name ?? "")}</h1>
           <p className="row pj-facts">
-            <Badge tone={statusTone(p.status)}>{isolate(p.status ?? "")}</Badge>
+            <Badge tone={statusTone(p.status, PROJECT_TONES)}>{isolate(p.status ?? "")}</Badge>
             {p.proj_priority && p.proj_priority !== "Medium" && <Badge tone="amber">{isolate(p.proj_priority)}</Badge>}
             <span className="faint">{isolate([p._titles?.customer, p.start_date && p.end_date ? `${p.start_date} – ${p.end_date}` : null, p.proj_project_manager].filter(Boolean).join(" · "))}</span>
           </p>
@@ -270,9 +270,9 @@ function ProjectView({ id }: { id: string }) {
             ) : tasks.error ? (
               <ErrorState error={tasks.error} onRetry={() => void tasks.refetch()} title={tr("The tasks cannot be shown")} />
             ) : !tasks.data ? (
-              <Spinner label={tr("Loading tasks")} />
+              <ListSkeleton rows={8} />
             ) : (
-              <Suspense fallback={<Spinner label={tab === "board" ? tr("Loading the board") : tr("Loading the timeline")} />}>
+              <Suspense fallback={<ListSkeleton rows={8} />}>
                 {tab === "board" ? <Board project={p} set={tasks.data} open={task} onOpen={open} /> : <Timeline project={p} set={tasks.data} open={task} onOpen={open} />}
               </Suspense>
             )}

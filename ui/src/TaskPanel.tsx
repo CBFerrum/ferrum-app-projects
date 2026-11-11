@@ -9,7 +9,7 @@ import { Badge, ErrorState, Icon, PageLoading, statusTone, useLiveEntity } from 
 import { can, CollabPanel, type Doc, type EntityMeta, RecordFields, useEntityMeta, usePeople, useRecord } from "@ferrum/records";
 import { Avatar } from "./bits";
 import { tasksKey, useNames } from "./data";
-import { CHOOSABLE, type Task, waitsFor } from "./plan";
+import { CHOOSABLE, TASK_TONES, type Task, waitsFor } from "./plan";
 import { t as tr, isolate } from "@ferrum/client";
 
 type Rows = { id?: string; user?: string | null }[];
@@ -68,7 +68,7 @@ function Related({ title, tasks, onOpen }: { title: string; tasks: Task[]; onOpe
       <ul className="pj-mini">
         {tasks.map((t) => (
           <li key={t.id}>
-            <Badge tone={statusTone(t.status)}>{isolate(t.status ?? "")}</Badge>
+            <Badge tone={statusTone(t.status, TASK_TONES)}>{isolate(t.status ?? "")}</Badge>
             <button type="button" className="link-btn" onClick={() => onOpen(t.id)}>
               {isolate(t.number ?? "")} {isolate(t.subject ?? "")}
             </button>

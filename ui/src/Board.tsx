@@ -29,7 +29,7 @@ import { ChevronDown, ChevronRight, Plus } from "lucide-react";
 import { type CSSProperties, type FormEvent, type HTMLAttributes, type KeyboardEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { todayIso, t as tr, isolate } from "@ferrum/client";
-import { Alert, Badge, Button, confirmDialog, EmptyState, statusTone, toast, useDebounced, placed } from "@ferrum/kit";
+import { Alert, Badge, confirmDialog, StatePanel, statusTone, toast, useDebounced, placed } from "@ferrum/kit";
 import { can, useMe, useMetaIndex } from "@ferrum/records";
 import { Avatar, Keys } from "./bits";
 import {
@@ -54,7 +54,7 @@ import {
 } from "./kanban";
 import { CardMenu, type CardActions, CardView, SortableCard } from "./Card";
 import { changeTask, createTask, type Project, TASK_LIMIT, type TaskSet, useNames, useQueryState } from "./data";
-import { assignees, blockers, PRIORITIES, subtaskCounts, type Task } from "./plan";
+import { assignees, blockers, PRIORITIES, subtaskCounts, TASK_TONES, type Task } from "./plan";
 
 /** Where each card and each column stands in a layout: a card to the column that holds it, a column to itself. */
 function whereIs(items: Record<string, string[]>): Map<string, string> {
@@ -486,20 +486,19 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
         {tr("Press Enter to open a task. Hold Shift and use the arrow keys to move it to another column or place. Use the arrow keys or J and K to go from card to card.")}
       </p>
       {!model.total && (
-        <EmptyState title={tr("No tasks yet")} icon="board">
-          <p className="muted">{canCreate ? tr("Add the first one with the plus above a column.") : tr("Nothing has been planned in this project.")}</p>
-        </EmptyState>
+        <StatePanel kind="empty" title={tr("No tasks yet")}>
+          {canCreate ? tr("Add the first one with the plus above a column.") : tr("Nothing has been planned in this project.")}
+        </StatePanel>
       )}
       {model.total > 0 && !model.shown && (
-        <EmptyState title={tr("No task matches")} icon="search">
-          <Button
-            onClick={() => {
-              setQuery(filterParams(NO_FILTERS));
-            }}
-          >
-            {tr("Clear the filters")}
-          </Button>
-        </EmptyState>
+        <StatePanel
+          kind="no-matches"
+          title={tr("No task matches")}
+          clearLabel={tr("Clear the filters")}
+          onClear={() => {
+            setQuery(filterParams(NO_FILTERS));
+          }}
+        />
       )}
       <DndContext sensors={sensors} collisionDetection={detect} measuring={{ droppable: { strategy: MeasuringStrategy.Always } }} accessibility={{ announcements, screenReaderInstructions: { draggable: tr("Press Enter to open the task.") } }} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd} onDragCancel={cancel}>
         <div className="pj-board" data-ferrum-nocard="" role="region" aria-label={tr("Tasks by status")} aria-describedby="pj-board-help" style={{ "--cols": model.statuses.length } as CSSProperties}>
@@ -509,7 +508,7 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
               return (
                 <div key={s} className="pj-head">
                   <div className="pj-head-line">
-                    <Badge tone={statusTone(s)}>{isolate(s)}</Badge>
+                    <Badge tone={statusTone(s, TASK_TONES)}>{isolate(s)}</Badge>
                     <span className="faint">{n}</span>
                     {canCreate && s !== "Overdue" && (
                       <button type="button" className="pj-head-add" aria-label={tr("Add a task to {s}", { s })} title={tr("Add a task to {s}", { s })} aria-expanded={adding === s} onClick={() => setAdding(adding === s ? null : s)}>
