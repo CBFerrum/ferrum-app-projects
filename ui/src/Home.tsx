@@ -5,12 +5,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { Link } from "react-router";
 import { todayIso, t as tr, isolate } from "@ferrum/client";
-import { Badge, EmptyState, ErrorState, Spinner, statusTone, useLiveEntity, useShellTitle } from "@ferrum/kit";
+import { Badge, EmptyState, ErrorState, ListSkeleton, Spinner, statusTone, useLiveEntity, useShellTitle } from "@ferrum/kit";
 import { can, useMe, useMetaIndex } from "@ferrum/records";
 import { Due, PriorityFlag, Progress } from "./bits";
 import { list, type Project } from "./data";
 import { Nav } from "./Nav";
-import { DONE, late, type Task } from "./plan";
+import { DONE, late, PROJECT_TONES, type Task } from "./plan";
 
 function Projects() {
   const projects = useQuery({
@@ -29,7 +29,7 @@ function Projects() {
     return n;
   }, [overdue.data]);
   if (projects.error) return <ErrorState error={projects.error} onRetry={() => void projects.refetch()} title={tr("The projects cannot be shown")} />;
-  if (!projects.data) return <Spinner label={tr("Loading projects")} />;
+  if (!projects.data) return <ListSkeleton rows={6} />;
   if (!projects.data.rows.length) {
     return (
       <EmptyState title={tr("No open projects")} icon="board">
@@ -77,7 +77,7 @@ function MyTasks({ me }: { me: string }) {
             <Link to={`t/${t.id}`}>{isolate(t.subject ?? "")}</Link>
             <span className="faint pj-mine-project">{isolate(t._titles?.project ?? "")}</span>
             <PriorityFlag priority={t.priority} />
-            <Badge tone={statusTone(t.status)}>{isolate(t.status ?? "")}</Badge>
+            <Badge tone={statusTone(t.status, PROJECT_TONES)}>{isolate(t.status ?? "")}</Badge>
             <Due day={t.exp_end_date} late={late(t, now)} />
           </li>
         ))}

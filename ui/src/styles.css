@@ -31,7 +31,7 @@
   padding-bottom: 0.15rem;
   border-bottom: 2px solid transparent;
   color: var(--muted-foreground);
-  font-size: 20px;
+  font-size: var(--text-xl);
   font-weight: 650;
   text-decoration: none;
 }
@@ -47,7 +47,7 @@
 
 .pj-mono {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .pj-late {
@@ -157,7 +157,7 @@
   position: relative;
   display: block;
   padding: 0 0.5rem;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: 600;
   line-height: 1.1rem;
 }
@@ -177,7 +177,7 @@
   border-radius: 50%;
   background: var(--primary-soft);
   color: var(--primary);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 650;
 }
 
@@ -249,21 +249,21 @@ a.pj-tile:focus-visible {
 
 .pj-tile-label {
   color: var(--muted-foreground);
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
 }
 
 .pj-tile-value {
-  font-size: 15px;
+  font-size: var(--text-lg);
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
 
 .pj-keys {
   position: relative;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .pj-keys summary {
@@ -317,7 +317,7 @@ a.pj-tile:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
-  font-size: 13px;
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 
@@ -340,7 +340,7 @@ a.pj-tile:focus-visible {
 
 .pj-table th {
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 600;
 }
 
@@ -385,7 +385,7 @@ a.pj-tile:focus-visible {
   background: var(--surface-2);
   color: var(--muted-foreground);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--text-xs);
   cursor: pointer;
 }
 
@@ -421,7 +421,7 @@ a.pj-tile:focus-visible {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 13.5px;
+  font-size: var(--text-base);
 }
 
 .pj-people span:not(.pj-avatar) {
@@ -442,7 +442,7 @@ a.pj-tile:focus-visible {
 
 .pj-panel-foot {
   margin: 0.75rem 6px 0;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 @media (max-width: 900px) {
@@ -481,25 +481,25 @@ a.pj-tile:focus-visible {
 
 .pj-search {
   width: 13rem;
-  height: 34px;
+  height: var(--control-h);
 }
 
 .pj-select {
   width: auto;
   max-width: 13rem;
-  height: 34px;
+  height: var(--control-h);
 }
 
 .pj-tools-pick {
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .pj-tools-count {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--text-sm);
 }
 
 .pj-board {
@@ -538,7 +538,7 @@ a.pj-tile:focus-visible {
   padding: 0.3125rem 0.5rem;
   border-radius: var(--radius);
   background: var(--surface-2);
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .pj-head-add {
@@ -565,7 +565,7 @@ a.pj-tile:focus-visible {
 }
 
 .pj-adder .input {
-  height: 32px;
+  height: var(--control-h-sm);
 }
 
 .pj-lane {
@@ -574,7 +574,7 @@ a.pj-tile:focus-visible {
 
 .pj-lane-head {
   margin: 0 0 0.25rem;
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 600;
 }
 
@@ -631,7 +631,7 @@ a.pj-tile:focus-visible {
 .pj-sort-note {
   margin: 0.375rem 0.25rem 0;
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .pj-card {
@@ -684,7 +684,7 @@ a.pj-tile:focus-visible {
   min-width: 0;
   color: var(--faint);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .pj-card-menu {
@@ -724,7 +724,7 @@ a.pj-tile:focus-visible {
   display: -webkit-box;
   margin: 0.125rem 0 0.375rem;
   overflow: hidden;
-  font-size: 13.5px;
+  font-size: var(--text-base);
   font-weight: 550;
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
@@ -736,7 +736,7 @@ a.pj-tile:focus-visible {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem 0.5rem;
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -775,7 +775,7 @@ a.pj-tile:focus-visible {
 
 .pj-time-hint {
   margin-left: auto;
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .pj-gantt {
@@ -814,7 +814,7 @@ a.pj-tile:focus-visible {
   border-right: 1px solid var(--border);
   background: var(--surface);
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 600;
 }
 
@@ -843,7 +843,7 @@ a.pj-tile:focus-visible {
   overflow: hidden;
   border-left: 1px solid var(--border);
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: var(--text-xs);
   white-space: nowrap;
 }
 
@@ -871,7 +871,7 @@ a.pj-tile:focus-visible {
   height: var(--row);
   padding-right: 0.5rem;
   border-bottom: 1px solid var(--border);
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .pj-gl-row[data-open] {
@@ -882,7 +882,7 @@ a.pj-tile:focus-visible {
   padding-left: 0.75rem;
   background: var(--surface-2);
   color: var(--muted-foreground);
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -933,13 +933,13 @@ button.pj-fold:hover {
 
 .pj-gl-dates {
   flex: none;
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   white-space: nowrap;
 }
 
 .pj-schedule {
   flex: none;
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .pj-canvas {
@@ -989,7 +989,7 @@ button.pj-fold:hover {
   display: flex;
   align-items: center;
   height: var(--row);
-  font-size: 12px;
+  font-size: var(--text-xs);
   pointer-events: none;
 }
 
@@ -1133,7 +1133,7 @@ button.pj-fold:hover {
   position: relative;
   padding: 0 0.5rem;
   overflow: hidden;
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 550;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1231,7 +1231,7 @@ button.pj-fold:hover {
   width: 14rem;
   padding: 0.625rem;
   box-shadow: var(--shadow);
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .pj-linkmenu p {
@@ -1298,12 +1298,12 @@ button.pj-fold:hover {
 
 .pj-strip button {
   width: 100%;
-  height: 1.875rem;
+  height: var(--control-h-sm);
   border: 0;
   background: var(--surface-2);
   color: var(--muted-foreground);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 
@@ -1370,7 +1370,7 @@ button.pj-fold:hover {
   background: none;
   color: var(--muted-foreground);
   font: inherit;
-  font-size: 13.5px;
+  font-size: var(--text-base);
   cursor: pointer;
 }
 
@@ -1393,7 +1393,7 @@ button.pj-fold:hover {
   gap: 0.5rem;
   min-height: 2rem;
   padding: 0 0.25rem;
-  font-size: 13.5px;
+  font-size: var(--text-base);
 }
 
 .pj-line-title {
@@ -1404,7 +1404,7 @@ button.pj-fold:hover {
 
 .pj-line-sub {
   display: block;
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .pj-tick {
@@ -1452,7 +1452,7 @@ button.pj-fold:hover {
 .pj-minor {
   margin: 0.75rem 0 0.25rem;
   color: var(--muted-foreground);
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -1465,7 +1465,7 @@ button.pj-fold:hover {
 
 .pj-hours {
   margin: 0 0 0.5rem;
-  font-size: 14px;
+  font-size: var(--text-base);
 }
 
 .pj-events {
@@ -1518,7 +1518,7 @@ button.pj-fold:hover {
   align-items: baseline;
   justify-content: space-between;
   gap: 0 0.75rem;
-  font-size: 13.5px;
+  font-size: var(--text-base);
 }
 
 .pj-event-line strong {
@@ -1533,12 +1533,12 @@ button.pj-fold:hover {
 
 .pj-event-line time,
 .pj-event-who {
-  font-size: 12.5px;
+  font-size: var(--text-sm);
 }
 
 .pj-event-detail {
   margin: 0.125rem 0 0;
-  font-size: 13.5px;
+  font-size: var(--text-base);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
@@ -1576,7 +1576,7 @@ button.pj-fold:hover {
   gap: 0.375rem;
   margin: 0.5rem 0 0.375rem;
   color: var(--muted-foreground);
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -1611,25 +1611,25 @@ button.pj-fold:hover {
 
 .pj-row-title {
   color: var(--text);
-  font-size: 13.5px;
+  font-size: var(--text-base);
   font-weight: 500;
   overflow-wrap: anywhere;
 }
 
 .pj-row-sub {
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   overflow-wrap: anywhere;
 }
 
 .pj-status {
   width: auto;
-  height: 28px;
-  font-size: 12.5px;
+  height: var(--control-h-sm);
+  font-size: var(--text-sm);
 }
 
 .pj-row-due {
   min-width: 3.5rem;
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   text-align: end;
 }
 
@@ -1654,7 +1654,7 @@ button.pj-fold:hover {
   grid-template-columns: 4.5rem 1fr 3.5rem;
   align-items: center;
   gap: 0.5rem;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .pj-meter strong {
@@ -1753,7 +1753,7 @@ button.pj-fold:hover {
   padding-inline: 0 0.5rem;
   overflow: hidden;
   background: var(--bg);
-  font-size: 13px;
+  font-size: var(--text-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1761,7 +1761,7 @@ button.pj-fold:hover {
 .pj-heat-week {
   padding: 0.25rem 0;
   color: var(--muted-foreground);
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   text-align: center;
   white-space: nowrap;
 }
@@ -1776,7 +1776,7 @@ button.pj-fold:hover {
   border: 0;
   border-radius: 6px;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
@@ -1786,7 +1786,7 @@ button.pj-heat-cell {
 }
 
 .pj-heat-cell small {
-  font-size: 10.5px;
+  font-size: var(--text-xs);
   font-weight: 500;
   opacity: 0.85;
 }
@@ -1841,7 +1841,7 @@ button.pj-heat-cell {
   margin: 0;
   padding: 0;
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: var(--text-xs);
   list-style: none;
 }
 
