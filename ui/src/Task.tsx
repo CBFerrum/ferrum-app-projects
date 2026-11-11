@@ -11,7 +11,7 @@ import { Alert, Badge, Button, EmptyState, ErrorState, Icon, PageLoading, Spinne
 import { can, CollabPanel, Composer, type EntityMeta, LinkInput, RecordFields, useEntityMeta, usePeople, useRecord } from "@ferrum/records";
 import { Avatars, Due, PriorityFlag, Progress } from "./bits";
 import { list, tasksKey, useNames } from "./data";
-import { CHOOSABLE, late, num, type Task } from "./plan";
+import { CHOOSABLE, ISSUE_TONES, late, TASK_TONES, num, type Task } from "./plan";
 import { type AuditEvent, type Comment, counted, type Item, logsOf, story, type TimeRow } from "./story";
 import { People } from "./TaskPanel";
 
@@ -142,7 +142,7 @@ function Waits({ task, project, rows, canWrite, save }: { task: Task; project: s
       <ul className="pj-lines">
         {before.map((b) => (
           <li key={b.id}>
-            <Badge tone={statusTone(b.status)}>{isolate(b.status ?? "")}</Badge>
+            <Badge tone={statusTone(b.status, TASK_TONES)}>{isolate(b.status ?? "")}</Badge>
             <Link to={`/t/${b.id}`} className="pj-line-title">
               {isolate(b.number ?? "")} {isolate(b.subject ?? "")}
             </Link>
@@ -166,7 +166,7 @@ function Waits({ task, project, rows, canWrite, save }: { task: Task; project: s
       <ul className="pj-lines">
         {(after.q.data ?? []).map((b) => (
           <li key={b.id}>
-            <Badge tone={statusTone(b.status)}>{isolate(b.status ?? "")}</Badge>
+            <Badge tone={statusTone(b.status, TASK_TONES)}>{isolate(b.status ?? "")}</Badge>
             <Link to={`/t/${b.id}`} className="pj-line-title">
               {isolate(b.number ?? "")} {isolate(b.subject ?? "")}
             </Link>
@@ -238,7 +238,7 @@ function Issues({ task }: { task: Task }) {
             <Link to={`/e/ProjectIssue/${i.id}`} className="pj-line-title">
               {isolate(i.title ?? "")}
             </Link>
-            <Badge tone={statusTone(i.status)}>{isolate(i.status ?? "")}</Badge>
+            <Badge tone={statusTone(i.status, ISSUE_TONES)}>{isolate(i.status ?? "")}</Badge>
           </li>
         ))}
       </ul>
@@ -364,7 +364,7 @@ function TaskPage({ meta, id }: { meta: EntityMeta; id: string }) {
           </p>
           <h1 className="page-title">{isolate(task.subject ?? "")}</h1>
           <p className="row pj-facts">
-            <Badge tone={statusTone(status)}>{isolate(status)}</Badge>
+            <Badge tone={statusTone(status, TASK_TONES)}>{isolate(status)}</Badge>
             <PriorityFlag priority={doc.priority as string} always />
             {typeof doc.exp_end_date === "string" && (
               <span className={overdue ? "pj-late" : "faint"}>

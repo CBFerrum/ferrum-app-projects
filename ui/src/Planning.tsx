@@ -7,9 +7,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, type KeyboardEvent, useCallback, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { api, ApiError, docPath, errorMessage, newKey, saveBlob, todayIso, t as tr, isolate } from "@ferrum/client";
-import { Alert, Badge, Button, confirmDialog, Dialog, EmptyState, ErrorState, Field, Icon, Spinner, statusTone, Tabs, TabPanel, useLiveEntity, useShellTitle, placed } from "@ferrum/kit";
+import { Alert, Badge, Button, confirmDialog, Dialog, EmptyState, ErrorState, Field, Icon, statusTone, TableSkeleton, Tabs, TabPanel, useLiveEntity, useShellTitle, placed } from "@ferrum/kit";
 import { LinkInput, useMe, useMetaIndex, usePeople } from "@ferrum/records";
 import { Progress } from "./bits";
+import { PROJECT_TONES } from "./plan";
 import { list, type Project, useNames, useQueryState } from "./data";
 import { addDays } from "./days";
 import { Nav, usePlanner } from "./Nav";
@@ -184,7 +185,7 @@ function Drawer({ person, week, name, onClose, onEdit, onAdd }: { person: string
         {q.error ? (
           <ErrorState error={q.error} onRetry={() => void q.refetch()} title={tr("The allocations cannot be shown")} />
         ) : !q.data ? (
-          <Spinner label={tr("Loading the allocations")} />
+          <TableSkeleton columns={5} />
         ) : (
           <>
             <p className="pj-hours">
@@ -349,7 +350,7 @@ function Capacity({ company }: { company: ReturnType<typeof useCompany> }) {
         {q.error ? (
           <ErrorState error={q.error} onRetry={() => void q.refetch()} title={tr("The workload cannot be shown")} />
         ) : !q.data ? (
-          <Spinner label={tr("Loading the workload")} />
+          <TableSkeleton columns={6} />
         ) : !g.people.length ? (
           <EmptyState title={tr("Nobody is planned in these weeks")} icon="calendar">
             <p className="muted">{tr("Plan someone onto a project to see how full their weeks are.")}</p>
@@ -452,7 +453,7 @@ function Portfolios({ company }: { company: ReturnType<typeof useCompany> }) {
       {standing.error ? (
         <ErrorState error={standing.error} onRetry={() => void standing.refetch()} title={tr("The portfolio cannot be shown")} />
       ) : !standing.data ? (
-        <Spinner label={tr("Loading the portfolio")} />
+        <TableSkeleton columns={7} />
       ) : !rows.length ? (
         <EmptyState title={chosen ? tr("No projects in this portfolio") : tr("No projects yet")} icon="board">
           {picked ? <Link to={`/e/Portfolio/${picked.id}`}>{tr("Add projects to it")}</Link> : <Link to="/e/Project/new">{tr("Start a project")}</Link>}
@@ -506,7 +507,7 @@ function Portfolios({ company }: { company: ReturnType<typeof useCompany> }) {
                     <tr key={r.project}>
                       <td>{p ? <Link to={`/p/${p.id}`}>{isolate(r.project)}</Link> : r.project}</td>
                       <td>
-                        <Badge tone={statusTone(r.status)}>{isolate(r.status ?? "")}</Badge>
+                        <Badge tone={statusTone(r.status, PROJECT_TONES)}>{isolate(r.status ?? "")}</Badge>
                       </td>
                       <td>
                         <Progress value={r.progress} label={tr("{project} complete", { project: r.project })} />
