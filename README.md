@@ -266,6 +266,7 @@ CHANGELOG.md  what changed in each version
 
 | Version | Highlights |
 |---|---|
+| **0.7.1** | The redesigned interface: the upgraded design system, shaped loading, told-apart states. |
 | **0.7.0** | An approved change moves the plan, budget and contract value, the first kept as a baseline; forecast margin; capacity from a business calendar. |
 | **0.6.17** | Its reports' names in Arabic and Hindi. |
 | **0.6.16** | Its names in Arabic and Hindi; the last English sentences translated. |
