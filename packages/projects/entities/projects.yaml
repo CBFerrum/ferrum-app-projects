@@ -25,6 +25,18 @@
   unique: [[user, activity_type]]
   list: {columns: [user, activity_type, billing_rate, costing_rate], sort: user asc}
 
+- name: ProjectMember
+  label: Project Member
+  kind: child
+  description: "A person on a project's team and their role on it: a manager changes the project and its tasks, a member its tasks, a viewer reads them."
+  fields:
+    - {name: person, type: email, required: true, in_list: true}
+    - {name: project_role, type: select, label: Role on the Project, options: [Manager, Member, Viewer], default: Member, required: true, in_list: true}
+    # What each role may change, as the permission paths read it (Projects User): a person's email while
+    # their role writes, else nothing. A workspace that adds a role decides here what it may do.
+    - {name: editor, type: email, read_only: true, hidden: true, computed: "doc.project_role == 'Viewer' ? '' : doc.person", description: The person while their role changes the project's tasks}
+    - {name: manager, type: email, read_only: true, hidden: true, computed: "doc.project_role == 'Manager' ? doc.person : ''", description: The person while their role changes the project}
+
 - name: TaskAssignee
   label: Task Assignee
   kind: child
@@ -50,6 +62,7 @@
     - {name: subject, type: data, required: true, in_list: true}
     - {name: project, type: link, to: Project, required: true, in_list: true, in_filter: true}
     - {name: company, type: link, to: Company, fetch_from: project.company, read_only: true, in_filter: true}
+    - {name: project_private, type: check, fetch_from: project.proj_private, read_only: true, hidden: true, no_copy: true, description: "Its project is its members' alone (kept in step with the project)"}
     - {name: status, type: select, options: [Open, Working, Pending Review, Overdue, Completed, Cancelled], default: Open, required: true, in_list: true, in_filter: true}
     - {name: priority, type: select, options: [Low, Medium, High, Urgent], default: Medium, in_list: true, in_filter: true}
     - {name: parent_task, type: link, to: Task, in_filter: true, description: Makes this a sub-task}

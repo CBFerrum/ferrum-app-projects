@@ -15,6 +15,8 @@ overlays:
       - {op: set_property, field: end_date, property: label, value: Expected End Date}
       - {op: add_field, after: status, field: {name: proj_priority, type: select, label: Priority, options: [Low, Medium, High, Urgent], default: Medium, in_filter: true}}
       - {op: add_field, after: proj_priority, field: {name: proj_project_manager, type: email, label: Project Manager, in_filter: true, description: Email of the user who manages the project}}
+      - {op: add_field, after: proj_project_manager, field: {name: proj_private, type: check, label: Private, in_filter: true, description: "Only its team (and Projects Managers) see it and its tasks; otherwise every Projects User reads them"}}
+      - {op: add_field, after: proj_private, field: {name: proj_members, type: table, of: ProjectMember, label: Team, description: "Who works on it and their role: a manager changes the project and its tasks, a member its tasks, a viewer reads them"}}
       - {op: add_field, after: end_date, field: {name: proj_actual_start_date, type: date, label: Actual Start Date, read_only: true, no_copy: true, description: First submitted time log}}
       - {op: add_field, after: proj_actual_start_date, field: {name: proj_actual_end_date, type: date, label: Actual End Date, read_only: true, no_copy: true, description: Last submitted time log}}
       - {op: add_field, after: customer, field: {name: proj_billing_method, type: select, label: Billing Method, options: [Time and Materials, Fixed Price, Non-billable], default: Time and Materials, required: true, in_filter: true}}
