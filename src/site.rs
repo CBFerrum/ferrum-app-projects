@@ -93,9 +93,20 @@ async fn tasks(k: &Kernel, user: &Ctx, query: &Map<String, Value>) -> Result<Val
     for (parent, id, task) in waits {
         rows.entry(parent).or_default().1.push(json!({"id": id, "task": task}));
     }
+    // The assignees come from SQL of this route's own, which no field rule reaches: ask the platform record by record
+    // (a rule may hide them on some records and not others, BD-40), only for someone a rule hides them from at all.
+    let guarded = user.perms.hidden("Task").is_some_and(|h| h.contains("assigned_to"));
     for row in page.rows.iter_mut() {
-        let (people, waits) = s(row, "id").and_then(|i| i.parse::<Uuid>().ok()).and_then(|i| rows.remove(&i)).unwrap_or_default();
-        row.insert("assigned_to".into(), Value::Array(people));
+        let id = s(row, "id").and_then(|i| i.parse::<Uuid>().ok());
+        let (people, waits) = id.and_then(|i| rows.remove(&i)).unwrap_or_default();
+        let may = match (guarded, id) {
+            (false, _) => true,
+            (true, Some(id)) => k.get(user, "Task", id, false).await.is_ok_and(|t| t.contains_key("assigned_to")),
+            (true, None) => false,
+        };
+        if may {
+            row.insert("assigned_to".into(), Value::Array(people));
+        }
         row.insert("depends_on".into(), Value::Array(waits));
     }
     Ok(json!({"rows": page.rows, "total": page.total}))
