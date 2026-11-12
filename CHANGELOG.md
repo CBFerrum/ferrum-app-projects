@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.8.0
+
+Package `projects` 0.3.0, connector `projects_erp` 0.2.0; SQL `packages/projects/sql/001_task_statuses.sql`.
+
+- **Project teams and private projects (PJ-02, PJ-03).** `Project.proj_members` (person, role on the project; a
+  computed `editor` and `manager` per role) and `proj_private`, copied onto tasks, risks, issues, change requests
+  and allocations (`project_private`) as it changes. The Projects User role's rules for them are a workspace's to
+  add (README, Roles): a package's role rules may not name fields its overlays add to core's Project yet. Nothing
+  changes until they are added.
+- **Statuses with categories (PJ-04).** `TaskStatus` (name, category To Do / In Progress / Done / Cancelled, a late
+  status), `TaskWorkflow` (statuses in order, a default) and `ProjectType`; a project uses its own workflow, else
+  its type's, else the default. `Task.task_status` is the status; `status` keeps its name (setting it chooses the
+  status of that name) and `status_category` its category, which is all the code reads: starting, finishing,
+  dependencies, completing a project, billing, reports, the overdue job (a To Do status's late status), the
+  hand-over. The six statuses are the seeded Standard workflow; the SQL gives a workspace already there the same
+  and each task its status record.
+- **% complete** counts only tasks without live sub-tasks (a parent is its sub-tasks), weighed by expected hours
+  (all alike when none has any), done as 100 %, cancelled left out.
+- **Weekly timesheets (PJ-42, PJ-43).** A timesheet may be for a week (`week_start`); a line may be a day and its
+  hours without clock times (`day`), beside lines with them; Start Timer and Stop Timer time today's line for a
+  project, task and activity. `approvers` names who approves (Projects Settings: each project's manager, or the
+  person's manager on `ProjectPerson`) for a workspace's approval policy before submit (README). Reminders: from
+  the settings' weekday, people whose time that week is short of their `weekly_hours` are told once a week
+  (message `projects.time_missing`), by the upkeep.
+- **Templates (PJ-01).** Save as Template keeps the task tree, dependencies, estimates and team, dates as days from
+  the start (`start_offset`, `end_offset`) and assignees as roles (`assignee_role`); Create Project from a template
+  shifts them from its start on a business calendar's working days when one is named. No time is booked on a
+  template.
+- **Rate cards (PJ-46).** `RateCard` by project, customer, role on the project, person and activity, with dates;
+  the most specific in force wins (project, then customer, role, person, activity; the latest start among equals),
+  each rate on its own, before the person's activity cost and the activity type's. A project may be invoiced in
+  another currency (`proj_invoice_currency`) at the day's exchange rate; its figures stay in the company's.
+- **Dependencies** of four kinds with a lag (or lead) in days; each kind holds back starting or finishing; with
+  Projects Settings' switch, a task's dates follow its predecessors on the settings' calendar, its length kept.
+
 ## 0.7.2
 
 Rebuilt with Ferrum-Frontend 45dad7f, the design system as tuned after the landed build was reviewed. The left menu's icons are chosen so that none repeats on more than three rows and each fits its row; their drawings load beside the first page instead of inside it, so the page starts lighter; a row that scrolls sideways fades at the edge where there is more, in every browser and with reduced motion; a printed record leaves out empty fields and keeps its totals with the table; menus and popovers sit inside the page's landmarks for assistive technology; a selection bar folds what does not fit into More on a narrow screen. Nothing else changes.
