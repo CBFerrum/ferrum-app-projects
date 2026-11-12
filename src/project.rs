@@ -1,10 +1,10 @@
 //! Project and Task hooks, and the roll-ups that keep project and task figures in step with
 //! timesheets, invoices and task progress.
 
-use crate::logic::{CLOSED_PROJECT, STARTED, dependency_cycle, weighted_progress};
+use crate::logic::{CANCELLED, CLOSED_PROJECT, DONE, STARTED, dependency_cycle, weighted_progress};
 use crate::{lock, unknown_users};
 use async_trait::async_trait;
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{NaiveDate, Utc};
 use ferrum_domain::util::{b, d, elevated, get, id, money, rows, s, set, sys};
 use ferrum_kernel::{Ctx, Doc, DocHook, Error, FieldError, HookCtx, Kernel, Result, Tx};
 use rust_decimal::Decimal;
@@ -39,10 +39,19 @@ fn task_label(number: Option<String>, subject: Option<String>) -> String {
 
 pub struct ProjectHook;
 
+/// The tables of the records that follow their project's privacy (`project_private`).
+const PRIVATE_TABLES: [(&str, &str); 5] = [
+    ("Task", "e_task"),
+    ("ProjectRisk", "e_project_risk"),
+    ("ProjectIssue", "e_project_issue"),
+    ("ChangeRequest", "e_change_request"),
+    ("ResourceAllocation", "e_resource_allocation"),
+];
+
 /// The project's tasks that are neither completed nor cancelled, as `(id, label)`.
 async fn open_tasks(tx: &mut Tx, tenant: Uuid, project: Uuid) -> Result<Vec<(Uuid, String)>> {
     let open: Vec<(Uuid, Option<String>, Option<String>)> = sqlx::query_as(
-        "select id, number, subject from e_task where tenant_id = $1 and project = $2 and status not in ('Completed', 'Cancelled') order by number",
+        "select id, number, subject from e_task where tenant_id = $1 and project = $2 and coalesce(status_category, '') not in ('Done', 'Cancelled') order by number",
     )
     .bind(tenant)
     .bind(project)
@@ -80,8 +89,27 @@ impl DocHook for ProjectHook {
         match name {
             "make_sales_invoice" => crate::billing::invoice_project(hc, doc, params).await.map(Some),
             "complete" => complete(hc, doc, params).await.map(Some),
+            "save_as_template" => crate::template::copy(hc, doc, true, params).await.map(Some),
+            "create_from_template" => crate::template::copy(hc, doc, false, params).await.map(Some),
             _ => Ok(None),
         }
+    }
+
+    async fn after_save(&self, hc: &mut HookCtx<'_>, doc: &Doc, old: Option<&Doc>) -> Result<()> {
+        // Whether a project is private is copied onto its records, which permission rules read: a
+        // change reaches them in the same transaction, so nobody reads one in between.
+        let private = b(doc, "proj_private");
+        if let (Some(pid), Some(o)) = (id(doc, "id"), old)
+            && b(o, "proj_private") != private
+        {
+            for (entity, table) in PRIVATE_TABLES {
+                if hc.ctx.schema.entity(entity).is_some() {
+                    let sql = format!("update {table} set project_private = $3 where tenant_id = $1 and project = $2");
+                    sqlx::query(sqlx::AssertSqlSafe(sql)).bind(hc.ctx.tenant).bind(pid).bind(private).execute(&mut **hc.tx).await?;
+                }
+            }
+        }
+        Ok(())
     }
 
     async fn validate(&self, hc: &mut HookCtx<'_>, doc: &Doc) -> Result<()> {
@@ -90,6 +118,16 @@ impl DocHook for ProjectHook {
             && !unknown_users(hc.tx, hc.ctx.tenant, &[pm.to_string()]).await?.is_empty()
         {
             errors.push(FieldError::new("proj_project_manager", "no user has this email"));
+        }
+        // The team: each person once, and (when newly added) a user of this tenant.
+        let team: Vec<String> = rows(doc, "proj_members").iter().map(|r| s(r, "person").unwrap_or_default().trim().to_lowercase()).collect();
+        let unknown = unknown_users(hc.tx, hc.ctx.tenant, &team).await?;
+        for (i, e) in team.iter().enumerate() {
+            if team[..i].contains(e) {
+                errors.push(FieldError::new("person", "is on the team twice").in_row("proj_members", i));
+            } else if unknown.contains(e) {
+                errors.push(FieldError::new("person", "no user has this email").in_row("proj_members", i));
+            }
         }
         if let Some(cc) = id(doc, "proj_cost_center") {
             let center = get(hc.kernel, hc.ctx, hc.tx, "CostCenter", cc).await?;
@@ -112,25 +150,26 @@ async fn complete(hc: &mut HookCtx<'_>, doc: &Doc, params: &Value) -> Result<Val
         return Err(Error::invalid(open_tasks_message(&open)));
     }
     let actor = elevated(hc.ctx);
-    let status = |s: &str| {
-        let mut patch = Doc::new();
-        patch.insert("status".into(), json!(s));
-        patch
-    };
-    for (task, _) in &open {
-        hc.kernel.update_tx(&actor, hc.tx, "Task", *task, status("Cancelled"), None).await?;
+    if !open.is_empty() {
+        let cancel = crate::status::patch_to(hc.ctx, hc.tx, doc, CANCELLED).await?;
+        for (task, _) in &open {
+            hc.kernel.update_tx(&actor, hc.tx, "Task", *task, cancel.clone(), None).await?;
+        }
     }
-    hc.kernel.update_tx(&actor, hc.tx, "Project", pid, status("Completed"), None).await?;
+    let mut done = Doc::new();
+    done.insert("status".into(), json!("Completed"));
+    hc.kernel.update_tx(&actor, hc.tx, "Project", pid, done, None).await?;
     Ok(json!({"status": "Completed", "cancelled_tasks": open.len()}))
 }
 
 /// Figures derived from submitted time logs, billed milestones and (unless % complete is manual)
 /// task progress, recomputed from their sources every time so they cannot drift.
 pub(crate) async fn project_derived(tx: &mut Tx, tenant: Uuid, project: Uuid, doc: &Doc, without_task: Option<Uuid>) -> Result<Doc> {
-    let (hours, cost, billable, billed, first, last): (Decimal, Decimal, Decimal, Decimal, Option<DateTime<Utc>>, Option<DateTime<Utc>>) = sqlx::query_as(
+    // A log's days: its clock time's (in UTC, as always), else the day it was given with its hours.
+    let (hours, cost, billable, billed, first, last): (Decimal, Decimal, Decimal, Decimal, Option<NaiveDate>, Option<NaiveDate>) = sqlx::query_as(
         "select coalesce(sum(l.hours), 0), coalesce(sum(l.costing_amount), 0), \
          coalesce(sum(l.billing_amount) filter (where l.is_billable), 0), coalesce(sum(l.billing_amount) filter (where l.billed), 0), \
-         min(l.from_time), max(l.to_time) \
+         min(coalesce((l.from_time at time zone 'UTC')::date, l.day)), max(coalesce((l.to_time at time zone 'UTC')::date, l.day)) \
          from e_timesheet__time_logs l join e_timesheet t on t.tenant_id = l.tenant_id and t.id = l.parent_id \
          where l.tenant_id = $1 and l.project = $2 and t.docstatus = 1",
     )
@@ -138,9 +177,12 @@ pub(crate) async fn project_derived(tx: &mut Tx, tenant: Uuid, project: Uuid, do
     .bind(project)
     .fetch_one(&mut **tx)
     .await?;
-    let tasks: Vec<(Option<String>, Option<Decimal>, Option<Decimal>, Option<Uuid>, Option<Decimal>)> = sqlx::query_as(
-        "select status, progress, expected_hours, sales_invoice, billed_amount from e_task \
-         where tenant_id = $1 and project = $2 and ($3::uuid is null or id <> $3)",
+    // With each task, whether it has sub-tasks that are not cancelled (then it is those sub-tasks).
+    let tasks: Vec<(Option<String>, Option<Decimal>, Option<Decimal>, Option<Uuid>, Option<Decimal>, bool)> = sqlx::query_as(
+        "select t.status_category, t.progress, t.expected_hours, t.sales_invoice, t.billed_amount, \
+         exists (select 1 from e_task c where c.tenant_id = t.tenant_id and c.parent_task = t.id and ($3::uuid is null or c.id <> $3) \
+                 and c.status_category is distinct from 'Cancelled') \
+         from e_task t where t.tenant_id = $1 and t.project = $2 and ($3::uuid is null or t.id <> $3)",
     )
     .bind(tenant)
     .bind(project)
@@ -148,7 +190,7 @@ pub(crate) async fn project_derived(tx: &mut Tx, tenant: Uuid, project: Uuid, do
     .fetch_all(&mut **tx)
     .await?;
     let milestones: Decimal = tasks.iter().filter(|t| t.3.is_some()).map(|t| t.4.unwrap_or_default()).sum();
-    let date = |t: Option<DateTime<Utc>>| t.map(|t| json!(t.date_naive().to_string())).unwrap_or(Value::Null);
+    let date = |t: Option<NaiveDate>| t.map(|t| json!(t.to_string())).unwrap_or(Value::Null);
     let mut v = Doc::new();
     v.insert("proj_actual_hours".into(), money(hours));
     v.insert("proj_costing_amount".into(), money(cost));
@@ -157,8 +199,8 @@ pub(crate) async fn project_derived(tx: &mut Tx, tenant: Uuid, project: Uuid, do
     v.insert("proj_actual_start_date".into(), date(first));
     v.insert("proj_actual_end_date".into(), date(last));
     if s(doc, "proj_percent_complete_method") != Some("Manual") {
-        let progress: Vec<(String, Decimal, Decimal)> =
-            tasks.into_iter().map(|(st, p, h, _, _)| (st.unwrap_or_default(), p.unwrap_or_default(), h.unwrap_or_default())).collect();
+        let progress: Vec<(String, Decimal, Decimal, bool)> =
+            tasks.into_iter().map(|(cat, p, h, _, _, parent)| (cat.unwrap_or_default(), p.unwrap_or_default(), h.unwrap_or_default(), parent)).collect();
         v.insert("proj_percent_complete".into(), money(weighted_progress(&progress)));
     }
     Ok(v)
@@ -195,17 +237,19 @@ pub struct TaskHook;
 
 #[async_trait]
 impl DocHook for TaskHook {
-    async fn before_validate(&self, _hc: &mut HookCtx<'_>, doc: &mut Doc) -> Result<()> {
+    async fn before_validate(&self, hc: &mut HookCtx<'_>, doc: &mut Doc) -> Result<()> {
         let today = Utc::now().date_naive();
-        let past_due = s(doc, "exp_end_date").and_then(|e| NaiveDate::parse_from_str(e, "%Y-%m-%d").ok()).is_some_and(|e| e < today);
-        // Overdue means "should be done and has not started"; it follows the dates both ways.
-        let status = match s(doc, "status").unwrap_or("Open") {
-            "Open" if past_due => "Overdue",
-            "Overdue" if !past_due => "Open",
-            other => other,
+        // The status from the project's workflow; a late one follows the dates both ways.
+        if let Some(project) = id(doc, "project")
+            && let Some(project) = try_get(hc.kernel, hc.ctx, hc.tx, "Project", project).await?
+        {
+            let old = match id(doc, "id") {
+                Some(t) => try_get(hc.kernel, hc.ctx, hc.tx, "Task", t).await?,
+                None => None,
+            };
+            crate::status::resolve(hc.ctx, hc.tx, &project, doc, old.as_ref(), today).await?;
         }
-        .to_string();
-        if status == "Completed" {
+        if s(doc, "status_category") == Some(DONE) {
             set(doc, "progress", money(Decimal::ONE_HUNDRED));
             if s(doc, "completed_on").is_none() {
                 set(doc, "completed_on", today.to_string());
@@ -213,7 +257,6 @@ impl DocHook for TaskHook {
         } else {
             set(doc, "completed_on", Value::Null);
         }
-        set(doc, "status", status);
         Ok(())
     }
 
@@ -227,6 +270,10 @@ impl DocHook for TaskHook {
         projects.dedup();
         for p in projects {
             refresh_project(hc.kernel, hc.ctx, hc.tx, p, None).await?;
+        }
+        let moved = |f: &str| old.is_some_and(|o| o.get(f) != doc.get(f));
+        if moved("exp_start_date") || moved("exp_end_date") {
+            crate::schedule::follow(hc, doc).await?;
         }
         // People newly given the task hear of it (not whoever gave it to them).
         let before = old.map(assignees).unwrap_or_default();
@@ -278,15 +325,15 @@ pub(crate) async fn invoice_number(hc: &mut HookCtx<'_>, invoice: Uuid) -> Resul
     Ok(n.flatten().unwrap_or_else(|| invoice.to_string()))
 }
 
-/// `id → (label, status)` of tasks.
-async fn task_states(tx: &mut Tx, tenant: Uuid, ids: &[Uuid]) -> Result<HashMap<Uuid, (String, String)>> {
-    let found: Vec<(Uuid, Option<String>, Option<String>, Option<String>)> =
-        sqlx::query_as("select id, number, subject, status from e_task where tenant_id = $1 and id = any($2)")
+/// `id → (label, status name, status category)` of tasks.
+async fn task_states(tx: &mut Tx, tenant: Uuid, ids: &[Uuid]) -> Result<HashMap<Uuid, (String, String, String)>> {
+    let found: Vec<(Uuid, Option<String>, Option<String>, Option<String>, Option<String>)> =
+        sqlx::query_as("select id, number, subject, status, status_category from e_task where tenant_id = $1 and id = any($2)")
             .bind(tenant)
             .bind(ids)
             .fetch_all(&mut **tx)
             .await?;
-    Ok(found.into_iter().map(|(i, n, subj, st)| (i, (task_label(n, subj), st.unwrap_or_default()))).collect())
+    Ok(found.into_iter().map(|(i, n, subj, st, cat)| (i, (task_label(n, subj), st.unwrap_or_default(), cat.unwrap_or_default()))).collect())
 }
 
 /// The dependency edges reachable from `deps` (excluding `task`'s own, which are being replaced),
@@ -330,8 +377,10 @@ async fn check_task(hc: &mut HookCtx<'_>, doc: &Doc) -> Result<()> {
             return Err(Error::field("project", format!("project {} is {}; reopen it to change its tasks", label(p), st.to_lowercase())));
         }
     }
-    let status = s(doc, "status").unwrap_or("Open");
-    let was = old.as_ref().and_then(|o| s(o, "status"));
+    let status = s(doc, "status").unwrap_or_default();
+    let category = s(doc, "status_category").unwrap_or_default();
+    let moved_status = old.as_ref().is_none_or(|o| s(o, "status") != Some(status));
+    let was_done = old.as_ref().and_then(|o| s(o, "status_category")) == Some(DONE);
     let mut errors = Vec::new();
 
     if let Some(parent) = id(doc, "parent_task") {
@@ -368,20 +417,43 @@ async fn check_task(hc: &mut HookCtx<'_>, doc: &Doc) -> Result<()> {
                     cycle.iter().map(|t| if *t == tid { label(doc) } else { names.get(t).map(|n| n.0.clone()).unwrap_or_else(|| t.to_string()) }).collect();
                 errors.push(FieldError::new("depends_on", format!("this would create a dependency cycle: {}", path.join(" → "))));
             }
-            if STARTED.contains(&status) && was != Some(status) {
-                let pending: Vec<String> =
-                    deps.iter().filter_map(|d| states.get(d)).filter(|(_, st)| st != "Completed").map(|(l, st)| format!("{l} ({st})")).collect();
-                if !pending.is_empty() {
-                    errors.push(FieldError::new("status", format!("cannot be {status} until these tasks are completed: {}", pending.join(", "))));
+            // Each dependency's kind says what it holds back: starting (finish to start, start to
+            // start) or finishing (finish to finish, start to finish), until the other task is done
+            // (… to …, from finish) or has started (from start).
+            if moved_status && (STARTED.contains(&category) || category == DONE) {
+                let (mut not_done, mut not_started) = (Vec::new(), Vec::new());
+                for r in rows(doc, "depends_on") {
+                    let Some((l, st, cat)) = id(&r, "task").and_then(|d| states.get(&d)) else { continue };
+                    let kind = s(&r, "kind").unwrap_or("Finish to Start");
+                    let (holds_start, needs_done) = match kind {
+                        "Start to Start" => (true, false),
+                        "Finish to Finish" => (false, true),
+                        "Start to Finish" => (false, false),
+                        _ => (true, true),
+                    };
+                    if !holds_start && category != DONE {
+                        continue;
+                    }
+                    if needs_done && cat != DONE {
+                        not_done.push(format!("{l} ({st})"));
+                    } else if !needs_done && !STARTED.contains(&cat.as_str()) {
+                        not_started.push(format!("{l} ({st})"));
+                    }
+                }
+                if !not_done.is_empty() {
+                    errors.push(FieldError::new("status", format!("cannot be {status} until these tasks are completed: {}", not_done.join(", "))));
+                }
+                if !not_started.is_empty() {
+                    errors.push(FieldError::new("status", format!("cannot be {status} until these tasks have started: {}", not_started.join(", "))));
                 }
             }
         }
     }
 
     // A parent task closes after its sub-tasks.
-    if status == "Completed" && was != Some("Completed") {
+    if category == DONE && !was_done {
         let open: Vec<(Option<String>, Option<String>)> = sqlx::query_as(
-            "select number, subject from e_task where tenant_id = $1 and parent_task = $2 and status not in ('Completed', 'Cancelled') order by number",
+            "select number, subject from e_task where tenant_id = $1 and parent_task = $2 and coalesce(status_category, '') not in ('Done', 'Cancelled') order by number",
         )
         .bind(tenant)
         .bind(tid)
@@ -402,7 +474,7 @@ async fn check_task(hc: &mut HookCtx<'_>, doc: &Doc) -> Result<()> {
         if d(o, "billing_percent") != pct || !b(doc, "is_milestone") || moved_from.is_some() {
             errors.push(FieldError::new("billing_percent", format!("this milestone is invoiced on {number}; cancel that invoice before changing its billing")));
         }
-        if status == "Cancelled" {
+        if category == CANCELLED {
             errors.push(FieldError::new("status", format!("this milestone is invoiced on {number}; cancel that invoice first")));
         }
     }
@@ -415,7 +487,7 @@ async fn check_task(hc: &mut HookCtx<'_>, doc: &Doc) -> Result<()> {
             // Under the project's lock, so two milestones saved at once cannot together pass 100 %.
             lock(hc.tx, "e_project", tenant, &[project_id]).await?;
             let others: Decimal = sqlx::query_scalar(
-                "select coalesce(sum(billing_percent), 0) from e_task where tenant_id = $1 and project = $2 and id <> $3 and is_milestone and status <> 'Cancelled'",
+                "select coalesce(sum(billing_percent), 0) from e_task where tenant_id = $1 and project = $2 and id <> $3 and is_milestone and status_category is distinct from 'Cancelled'",
             )
             .bind(tenant)
             .bind(project_id)
