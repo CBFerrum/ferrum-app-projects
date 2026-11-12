@@ -15,6 +15,7 @@ mod planning;
 mod project;
 mod reports;
 mod site;
+mod status;
 mod timesheet;
 
 use ferrum_domain::reports::ReportSource;
@@ -47,7 +48,7 @@ pub fn reports() -> Vec<Arc<dyn ReportSource>> {
 }
 
 /// Periodic upkeep (every few minutes on every replica; must be idempotent and safe to run concurrently):
-/// open tasks past their expected end become Overdue.
+/// tasks in a To Do status that names a late status move to it once past their expected end.
 pub async fn maintenance(k: &Kernel) -> Result<()> {
     let mut tx = k.db.system_tx().await?;
     let tenants: Vec<Uuid> = sqlx::query_scalar("select id from tenant where status = 'active'").fetch_all(&mut *tx).await?;
@@ -75,17 +76,18 @@ async fn repeat_due(k: &Kernel, tenant: Uuid) -> Result<usize> {
     planning::repeat_tasks(k, &ctx, ctx.today()).await
 }
 
-/// Only tasks still `Open` change, in one statement that re-checks each row under its lock, so
-/// replicas running at once (or a user starting the task meanwhile) never conflict.
+/// Only tasks still in such a status change, in one statement that re-checks each row under its
+/// lock, so replicas running at once (or a user starting the task meanwhile) never conflict.
 async fn mark_overdue(k: &Kernel, tenant: Uuid) -> Result<u64> {
     let ctx = Ctx::system(tenant, k.registry.schema(tenant).await?);
-    if ctx.schema.entity("Task").is_none() {
+    if ctx.schema.entity("Task").is_none() || ctx.schema.entity("TaskStatus").is_none() {
         return Ok(0);
     }
     let mut tx = k.db.tenant_tx(tenant).await?;
     let n = sqlx::query(
-        "update e_task t set status = 'Overdue', updated_at = now() \
-         where t.tenant_id = $1 and t.status = 'Open' and t.exp_end_date < $2 and not exists \
+        "update e_task t set task_status = l.id, status = l.status_name, status_category = l.category, updated_at = now() \
+         from e_task_status s join e_task_status l on l.tenant_id = s.tenant_id and l.id = s.late_status \
+         where t.tenant_id = $1 and s.tenant_id = $1 and s.id = t.task_status and s.category = 'To Do' and t.exp_end_date < $2 and not exists \
          (select 1 from e_project p where p.tenant_id = t.tenant_id and p.id = t.project and p.status in ('Completed', 'Cancelled'))",
     )
     .bind(tenant)

@@ -4,7 +4,7 @@
 //! deleted draft leaves everything unbilled, and two drafts can never both bill the same time.
 
 use crate::lock;
-use crate::logic::{BillableLog, group_time};
+use crate::logic::{BillableLog, CANCELLED, group_time};
 use crate::project::{invoice_number, label, refresh_project, try_get};
 use crate::timesheet::refresh_timesheet;
 use async_trait::async_trait;
@@ -164,7 +164,7 @@ pub(crate) async fn invoice_milestone(hc: &mut HookCtx<'_>, task: &Doc) -> Resul
     if let Some(inv) = id(task, "sales_invoice") {
         return Err(Error::invalid(format!("this milestone is already invoiced on {}", invoice_number(hc, inv).await?)));
     }
-    if s(task, "status") == Some("Cancelled") {
+    if s(task, "status_category") == Some(CANCELLED) {
         return Err(Error::invalid("this milestone is cancelled"));
     }
     let pct = d(task, "billing_percent");
@@ -332,7 +332,7 @@ async fn mark_billed(hc: &mut HookCtx<'_>, doc: &Doc) -> Result<()> {
                 problems.push(format!("{name} is not a milestone"));
             } else if let Some(other) = id(&task, "sales_invoice") {
                 problems.push(format!("milestone {name} is already invoiced on {}", invoice_number(hc, other).await?));
-            } else if s(&task, "status") == Some("Cancelled") {
+            } else if s(&task, "status_category") == Some(CANCELLED) {
                 problems.push(format!("milestone {name} is cancelled"));
             }
         }

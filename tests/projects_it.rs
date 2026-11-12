@@ -313,8 +313,8 @@ async fn scenario() {
     let done = pm.update("Task", design, json!({"status": "Completed"})).await;
     assert_eq!((dec(&done["progress"]), done["completed_on"].clone()), (n("100"), json!(today.to_string())));
     pm.update("Task", build, json!({"status": "Working", "progress": "50"})).await;
-    // (100 × 10 + 100 × 0 + 50 × 30 + 0 × 20) / 60 hours
-    assert_eq!(dec(&pm.get("Project", web).await["proj_percent_complete"]), n("41.67"));
+    // Tasks without sub-tasks only (Design is its Wireframes): (100 × 0 + 50 × 30 + 0 × 20) / 50 hours.
+    assert_eq!(dec(&pm.get("Project", web).await["proj_percent_complete"]), n("30"));
 
     // Staff see and change the tasks assigned to them (owner_fields), and never billing.
     let seen: Vec<String> =
@@ -681,8 +681,8 @@ async fn scenario() {
 
     let moved = pm.update("Task", late, json!({"exp_end_date": (today + Duration::days(5)).to_string()})).await;
     assert_eq!(moved["status"], json!("Open"), "a new end date lifts Overdue");
-    // (100 × 10 + 100 × 0 + 0 × 5) / 15 hours: the reopened project counts its new task.
-    assert_eq!(dec(&pm.get("Project", web).await["proj_percent_complete"]), n("66.67"));
+    // (100 × 0 + 0 × 5) / 5 hours: the reopened project counts its new task, and Design is its Wireframes.
+    assert_eq!(dec(&pm.get("Project", web).await["proj_percent_complete"]), n("0"));
 
     // ───────────── risks, issues and who decides a change ─────────────
     let risk = pm.insert("ProjectRisk", json!({"title": "The supplier may fold", "project": web.to_string(), "probability": "High", "impact": "Medium"})).await;

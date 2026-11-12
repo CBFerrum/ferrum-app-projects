@@ -135,7 +135,7 @@ pub async fn repeat_tasks(k: &Kernel, ctx: &Ctx, today: NaiveDate) -> Result<usi
     let mut tx = k.db.tenant_tx(ctx.tenant).await?;
     // Only the latest of a chain carries it on.
     let due: Vec<Uuid> = sqlx::query_scalar(
-        "select t.id from e_task t where t.tenant_id = $1 and t.repeat is not null and t.exp_end_date <= $2 and t.status <> 'Cancelled' \
+        "select t.id from e_task t where t.tenant_id = $1 and t.repeat is not null and t.exp_end_date <= $2 and t.status_category is distinct from 'Cancelled' \
          and not exists (select 1 from e_task n where n.tenant_id = t.tenant_id and n.repeated_from = t.id) order by t.id limit 500",
     )
     .bind(ctx.tenant)

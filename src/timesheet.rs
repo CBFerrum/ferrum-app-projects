@@ -1,7 +1,7 @@
 //! Timesheets: derived spans, rates and amounts, per-user overlap checks, and the roll-ups into
 //! tasks and projects when time is submitted or cancelled.
 
-use crate::logic::{CLOSED_PROJECT, Span, add_hours, first_overlap, hours_between, percent, timesheet_status};
+use crate::logic::{CANCELLED, CLOSED_PROJECT, Span, add_hours, first_overlap, hours_between, percent, timesheet_status};
 use crate::project::{label, refresh_project, refresh_task, try_get};
 use crate::{is_manager, unknown_users};
 use async_trait::async_trait;
@@ -233,7 +233,7 @@ async fn check(hc: &mut HookCtx<'_>, doc: &Doc) -> Result<()> {
             match cached(hc, &mut tasks, "Task", t).await? {
                 None => errors.push(row_err("task", "does not exist", i)),
                 Some(task) if id(&task, "project") != project => errors.push(row_err("task", format!("{} belongs to another project", label(&task)), i)),
-                Some(task) if s(&task, "status") == Some("Cancelled") => errors.push(row_err("task", format!("{} is cancelled", label(&task)), i)),
+                Some(task) if s(&task, "status_category") == Some(CANCELLED) => errors.push(row_err("task", format!("{} is cancelled", label(&task)), i)),
                 _ => {}
             }
         }

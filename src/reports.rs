@@ -143,8 +143,8 @@ async fn portfolio_overview(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Para
     let rows: Vec<(String, Option<String>, i64, i64, i64, i64, i64)> = sqlx::query_as(
         "select a.project_name, a.status, \
          (select count(*) from e_task t where t.tenant_id = a.tenant_id and t.project = a.id), \
-         (select count(*) from e_task t where t.tenant_id = a.tenant_id and t.project = a.id and t.status = 'Completed'), \
-         (select count(*) from e_task t where t.tenant_id = a.tenant_id and t.project = a.id and t.status = 'Overdue'), \
+         (select count(*) from e_task t where t.tenant_id = a.tenant_id and t.project = a.id and t.status_category = 'Done'), \
+         (select count(*) from e_task t where t.tenant_id = a.tenant_id and t.project = a.id and t.status_category in ('To Do', 'In Progress') and t.exp_end_date < current_date), \
          (select count(*) from e_project_risk r where r.tenant_id = a.tenant_id and r.project = a.id and r.status in ('Open', 'Mitigating')), \
          (select count(*) from e_project_issue i where i.tenant_id = a.tenant_id and i.project = a.id and i.status in ('Open', 'In Progress')) \
          from e_project a where a.tenant_id = $1 and a.company = $2 \
@@ -397,10 +397,10 @@ async fn task_overview(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Params<'_
     #[allow(clippy::type_complexity)]
     let data: Vec<(Uuid, Option<String>, Option<String>, Option<String>, Option<String>, Option<NaiveDate>, Option<Decimal>, Option<Decimal>)> =
         sqlx::query_as(
-            "select t.id, p.number, p.project_name, a.\"user\", t.status, t.exp_end_date, t.expected_hours, t.actual_hours \
+            "select t.id, p.number, p.project_name, a.\"user\", t.status_category, t.exp_end_date, t.expected_hours, t.actual_hours \
          from e_task t join e_project p on p.tenant_id = t.tenant_id and p.id = t.project \
          left join e_task__assigned_to a on a.tenant_id = t.tenant_id and a.parent_id = t.id \
-         where t.tenant_id = $1 and p.company = $2 and t.status <> 'Cancelled' and ($3::uuid is null or t.project = $3) \
+         where t.tenant_id = $1 and p.company = $2 and t.status_category is distinct from 'Cancelled' and ($3::uuid is null or t.project = $3) \
          and ($4::text is null or a.\"user\" = $4) \
          and ($5::uuid is null or t.created_by = $5 or exists (select 1 from e_task__assigned_to o \
               where o.tenant_id = t.tenant_id and o.parent_id = t.id and lower(o.\"user\") = $6)) \
@@ -421,7 +421,7 @@ async fn task_overview(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Params<'_
     let mut total = TaskAgg::default();
     let mut seen = HashSet::new();
     for (task, number, name, assignee, status, end, planned, actual) in data.into_iter().take(MAX_ROWS as usize) {
-        let bucket = task_bucket(status.as_deref().unwrap_or("Open"), end, today);
+        let bucket = task_bucket(status.as_deref().unwrap_or(crate::logic::TO_DO), end, today);
         let (planned, actual) = (planned.unwrap_or_default(), actual.unwrap_or_default());
         let key = (project_label(number, name), assignee.unwrap_or_else(|| "(unassigned)".into()));
         groups.entry(key).or_default().add(bucket, planned, actual);
