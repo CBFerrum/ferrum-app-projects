@@ -16,6 +16,7 @@ mod project;
 mod reports;
 mod site;
 mod status;
+mod template;
 mod timesheet;
 
 use ferrum_domain::reports::ReportSource;

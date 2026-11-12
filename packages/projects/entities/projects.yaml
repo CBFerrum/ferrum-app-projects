@@ -117,6 +117,9 @@
     - {name: exp_start_date, type: date, label: Expected Start Date}
     - {name: exp_end_date, type: date, label: Expected End Date, in_list: true, in_filter: true}
     - {name: expected_hours, type: decimal, min: "0"}
+    - {name: start_offset, type: int, label: Starts (Days In), no_copy: true, description: "In a template: the day it starts, counted from the project's start (working days when a calendar is given)"}
+    - {name: end_offset, type: int, label: Ends (Days In), no_copy: true, description: "In a template: the day it ends, counted from the project's start"}
+    - {name: assignee_role, type: select, label: Given To, options: [Manager, Member, Viewer], no_copy: true, description: "In a template: a project made from it gives the task to its team's people of this role"}
     - {name: progress, type: percent, min: "0", max: "100", label: "% Progress", in_list: true}
     - {name: actual_hours, type: decimal, read_only: true, no_copy: true, description: From submitted timesheets}
     - {name: completed_on, type: date, no_copy: true}
@@ -132,6 +135,7 @@
   form:
     - {label: Task, fields: [subject, project, company, task_status, priority, parent_task, is_milestone]}
     - {label: Schedule, fields: [exp_start_date, exp_end_date, expected_hours, progress, actual_hours, completed_on, repeat, repeat_until]}
+    - {label: Template, collapsible: true, fields: [start_offset, end_offset, assignee_role]}
     - {label: People and Dependencies, fields: [assigned_to, depends_on]}
     - {label: Details, fields: [description]}
     - {label: Milestone Billing, collapsible: true, fields: [billing_percent, sales_invoice, billed_amount]}

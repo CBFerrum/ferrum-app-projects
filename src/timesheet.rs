@@ -288,6 +288,8 @@ async fn check(hc: &mut HookCtx<'_>, doc: &Doc) -> Result<()> {
                 Some(pd) => {
                     if let Some(st) = s(&pd, "status").filter(|st| CLOSED_PROJECT.contains(st)) {
                         errors.push(row_err("project", format!("project {} is {}; no more time can be booked on it", label(&pd), st.to_lowercase()), i));
+                    } else if b(&pd, "proj_is_template") {
+                        errors.push(row_err("project", format!("{} is a template; time is booked on projects made from it", label(&pd)), i));
                     } else if id(&pd, "company") != company {
                         errors.push(row_err("project", "belongs to another company", i));
                     }

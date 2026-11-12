@@ -89,6 +89,8 @@ impl DocHook for ProjectHook {
         match name {
             "make_sales_invoice" => crate::billing::invoice_project(hc, doc, params).await.map(Some),
             "complete" => complete(hc, doc, params).await.map(Some),
+            "save_as_template" => crate::template::copy(hc, doc, true, params).await.map(Some),
+            "create_from_template" => crate::template::copy(hc, doc, false, params).await.map(Some),
             _ => Ok(None),
         }
     }

@@ -182,6 +182,7 @@ async fn scenario() {
     teams(&w).await;
     statuses(&w).await;
     weekly_time(&w).await;
+    templates(&w).await;
     // Last: it rewinds the workspace to before this release.
     upgrade(&w).await;
 }
@@ -466,4 +467,80 @@ async fn weekly_time(w: &World) {
     assert_eq!(told().await, ["mia@acme.test", "vic@acme.test"], "Mia has 10.5 of 40, Vic nothing of 8; Nora has her hour");
     ferrum_app_projects::maintenance(&admin.k).await.expect("upkeep again");
     assert_eq!(told().await.len(), 2, "once a week");
+}
+
+/// PJ-01: a project saved as a template keeps its tree, dependencies, estimates and team, dates as
+/// days from its start and people as roles; a project made from it gets them back, dates shifted on
+/// a business calendar's working days.
+async fn templates(w: &World) {
+    let (pm, mia) = (&w.users["pm"], &reload(&w.users["mia"]).await);
+    let members = json!([{"person": "lead@acme.test", "project_role": "Manager"}, {"person": "mia@acme.test", "project_role": "Member"}]);
+    let kit = uid(&pm
+        .insert(
+            "Project",
+            json!({"project_name": "Launch kit", "company": w.cid, "start_date": "2027-03-01", "proj_billing_method": "Non-billable", "proj_members": members}),
+        )
+        .await);
+    let task = |v: Value| async move { pm.insert("Task", v).await["id"].clone() };
+    let phase = task(json!({"subject": "Phase", "project": kit.to_string(), "exp_start_date": "2027-03-01", "exp_end_date": "2027-03-08"})).await;
+    let design =
+        task(json!({"subject": "Design", "project": kit.to_string(), "parent_task": phase, "exp_start_date": "2027-03-02", "exp_end_date": "2027-03-04",
+        "expected_hours": "12", "assigned_to": [{"user": "mia@acme.test"}]}))
+        .await;
+    let build =
+        task(json!({"subject": "Build", "project": kit.to_string(), "parent_task": phase, "exp_start_date": "2027-03-05", "exp_end_date": "2027-03-08",
+        "depends_on": [{"task": design}], "assigned_to": [{"user": "lead@acme.test"}]}))
+        .await;
+    task(json!({"subject": "Go live", "project": kit.to_string(), "is_milestone": true, "exp_start_date": "2027-03-09", "exp_end_date": "2027-03-09", "depends_on": [{"task": build}]}))
+        .await;
+
+    let saved = pm.action("Project", kit, "save_as_template", json!({"template_name": "Launch template"})).await;
+    assert_eq!(saved["tasks"], json!(4));
+    let tpl = saved["id"].as_str().unwrap().parse::<Uuid>().unwrap();
+    let t = pm.get("Project", tpl).await;
+    assert_eq!((t["proj_is_template"].clone(), t["proj_members"].as_array().unwrap().len()), (json!(true), 2));
+    let in_tpl =
+        |name: &'static str| async move { pm.get("Task", uid(&pm.find_one("Task", json!({"project": tpl.to_string(), "subject": name})).await)).await };
+    let (tdesign, tbuild) = (in_tpl("Design").await, in_tpl("Build").await);
+    assert_eq!((tdesign["start_offset"].clone(), tdesign["end_offset"].clone(), tdesign["assignee_role"].clone()), (json!(1), json!(3), json!("Member")));
+    assert!(tdesign["exp_start_date"].is_null() && tdesign["assigned_to"].as_array().unwrap().is_empty(), "days, not dates; roles, not people");
+    assert_eq!(tdesign["parent_task"], in_tpl("Phase").await["id"], "the tree is kept");
+    assert_eq!(tbuild["depends_on"][0]["task"], tdesign["id"], "and what waits for what");
+    let r = mia
+        .try_insert(
+            "Timesheet",
+            json!({"company": w.cid, "time_logs": [{"activity_type": pm.find_one("ActivityType", json!({"activity_type": "Build"})).await["id"],
+            "project": tpl.to_string(), "day": "2027-03-01", "hours": "1"}]}),
+        )
+        .await;
+    assert!(field_error(&r, "project", "is a template"), "{r:?}");
+
+    // A project from it, starting on a Friday, on the office's working days.
+    let mut tx = w.admin.k.db.tenant_tx(w.admin.ctx.tenant).await.unwrap();
+    sqlx::query("insert into logic_calendar (tenant_id, name, zone, weekends, holidays) values ($1, 'office', 'UTC', '{sat,sun}', '{}')")
+        .bind(w.admin.ctx.tenant)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let made =
+        pm.action("Project", tpl, "create_from_template", json!({"project_name": "Launch June", "start_date": "2027-06-04", "calendar": "office"})).await;
+    let june = made["id"].as_str().unwrap().parse::<Uuid>().unwrap();
+    let in_june =
+        |name: &'static str| async move { pm.get("Task", uid(&pm.find_one("Task", json!({"project": june.to_string(), "subject": name})).await)).await };
+    let (jdesign, jbuild) = (in_june("Design").await, in_june("Build").await);
+    assert_eq!((jdesign["exp_start_date"].clone(), jdesign["exp_end_date"].clone()), (json!("2027-06-07"), json!("2027-06-09")), "working days from Friday");
+    assert_eq!((jbuild["exp_start_date"].clone(), jbuild["exp_end_date"].clone()), (json!("2027-06-10"), json!("2027-06-15")));
+    assert_eq!(jdesign["assigned_to"][0]["user"], json!("mia@acme.test"), "the team's member");
+    assert_eq!(jbuild["assigned_to"][0]["user"], json!("lead@acme.test"), "the team's manager");
+    assert_eq!(jbuild["depends_on"][0]["task"], jdesign["id"]);
+    let p = pm.get("Project", june).await;
+    assert_eq!((p["proj_is_template"].clone(), p["start_date"].clone(), p["end_date"].clone()), (json!(false), json!("2027-06-04"), json!("2027-06-16")));
+    assert_eq!(jdesign["status"], json!("Open"), "its workflow's first status");
+    // Without a calendar, calendar days.
+    let plain = pm.action("Project", tpl, "create_from_template", json!({"project_name": "Launch plain", "start_date": "2027-06-04"})).await;
+    let d = pm.find_one("Task", json!({"project": plain["id"], "subject": "Design"})).await;
+    assert_eq!(d["exp_start_date"], json!("2027-06-05"));
+    let r = pm.try_action("Project", tpl, "create_from_template", json!({"project_name": "X", "start_date": "2027-06-04", "calendar": "nowhere"})).await;
+    assert!(field_error(&r, "calendar", "no business calendar"), "{r:?}");
 }
