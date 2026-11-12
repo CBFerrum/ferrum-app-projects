@@ -77,6 +77,24 @@ pub fn shift(cal: Option<&Calendar>, start: NaiveDate, days: i64) -> NaiveDate {
     d
 }
 
+/// `days` working days before `end` (calendar days without a calendar).
+pub fn back(cal: Option<&Calendar>, end: NaiveDate, days: i64) -> NaiveDate {
+    if cal.is_none() || days <= 0 {
+        return end - Duration::days(days.max(0));
+    }
+    let mut d = end;
+    for _ in 0..days {
+        d -= Duration::days(1);
+        for _ in 0..550 {
+            if works(cal, d) {
+                break;
+            }
+            d -= Duration::days(1);
+        }
+    }
+    d
+}
+
 /// The days from `start` to `date`, as [`shift`] counts them (a day off counts as the next working one).
 pub fn offset(cal: Option<&Calendar>, start: NaiveDate, date: NaiveDate) -> i64 {
     if cal.is_none() || date < start {

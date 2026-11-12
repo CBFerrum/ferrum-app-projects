@@ -271,6 +271,10 @@ impl DocHook for TaskHook {
         for p in projects {
             refresh_project(hc.kernel, hc.ctx, hc.tx, p, None).await?;
         }
+        let moved = |f: &str| old.is_some_and(|o| o.get(f) != doc.get(f));
+        if moved("exp_start_date") || moved("exp_end_date") {
+            crate::schedule::follow(hc, doc).await?;
+        }
         // People newly given the task hear of it (not whoever gave it to them).
         let before = old.map(assignees).unwrap_or_default();
         let me = hc.ctx.email.to_lowercase();
@@ -413,11 +417,34 @@ async fn check_task(hc: &mut HookCtx<'_>, doc: &Doc) -> Result<()> {
                     cycle.iter().map(|t| if *t == tid { label(doc) } else { names.get(t).map(|n| n.0.clone()).unwrap_or_else(|| t.to_string()) }).collect();
                 errors.push(FieldError::new("depends_on", format!("this would create a dependency cycle: {}", path.join(" → "))));
             }
-            if STARTED.contains(&category) && moved_status {
-                let pending: Vec<String> =
-                    deps.iter().filter_map(|d| states.get(d)).filter(|(_, _, cat)| cat != DONE).map(|(l, st, _)| format!("{l} ({st})")).collect();
-                if !pending.is_empty() {
-                    errors.push(FieldError::new("status", format!("cannot be {status} until these tasks are completed: {}", pending.join(", "))));
+            // Each dependency's kind says what it holds back: starting (finish to start, start to
+            // start) or finishing (finish to finish, start to finish), until the other task is done
+            // (… to …, from finish) or has started (from start).
+            if moved_status && (STARTED.contains(&category) || category == DONE) {
+                let (mut not_done, mut not_started) = (Vec::new(), Vec::new());
+                for r in rows(doc, "depends_on") {
+                    let Some((l, st, cat)) = id(&r, "task").and_then(|d| states.get(&d)) else { continue };
+                    let kind = s(&r, "kind").unwrap_or("Finish to Start");
+                    let (holds_start, needs_done) = match kind {
+                        "Start to Start" => (true, false),
+                        "Finish to Finish" => (false, true),
+                        "Start to Finish" => (false, false),
+                        _ => (true, true),
+                    };
+                    if !holds_start && category != DONE {
+                        continue;
+                    }
+                    if needs_done && cat != DONE {
+                        not_done.push(format!("{l} ({st})"));
+                    } else if !needs_done && !STARTED.contains(&cat.as_str()) {
+                        not_started.push(format!("{l} ({st})"));
+                    }
+                }
+                if !not_done.is_empty() {
+                    errors.push(FieldError::new("status", format!("cannot be {status} until these tasks are completed: {}", not_done.join(", "))));
+                }
+                if !not_started.is_empty() {
+                    errors.push(FieldError::new("status", format!("cannot be {status} until these tasks have started: {}", not_started.join(", "))));
                 }
             }
         }
