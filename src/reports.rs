@@ -232,7 +232,8 @@ async fn profitability(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Params<'_
         "select l.project, coalesce(sum(l.costing_amount), 0), coalesce(sum(l.billing_amount) filter (where l.is_billable and not l.billed), 0) \
          from e_timesheet__time_logs l join e_timesheet t on t.tenant_id = l.tenant_id and t.id = l.parent_id \
          where l.tenant_id = $1 and t.docstatus = 1 and l.project = any($2) \
-         and ($3::date is null or l.from_time >= $3::date) and ($4::date is null or l.from_time < $4::date + 1) group by l.project",
+         and ($3::date is null or coalesce(l.from_time >= $3::date, l.day >= $3::date)) \
+         and ($4::date is null or coalesce(l.from_time < $4::date + 1, l.day <= $4::date)) group by l.project",
     )
     .bind(ctx.tenant)
     .bind(&ids)
@@ -315,7 +316,7 @@ async fn timesheet_summary(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Param
          from e_timesheet__time_logs l join e_timesheet t on t.tenant_id = l.tenant_id and t.id = l.parent_id \
          left join e_project p on p.tenant_id = l.tenant_id and p.id = l.project \
          left join e_activity_type a on a.tenant_id = l.tenant_id and a.id = l.activity_type \
-         where l.tenant_id = $1 and t.company = $2 and t.docstatus = 1 and l.from_time >= $3::date and l.from_time < $4::date + 1 \
+         where l.tenant_id = $1 and t.company = $2 and t.docstatus = 1 and coalesce(l.from_time >= $3::date and l.from_time < $4::date + 1, l.day between $3::date and $4::date) \
          and ($5::text is null or t.\"user\" = $5) and ($6::uuid is null or l.project = $6) and ($7::uuid is null or l.activity_type = $7) \
          and ($8::uuid is null or t.created_by = $8 or lower(t.\"user\") = $9) \
          group by t.\"user\", l.project, p.number, p.project_name, a.activity_type \

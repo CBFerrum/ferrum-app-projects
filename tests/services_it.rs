@@ -2,7 +2,7 @@
 //! PostgreSQL (`FERRUM_PROJECTS2_TEST_DATABASE_URL`, default
 //! `postgres://ferrum:ferrum@localhost:5432/ferrum_projects2_test`). The database is reset first.
 
-use chrono::{Duration, Utc};
+use chrono::{Datelike, Duration, Utc};
 use ferrum_kernel::tenant::NewTenant;
 use ferrum_kernel::{Ctx, Db, DbConfig, Doc, Error, HookRegistry, Kernel, KernelSettings, ListQuery, Result};
 use ferrum_meta::Catalog;
@@ -181,6 +181,7 @@ async fn scenario() {
     let w = world().await;
     teams(&w).await;
     statuses(&w).await;
+    weekly_time(&w).await;
     // Last: it rewinds the workspace to before this release.
     upgrade(&w).await;
 }
@@ -357,4 +358,112 @@ async fn upgrade(w: &World) {
     assert_eq!(first["status_category"], json!("To Do"));
     let moved = pm.update("Task", uid(&late), json!({"exp_end_date": (Utc::now().date_naive() + Duration::days(2)).to_string()})).await;
     assert_eq!(moved["status"], json!("Open"), "Open's late status, found again");
+}
+
+/// PJ-42, PJ-43: a week of days and hours (clock times still work beside them), a timer, approval
+/// before submitting by the workspace's policy with the approvers the app names, and reminders.
+async fn weekly_time(w: &World) {
+    let (admin, pm) = (&w.admin, &w.users["pm"]);
+    let (mia, boss, nora) = (&reload(&w.users["mia"]).await, &reload(&w.users["boss"]).await, &reload(&w.users["nora"]).await);
+    let today = Utc::now().date_naive();
+    let monday = today - Duration::days(today.weekday().num_days_from_monday() as i64);
+    let day = |n: i64| (monday + Duration::days(n)).to_string();
+    let services = admin.find_one("ItemGroup", json!({"group_name": "Services"})).await;
+    let hour = admin.find_one("Uom", json!({"uom_name": "Hour"})).await;
+    let item = admin
+        .insert("Item", json!({"item_code": "SVC-WEEK", "item_name": "Week", "item_group": services["id"], "stock_uom": hour["id"], "is_stock_item": false}))
+        .await;
+    let build =
+        pm.insert("ActivityType", json!({"activity_type": "Build", "billing_rate": "100", "costing_rate": "60", "item": item["id"]})).await["id"].clone();
+    let proj = uid(&pm
+        .insert(
+            "Project",
+            json!({"project_name": "Billable", "company": w.cid, "customer": w.globex, "proj_billing_method": "Time and Materials", "proj_project_manager": "boss@acme.test"}),
+        )
+        .await);
+    let wiring = pm.insert("Task", json!({"subject": "Wiring", "project": proj.to_string()})).await["id"].clone();
+    let line = |d: String, hours: &str| json!({"activity_type": build, "project": proj.to_string(), "day": d, "hours": hours});
+    let sheet = mia
+        .insert(
+            "Timesheet",
+            json!({"company": w.cid, "week_start": day(0), "time_logs": [line(day(0), "3"), line(day(1), "4.5"),
+                {"activity_type": build, "project": proj.to_string(), "from_time": format!("{}T09:00:00Z", day(2)), "to_time": format!("{}T10:00:00Z", day(2))}]}),
+        )
+        .await;
+    assert_eq!((dec(&sheet["total_hours"]), dec(&sheet["total_billable_amount"])), (n("8.5"), n("850")));
+    assert_eq!((sheet["start_date"].clone(), sheet["end_date"].clone(), sheet["time_logs"][2]["day"].clone()), (json!(day(0)), json!(day(2)), json!(day(2))));
+    assert_eq!(sheet["approvers"], json!(["boss@acme.test"]), "the project's manager");
+    let sheet = uid(&sheet);
+    let bad = |logs: Value| json!({"company": w.cid, "week_start": day(0), "time_logs": logs});
+    let r = mia.try_insert("Timesheet", bad(json!([line(day(7), "1")]))).await;
+    assert!(field_error(&r, "day", "outside the week"), "{r:?}");
+    let r = mia.try_insert("Timesheet", bad(json!([{"activity_type": build, "project": proj.to_string(), "hours": "1"}]))).await;
+    assert!(field_error(&r, "day", "set the day and the hours"), "{r:?}");
+    let r = mia.try_insert("Timesheet", bad(json!([line(day(1), "0")]))).await;
+    assert!(field_error(&r, "hours", "set the hours"), "{r:?}");
+
+    // A timer runs on today's line for the task, and stops into its hours.
+    mia.action("Timesheet", sheet, "start_timer", json!({"activity_type": build, "project": proj.to_string(), "task": wiring})).await;
+    let running = mia.get("Timesheet", sheet).await;
+    let timed = running["time_logs"].as_array().unwrap().iter().find(|r| r["timer_started"].is_string()).cloned().expect("a running line");
+    assert_eq!((timed["day"].clone(), timed["task"].clone()), (json!(today.to_string()), wiring.clone()));
+    let mut tx = admin.k.db.tenant_tx(admin.ctx.tenant).await.unwrap();
+    sqlx::query("update e_timesheet__time_logs set timer_started = now() - interval '2 hours' where parent_id = $1 and timer_started is not null")
+        .bind(sheet)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let stopped = mia.action("Timesheet", sheet, "stop_timer", json!({})).await;
+    let added = dec(&stopped["hours_added"]);
+    assert!(added >= n("2") && added < n("2.1"), "{stopped}");
+    let after = mia.get("Timesheet", sheet).await;
+    assert!(after["time_logs"].as_array().unwrap().iter().all(|r| r["timer_started"].is_null()));
+    assert_eq!(dec(&after["total_hours"]), n("8.5") + added);
+
+    // The workspace asks for approval before a timesheet is submitted, by the approvers the app names.
+    let policy = json!({"steps": [{"label": "Managers", "approvers": {"field": "approvers"}, "need": "all"}], "lock": true});
+    let op: ferrum_kernel::customize::NewCustomization =
+        serde_json::from_value(json!({"entity": "Timesheet", "op": {"op": "set_approval", "on": "submit", "approval": policy}})).unwrap();
+    admin.k.batch_customizations(&admin.ctx, vec![op], false).await.map_err(|(_, e)| e).expect("the policy");
+    let (mia, boss) = (&reload(mia).await, &reload(boss).await);
+    let asked = mia.k.submit(&mia.ctx, "Timesheet", sheet, None).await.expect("asked");
+    assert_eq!((asked["docstatus"].as_i64(), asked["_approval"]["status"].as_str()), (Some(0), Some("pending")), "{asked:?}");
+    assert!(mia.try_update("Timesheet", sheet, json!({"note": "more"})).await.is_err(), "locked while it waits");
+    let no = boss.k.decide_approval(&boss.ctx, "Timesheet", sheet, false, Some("Tuesday looks long")).await.expect("rejected");
+    assert_eq!(no["status"].as_str(), Some("rejected"), "{no}");
+    mia.update("Timesheet", sheet, json!({"note": "Tuesday was the launch"})).await;
+    mia.k.submit(&mia.ctx, "Timesheet", sheet, None).await.expect("asked again");
+    boss.k.decide_approval(&boss.ctx, "Timesheet", sheet, true, Some("fine")).await.expect("approved");
+    let done = pm.get("Timesheet", sheet).await;
+    assert_eq!((done["docstatus"].as_i64(), done["status"].clone()), (Some(1), json!("Submitted")), "approved is submitted, and locked");
+    assert_eq!(dec(&pm.get("Project", proj).await["proj_actual_hours"]), n("8.5") + added);
+    // Days without clock times are billed like any time.
+    let si = pm.action("Project", proj, "make_sales_invoice", json!({"to_date": day(1)})).await;
+    assert_eq!(si["logs"], json!(if today <= monday + Duration::days(1) { 3 } else { 2 }), "{si}");
+
+    // The person's manager instead, from their Person record.
+    admin.insert("ProjectsSettings", json!({"timesheet_approver": "Person's Manager"})).await;
+    pm.insert("ProjectPerson", json!({"user": "nora@acme.test", "manager": "lead@acme.test", "weekly_hours": "1"})).await;
+    let hers = nora.insert("Timesheet", json!({"company": w.cid, "time_logs": [line(today.to_string(), "2")]})).await;
+    assert_eq!(hers["approvers"], json!(["lead@acme.test"]));
+
+    // Reminders: from the reminder day on, once a week, to each person short of their hours.
+    let settings = admin.find_one("ProjectsSettings", json!({})).await;
+    admin.update("ProjectsSettings", uid(&settings), json!({"reminder_weekday": today.weekday().number_from_monday()})).await;
+    pm.insert("ProjectPerson", json!({"user": "mia@acme.test", "weekly_hours": "40"})).await;
+    pm.insert("ProjectPerson", json!({"user": "vic@acme.test", "weekly_hours": "8"})).await;
+    let told = || async {
+        let mut tx = admin.k.db.system_tx().await.unwrap();
+        let who: Vec<String> = sqlx::query_scalar("select recipient from message_send where template = 'projects.time_missing' order by recipient")
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        who
+    };
+    ferrum_app_projects::maintenance(&admin.k).await.expect("upkeep");
+    assert_eq!(told().await, ["mia@acme.test", "vic@acme.test"], "Mia has 10.5 of 40, Vic nothing of 8; Nora has her hour");
+    ferrum_app_projects::maintenance(&admin.k).await.expect("upkeep again");
+    assert_eq!(told().await.len(), 2, "once a week");
 }

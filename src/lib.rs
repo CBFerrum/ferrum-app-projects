@@ -48,7 +48,8 @@ pub fn reports() -> Vec<Arc<dyn ReportSource>> {
 }
 
 /// Periodic upkeep (every few minutes on every replica; must be idempotent and safe to run concurrently):
-/// tasks in a To Do status that names a late status move to it once past their expected end.
+/// tasks in a To Do status that names a late status move to it once past their expected end, and
+/// people whose week's time is short of their hours are reminded (Projects Settings).
 pub async fn maintenance(k: &Kernel) -> Result<()> {
     let mut tx = k.db.system_tx().await?;
     let tenants: Vec<Uuid> = sqlx::query_scalar("select id from tenant where status = 'active'").fetch_all(&mut *tx).await?;
@@ -63,6 +64,11 @@ pub async fn maintenance(k: &Kernel) -> Result<()> {
             Ok(0) => {}
             Ok(n) => tracing::info!(%tenant, tasks = n, "repeating tasks made"),
             Err(e) => tracing::warn!(%tenant, "making repeating tasks failed: {e}"),
+        }
+        match timesheet::remind_missing_time(k, tenant).await {
+            Ok(0) => {}
+            Ok(n) => tracing::info!(%tenant, people = n, "people reminded of their week's time"),
+            Err(e) => tracing::warn!(%tenant, "reminding people of their time failed: {e}"),
         }
     }
     Ok(())

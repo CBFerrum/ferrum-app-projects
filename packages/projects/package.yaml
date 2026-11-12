@@ -48,7 +48,7 @@ modules:
     label: Projects
     icon: briefcase
     order: 50
-    items: [Project, Task, Timesheet, ProjectRisk, ProjectIssue, ChangeRequest, ResourceAllocation, Portfolio, ActivityType, ActivityCost, TaskStatus, TaskWorkflow, ProjectType, report:project_profitability,
+    items: [Project, Task, Timesheet, ProjectRisk, ProjectIssue, ChangeRequest, ResourceAllocation, Portfolio, ActivityType, ActivityCost, TaskStatus, TaskWorkflow, ProjectType, ProjectPerson, ProjectsSettings, report:project_profitability,
             report:timesheet_summary, report:task_overview, report:workload, report:portfolio_overview]
 
 roles:
@@ -69,6 +69,8 @@ roles:
       - {entity: TaskStatus, read: true, write: true, create: true, delete: true}
       - {entity: TaskWorkflow, read: true, write: true, create: true, delete: true}
       - {entity: ProjectType, read: true, write: true, create: true, delete: true}
+      - {entity: ProjectPerson, read: true, write: true, create: true, delete: true, import: true}
+      - {entity: ProjectsSettings, read: true, write: true, create: true}
       - {entity: Customer, read: true}
       - {entity: Company, read: true}
       - {entity: Currency, read: true}
@@ -101,6 +103,7 @@ roles:
 personal_data:
   - {entity: Timesheet, match: user, retain: "Billing records"}
   - {entity: ActivityCost, match: user, retain: "Costing records"}
+  - {entity: ProjectPerson, match: user, retain: "Staffing records"}
 handover:
   - {entity: Task, field: assigned_to.user, where: {status_category: [To Do, In Progress]}}
 
@@ -128,3 +131,17 @@ seed:
           - {status: "@TaskStatus:status_name=Overdue"}
           - {status: "@TaskStatus:status_name=Completed"}
           - {status: "@TaskStatus:status_name=Cancelled"}
+
+# What the app sends; a workspace edits the wording under Settings.
+messages:
+  - key: projects.time_missing
+    label: Time short for the week
+    values: [week_start, hours, expected]
+    languages:
+      en:
+        email:
+          subject: "Your time for the week of {{ values.week_start }}"
+          body: "<p>You have recorded {{ values.hours }} hours for the week of {{ values.week_start }}, of the {{ values.expected }} expected. Please fill in your timesheet.</p>"
+        inapp:
+          title: "Your time for the week of {{ values.week_start }} is short"
+          text: "{{ values.hours }} of {{ values.expected }} hours recorded."
