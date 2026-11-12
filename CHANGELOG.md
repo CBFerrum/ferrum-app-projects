@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.0
+
+Package `projects` 0.4.0, connector `projects_erp` 0.3.0. Ships what 0.8.0 asked every workspace to add, and the client portal 0.8.0 could not build.
+
+- **Teams and private projects work on their own.** The Projects User role now carries the rules for them (read a project, its tasks, risks, issues and change requests where it is not private or the person is on its team; write by role on the project; a private project's team alone). A workspace that added the 0.8.0 README's rules by hand keeps them: the same rules are the same rows, nothing is doubled or lost (tested on a workspace built in the 0.8.0 state). **Upgrading: a workspace that did not add them now lets every Projects User read the tasks of its open projects (writing stays its people's), as the README described.**
+- **Timesheet approval is a package default**: submitting asks the approvers the app names (its projects' managers, or the person's manager, as Projects Settings says; never the person themselves) and the timesheet is locked while it waits. A timesheet that names no approver goes straight through, so workspaces and projects without managers see no change. A workspace switches it off or replaces it in Studio.
+- **Team members' personal data is declared** for erasure (their rows on every project's team go with them).
+- **Client portal.** New portal role **Project Client**, given by an administrator to a customer's people (Customer, new table Client People). They read the customer's projects marked Shared with the Client, the tasks and milestones marked Visible to the Client on those, the approved timesheets whose time is all on a shared project, and (with ERP) its submitted invoices; read only. Unsharing a project takes all of it back at once. Comments and files are not shared with portal people by the platform yet, so they are left out.
+
 ## 0.8.0
 
 Package `projects` 0.3.0, connector `projects_erp` 0.2.0; SQL `packages/projects/sql/001_task_statuses.sql`.

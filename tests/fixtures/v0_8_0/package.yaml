@@ -1,0 +1,158 @@
+package: projects
+version: 0.3.0
+label: Projects
+description: Projects with task trees, dependencies and milestones, timesheets with costing and billing, activity rates, milestone and time-and-materials invoicing, and project profitability.
+# Projects and customers are shared records; invoicing through ERP comes with the projects_erp
+# connector (Ferrum docs/plan/apps-ui.md §13).
+depends: [core, parties, project_records]
+field_prefix: proj_
+
+overlays:
+  - entity: Project
+    ops:
+      - {op: add_options, field: status, options: [On Hold]}
+      - {op: set_property, field: start_date, property: label, value: Expected Start Date}
+      - {op: set_property, field: end_date, property: label, value: Expected End Date}
+      - {op: add_field, after: status, field: {name: proj_priority, type: select, label: Priority, options: [Low, Medium, High, Urgent], default: Medium, in_filter: true}}
+      - {op: add_field, after: proj_priority, field: {name: proj_project_manager, type: email, label: Project Manager, in_filter: true, description: Email of the user who manages the project}}
+      - {op: add_field, after: proj_project_manager, field: {name: proj_private, type: check, label: Private, in_filter: true, description: "Only its team (and Projects Managers) see it and its tasks; otherwise every Projects User reads them"}}
+      - {op: add_field, after: proj_project_manager, field: {name: proj_project_type, type: link, to: ProjectType, label: Project Type, in_filter: true}}
+      - {op: add_field, after: proj_project_type, field: {name: proj_task_workflow, type: link, to: TaskWorkflow, label: Task Workflow, description: "The statuses its tasks go through; empty: its type's, else the default"}}
+      - {op: add_field, after: proj_task_workflow, field: {name: proj_is_template, type: check, label: Template, in_filter: true, no_copy: true, description: "A plan to copy: its tasks hold days from the start instead of dates, and no time is booked on it"}}
+      - {op: add_field, after: proj_private, field: {name: proj_members, type: table, of: ProjectMember, label: Team, description: "Who works on it and their role: a manager changes the project and its tasks, a member its tasks, a viewer reads them"}}
+      - {op: add_field, after: end_date, field: {name: proj_actual_start_date, type: date, label: Actual Start Date, read_only: true, no_copy: true, description: First submitted time log}}
+      - {op: add_field, after: proj_actual_start_date, field: {name: proj_actual_end_date, type: date, label: Actual End Date, read_only: true, no_copy: true, description: Last submitted time log}}
+      - {op: add_field, after: customer, field: {name: proj_billing_method, type: select, label: Billing Method, options: [Time and Materials, Fixed Price, Non-billable], default: Time and Materials, required: true, in_filter: true}}
+      - {op: add_field, after: proj_billing_method, field: {name: proj_contract_value, type: currency, currency: currency, label: Contract Value, min: "0", visible_if: "doc.proj_billing_method == 'Fixed Price'", required_if: "doc.proj_billing_method == 'Fixed Price'"}}
+      - {op: add_field, after: budget, field: {name: proj_estimated_cost, type: currency, currency: currency, label: Estimated Cost, min: "0"}}
+      - {op: add_field, after: proj_estimated_cost, field: {name: proj_estimated_hours, type: decimal, label: Estimated Hours, min: "0"}}
+      - {op: add_field, after: proj_estimated_hours, field: {name: proj_percent_complete_method, type: select, label: "% Complete Method", options: [Task Progress, Manual], default: Task Progress, description: "Task Progress: the tasks without sub-tasks (a parent is its sub-tasks), each weighed by its expected hours (all alike when none has any); done counts as 100%, cancelled tasks drop out"}}
+      - {op: add_field, after: proj_percent_complete_method, field: {name: proj_percent_complete, type: percent, label: "% Complete", min: "0", max: "100", read_only_if: "doc.proj_percent_complete_method != 'Manual'", in_list: true}}
+      - {op: add_field, field: {name: proj_actual_hours, type: decimal, label: Actual Hours, read_only: true, no_copy: true}}
+      - {op: add_field, field: {name: proj_costing_amount, type: currency, currency: currency, label: Timesheet Cost, read_only: true, no_copy: true}}
+      - {op: add_field, field: {name: proj_billable_amount, type: currency, currency: currency, label: Billable Time, read_only: true, no_copy: true}}
+      - {op: add_field, field: {name: proj_billed_amount, type: currency, currency: currency, label: Billed Amount, read_only: true, no_copy: true, description: Invoiced time and milestones}}
+      - {op: add_field, field: {name: proj_approved_changes, type: int, label: Approved Changes, read_only: true, no_copy: true, description: "Change requests approved, each moving the plan by its effects"}}
+      - {op: add_field, field: {name: proj_baselined_on, type: date, label: Baselined On, read_only: true, no_copy: true, description: "When the first approved change kept the plan as it was before it"}}
+      - {op: add_field, field: {name: proj_baseline_end_date, type: date, label: Baseline End Date, read_only: true, no_copy: true}}
+      - {op: add_field, field: {name: proj_baseline_hours, type: decimal, label: Baseline Hours, read_only: true, no_copy: true}}
+      - {op: add_field, field: {name: proj_baseline_cost, type: currency, currency: currency, label: Baseline Cost, read_only: true, no_copy: true}}
+      - {op: add_field, field: {name: proj_baseline_budget, type: currency, currency: currency, label: Baseline Budget, read_only: true, no_copy: true}}
+      - {op: add_field, field: {name: proj_baseline_value, type: currency, currency: currency, label: Baseline Contract Value, read_only: true, no_copy: true}}
+      - {op: add_rule, rule: {name: proj_contract_value, check: "doc.proj_billing_method != 'Fixed Price' || doc.proj_contract_value > 0.0", message: "A fixed price project needs a contract value"}}
+      - {op: add_action, action: {name: complete, label: Complete Project, permission: write, condition: "doc.status != 'Completed' && doc.status != 'Cancelled'", confirm: "Complete the project? With force, its open tasks are cancelled.",
+                                  params: [{name: force, type: select, options: ["No", "Yes"], label: Cancel Its Open Tasks, description: "Yes cancels the open tasks first; No refuses while any is open"}]}}
+      - {op: add_action, action: {name: save_as_template, label: Save as Template, permission: write, condition: "!doc.proj_is_template",
+                                  params: [{name: template_name, type: data, label: Template Name, required: true},
+                                           {name: calendar, type: data, label: Business Calendar, description: "Count the tasks' days in its working days; empty: calendar days"}]}}
+      - {op: add_action, action: {name: create_from_template, label: Create Project, permission: read, condition: "doc.proj_is_template",
+                                  params: [{name: project_name, type: data, label: Project Name, required: true}, {name: start_date, type: date, label: Starts On, required: true},
+                                           {name: customer, type: link, to: Customer, label: Customer},
+                                           {name: calendar, type: data, label: Business Calendar, description: "Place the tasks on its working days; empty: calendar days"}]}}
+      - {op: set_entity_property, property: list, value: {columns: [number, project_name, customer, status, proj_percent_complete], sort: created_at desc}}
+
+modules:
+  - name: projects
+    label: Projects
+    icon: briefcase
+    order: 50
+    items: [Project, Task, Timesheet, ProjectRisk, ProjectIssue, ChangeRequest, ResourceAllocation, Portfolio, ActivityType, ActivityCost, RateCard, TaskStatus, TaskWorkflow, ProjectType, ProjectPerson, ProjectsSettings, report:project_profitability,
+            report:timesheet_summary, report:task_overview, report:workload, report:portfolio_overview]
+
+roles:
+  - name: Projects Manager
+    description: Plans projects and tasks, sees costs, and bills customers for time and milestones.
+    permissions:
+      - {entity: Project, read: true, write: true, create: true, delete: true, export: true, import: true}
+      - {entity: Task, read: true, write: true, create: true, delete: true, export: true, import: true, read_groups: [billing], write_groups: [billing]}
+      - {entity: Timesheet, read: true, write: true, create: true, delete: true, submit: true, cancel: true, export: true, read_groups: [costing], write_groups: [costing]}
+      - {entity: TimesheetDetail, read_groups: [costing], write_groups: [costing]}
+      - {entity: ActivityType, read: true, write: true, create: true, delete: true, read_groups: [costing], write_groups: [costing]}
+      - {entity: ActivityCost, read: true, write: true, create: true, delete: true, import: true}
+      - {entity: RateCard, read: true, write: true, create: true, delete: true, import: true, export: true, read_groups: [costing], write_groups: [costing]}
+      - {entity: ProjectRisk, read: true, write: true, create: true, delete: true, export: true}
+      - {entity: ProjectIssue, read: true, write: true, create: true, delete: true, export: true}
+      - {entity: ChangeRequest, read: true, write: true, create: true, delete: true, submit: true, cancel: true, export: true, read_groups: [costing], write_groups: [costing]}
+      - {entity: ResourceAllocation, read: true, write: true, create: true, delete: true, export: true}
+      - {entity: Portfolio, read: true, write: true, create: true, delete: true}
+      - {entity: TaskStatus, read: true, write: true, create: true, delete: true}
+      - {entity: TaskWorkflow, read: true, write: true, create: true, delete: true}
+      - {entity: ProjectType, read: true, write: true, create: true, delete: true}
+      - {entity: ProjectPerson, read: true, write: true, create: true, delete: true, import: true}
+      - {entity: ProjectsSettings, read: true, write: true, create: true}
+      - {entity: Customer, read: true}
+      - {entity: Company, read: true}
+      - {entity: Currency, read: true}
+      - {entity: PriceList, read: true}
+      - {entity: TaxTemplate, read: true}
+  - name: Projects User
+    description: Records own time and works on the tasks assigned to them.
+    permissions:
+      - {entity: ProjectRisk, read: true}
+      - {entity: ProjectIssue, read: true, write: true, create: true}
+      - {entity: ChangeRequest, read: true, write: true, create: true, submit: true}
+      - {entity: ResourceAllocation, read: true, if_owner: true}
+      - {entity: Portfolio, read: true}
+      - {entity: Project, read: true}
+      - {entity: Task, read: true, write: true, create: true, if_owner: true, read_groups: [billing]}
+      - {entity: Timesheet, read: true, write: true, create: true, delete: true, submit: true, cancel: true, if_owner: true}
+      - {entity: ActivityType, read: true}
+      - {entity: TaskStatus, read: true}
+      - {entity: TaskWorkflow, read: true}
+      - {entity: ProjectType, read: true}
+      - {entity: Company, read: true}
+      - {entity: Customer, read: true}
+  - name: Accounts Manager
+    permissions:
+      - {entity: Timesheet, read: true, export: true, read_groups: [costing]}
+      - {entity: TimesheetDetail, read_groups: [costing]}
+      - {entity: Task, read: true, read_groups: [billing]}
+      - {entity: ActivityType, read: true, read_groups: [costing]}
+      - {entity: ActivityCost, read: true}
+      - {entity: RateCard, read: true, read_groups: [costing]}
+personal_data:
+  - {entity: Timesheet, match: user, retain: "Billing records"}
+  - {entity: ActivityCost, match: user, retain: "Costing records"}
+  - {entity: ProjectPerson, match: user, retain: "Staffing records"}
+  - {entity: RateCard, match: user, retain: "Costing records"}
+handover:
+  - {entity: Task, field: assigned_to.user, where: {status_category: [To Do, In Progress]}}
+
+# The statuses every workspace starts with (sql/001_task_statuses.sql gives a workspace already there
+# the same, and its tasks their status records).
+seed:
+  - entity: TaskStatus
+    key: [status_name]
+    records:
+      - {status_name: Overdue, category: To Do, sort_order: 4}
+      - {status_name: Open, category: To Do, sort_order: 1, late_status: "@TaskStatus:status_name=Overdue"}
+      - {status_name: Working, category: In Progress, sort_order: 2}
+      - {status_name: Pending Review, category: In Progress, sort_order: 3}
+      - {status_name: Completed, category: Done, sort_order: 5}
+      - {status_name: Cancelled, category: Cancelled, sort_order: 6}
+  - entity: TaskWorkflow
+    key: [workflow_name]
+    records:
+      - workflow_name: Standard
+        is_default: true
+        statuses:
+          - {status: "@TaskStatus:status_name=Open"}
+          - {status: "@TaskStatus:status_name=Working"}
+          - {status: "@TaskStatus:status_name=Pending Review"}
+          - {status: "@TaskStatus:status_name=Overdue"}
+          - {status: "@TaskStatus:status_name=Completed"}
+          - {status: "@TaskStatus:status_name=Cancelled"}
+
+# What the app sends; a workspace edits the wording under Settings.
+messages:
+  - key: projects.time_missing
+    label: Time short for the week
+    values: [week_start, hours, expected]
+    languages:
+      en:
+        email:
+          subject: "Your time for the week of {{ values.week_start }}"
+          body: "<p>You have recorded {{ values.hours }} hours for the week of {{ values.week_start }}, of the {{ values.expected }} expected. Please fill in your timesheet.</p>"
+        inapp:
+          title: "Your time for the week of {{ values.week_start }} is short"
+          text: "{{ values.hours }} of {{ values.expected }} hours recorded."
