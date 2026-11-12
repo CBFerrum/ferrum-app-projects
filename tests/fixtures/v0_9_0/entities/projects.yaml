@@ -1,0 +1,265 @@
+- name: ActivityType
+  label: Activity Type
+  kind: master
+  module: projects
+  title_field: activity_type
+  description: Kinds of work time is booked against, with default hourly rates and the service item used to invoice them.
+  fields:
+    - {name: activity_type, type: data, required: true, unique: true, in_list: true}
+    - {name: billing_rate, type: currency, min: "0", in_list: true, label: Default Billing Rate (per hour)}
+    - {name: costing_rate, type: currency, min: "0", perm_group: costing, label: Default Costing Rate (per hour)}
+    - {name: disabled, type: check, in_filter: true}
+  list: {columns: [activity_type, billing_rate, item], sort: activity_type asc}
+
+- name: ActivityCost
+  label: Activity Cost
+  kind: master
+  module: projects
+  title_field: user
+  description: Per-user hourly rates for an activity type; they override the activity type's defaults.
+  fields:
+    - {name: user, type: email, required: true, in_list: true, in_filter: true}
+    - {name: activity_type, type: link, to: ActivityType, required: true, in_list: true, in_filter: true}
+    - {name: billing_rate, type: currency, min: "0", in_list: true, label: Billing Rate (per hour), description: Empty or 0 uses the activity type's rate}
+    - {name: costing_rate, type: currency, min: "0", in_list: true, label: Costing Rate (per hour), description: Empty or 0 uses the activity type's rate}
+  unique: [[user, activity_type]]
+  list: {columns: [user, activity_type, billing_rate, costing_rate], sort: user asc}
+
+- name: RateCard
+  label: Rate Card
+  kind: master
+  module: projects
+  title_field: label
+  description: "Hourly billing and costing rates for some time: what a rule names (project, customer, role on the project, person, activity) must match, and the day must fall within its dates. The rule naming a project wins, then one naming a customer, a role, a person, an activity, in that order; among equals the latest start. A rate left empty falls to the next rule, then to the person's activity cost, then to the activity type."
+  fields:
+    - {name: label, type: data, required: true, in_list: true}
+    - {name: project, type: link, to: Project, in_list: true, in_filter: true}
+    - {name: customer, type: link, to: Customer, in_list: true, in_filter: true}
+    - {name: project_role, type: select, label: Role on the Project, options: [Manager, Member, Viewer], in_list: true}
+    - {name: user, type: email, label: Person, in_list: true, in_filter: true}
+    - {name: activity_type, type: link, to: ActivityType, in_list: true, in_filter: true}
+    - {name: billing_rate, type: currency, min: "0", in_list: true, label: Billing Rate (per hour)}
+    - {name: costing_rate, type: currency, min: "0", perm_group: costing, label: Costing Rate (per hour)}
+    - {name: valid_from, type: date, in_list: true}
+    - {name: valid_to, type: date, in_list: true}
+  rules:
+    - {name: valid_to, check: "doc.valid_to == null || doc.valid_from == null || doc.valid_to >= doc.valid_from", message: "A rate cannot end before it starts"}
+  list: {columns: [label, project, customer, project_role, user, activity_type, billing_rate, valid_from], sort: label asc}
+
+- name: TaskStatus
+  label: Task Status
+  kind: master
+  module: projects
+  title_field: status_name
+  description: "A status a task can be in. What it means comes from its category (to do, in progress, done, cancelled), which the app reads; the name is the workspace's own."
+  fields:
+    - {name: status_name, type: data, label: Name, required: true, unique: true, in_list: true}
+    - {name: category, type: select, options: [To Do, In Progress, Done, Cancelled], required: true, in_list: true, in_filter: true,
+       description: "To Do: not started; In Progress: started (waits for its dependencies); Done: finished (counts as 100%); Cancelled: left out of progress"}
+    - {name: late_status, type: link, to: TaskStatus, label: When Late, description: "A task of this status past its expected end moves to this one, and back once its end is moved on (To Do statuses only)"}
+    - {name: sort_order, type: int, label: Order, in_list: true, description: "Where it stands among statuses when no workflow orders them"}
+  list: {columns: [status_name, category, sort_order], sort: sort_order asc}
+
+- name: TaskWorkflowStatus
+  label: Workflow Status
+  kind: child
+  fields:
+    - {name: status, type: link, to: TaskStatus, required: true, in_list: true}
+    - {name: category, type: data, fetch_from: status.category, read_only: true, in_list: true}
+
+- name: TaskWorkflow
+  label: Task Workflow
+  kind: master
+  module: projects
+  title_field: workflow_name
+  description: "The statuses a project's tasks go through, in order; a new task takes the first. A project uses its own workflow, else its type's, else the default one."
+  fields:
+    - {name: workflow_name, type: data, label: Name, required: true, unique: true, in_list: true}
+    - {name: is_default, type: check, label: Default, in_list: true, description: For projects that name no workflow and whose type names none}
+    - {name: statuses, type: table, of: TaskWorkflowStatus, required: true}
+  list: {columns: [workflow_name, is_default], sort: workflow_name asc}
+
+- name: ProjectType
+  label: Project Type
+  kind: master
+  module: projects
+  title_field: type_name
+  description: Kinds of project, each with the task workflow its projects use unless a project names its own.
+  fields:
+    - {name: type_name, type: data, label: Name, required: true, unique: true, in_list: true}
+    - {name: task_workflow, type: link, to: TaskWorkflow, in_list: true}
+    - {name: description, type: text}
+  list: {columns: [type_name, task_workflow], sort: type_name asc}
+
+- name: ProjectMember
+  label: Project Member
+  kind: child
+  description: "A person on a project's team and their role on it: a manager changes the project and its tasks, a member its tasks, a viewer reads them."
+  fields:
+    - {name: person, type: email, required: true, in_list: true}
+    - {name: project_role, type: select, label: Role on the Project, options: [Manager, Member, Viewer], default: Member, required: true, in_list: true}
+    # What each role may change, as the permission paths read it (Projects User): a person's email while
+    # their role writes, else nothing. A workspace that adds a role decides here what it may do.
+    - {name: editor, type: email, read_only: true, hidden: true, computed: "doc.project_role == 'Viewer' ? '' : doc.person", description: The person while their role changes the project's tasks}
+    - {name: manager, type: email, read_only: true, hidden: true, computed: "doc.project_role == 'Manager' ? doc.person : ''", description: The person while their role changes the project}
+
+- name: ProjectClientPerson
+  label: Client Person
+  kind: child
+  description: "Someone of a customer who reads its shared projects on the portal: their sign-in email (given the Project Client role by an administrator)."
+  fields:
+    - {name: email, type: email, required: true, in_list: true}
+    - {name: person_name, type: data, label: Name}
+
+- name: TaskAssignee
+  label: Task Assignee
+  kind: child
+  fields:
+    - {name: user, type: email, required: true, in_list: true}
+
+- name: TaskDependency
+  label: Task Dependency
+  kind: child
+  fields:
+    - {name: task, type: link, to: Task, required: true, in_list: true, label: Depends On}
+    - {name: subject, type: data, fetch_from: task.subject, read_only: true, in_list: true}
+    - {name: kind, type: select, options: [Finish to Start, Start to Start, Finish to Finish, Start to Finish], default: Finish to Start, in_list: true,
+       description: "Finish to Start: this starts once that is done; Start to Start: this starts once that has started; Finish to Finish: this is done once that is; Start to Finish: this is done once that has started"}
+    - {name: lag_days, type: int, label: Lag (Days), in_list: true, description: "Days after that task's start or end (working days on Projects Settings' calendar); negative: a lead"}
+
+- name: Task
+  label: Task
+  kind: master
+  module: projects
+  title_field: subject
+  company_scoped: true
+  numbering: {template: "TASK-{seq:5}"}
+  owner_fields: [assigned_to.user]
+  fields:
+    - {name: subject, type: data, required: true, in_list: true}
+    - {name: project, type: link, to: Project, required: true, in_list: true, in_filter: true}
+    - {name: company, type: link, to: Company, fetch_from: project.company, read_only: true, in_filter: true}
+    - {name: project_private, type: check, fetch_from: project.proj_private, read_only: true, hidden: true, no_copy: true, description: "Its project is its members' alone (kept in step with the project)"}
+    - {name: task_status, type: link, to: TaskStatus, label: Status, in_filter: true, description: "One of the project's workflow; a new task takes its first"}
+    - {name: status, type: data, label: Status Name, in_list: true, in_filter: true, description: "The status's name (setting it chooses the status of that name)"}
+    - {name: status_category, type: select, label: Status Category, options: [To Do, In Progress, Done, Cancelled], read_only: true, no_copy: true, in_filter: true}
+    - {name: priority, type: select, options: [Low, Medium, High, Urgent], default: Medium, in_list: true, in_filter: true}
+    - {name: parent_task, type: link, to: Task, in_filter: true, description: Makes this a sub-task}
+    - {name: is_milestone, type: check, in_filter: true}
+    - {name: client_visible, type: check, in_filter: true, label: Visible to the Client, description: "The customer's portal people read it (and the project's milestones marked so), when its project is shared"}
+    - {name: project_shared, type: check, fetch_from: project.proj_shared, read_only: true, hidden: true, no_copy: true, description: "Its project is shared with its customer's portal people (kept in step with the project)"}
+    - {name: exp_start_date, type: date, label: Expected Start Date}
+    - {name: exp_end_date, type: date, label: Expected End Date, in_list: true, in_filter: true}
+    - {name: expected_hours, type: decimal, min: "0"}
+    - {name: start_offset, type: int, label: Starts (Days In), no_copy: true, description: "In a template: the day it starts, counted from the project's start (working days when a calendar is given)"}
+    - {name: end_offset, type: int, label: Ends (Days In), no_copy: true, description: "In a template: the day it ends, counted from the project's start"}
+    - {name: assignee_role, type: select, label: Given To, options: [Manager, Member, Viewer], no_copy: true, description: "In a template: a project made from it gives the task to its team's people of this role"}
+    - {name: progress, type: percent, min: "0", max: "100", label: "% Progress", in_list: true}
+    - {name: actual_hours, type: decimal, read_only: true, no_copy: true, description: From submitted timesheets}
+    - {name: completed_on, type: date, no_copy: true}
+    - {name: rank, type: decimal, hidden: true, no_copy: true, description: "Place on the board among tasks of the same status; set by moving the card (empty: after the ranked ones, in the order made)"}
+    - {name: assigned_to, type: table, of: TaskAssignee}
+    - {name: depends_on, type: table, of: TaskDependency, description: "Tasks this one waits for, and how"}
+    - {name: repeat, type: select, options: [Daily, Weekly, Monthly], description: "Makes a new task when this one is due, with the same people; empty: once"}
+    - {name: repeat_until, type: date, visible_if: "doc.repeat != null"}
+    - {name: repeated_from, type: link, to: Task, read_only: true, no_copy: true}
+    - {name: description, type: text}
+    - {name: billing_percent, type: percent, min: "0", max: "100", perm_group: billing, label: "Billing % of Contract Value", visible_if: "doc.is_milestone"}
+    - {name: billed_amount, type: currency, read_only: true, no_copy: true, visible_if: "doc.is_milestone"}
+  form:
+    - {label: Task, fields: [subject, project, company, task_status, priority, parent_task, is_milestone]}
+    - {label: Schedule, fields: [exp_start_date, exp_end_date, expected_hours, progress, actual_hours, completed_on, repeat, repeat_until]}
+    - {label: Template, collapsible: true, fields: [start_offset, end_offset, assignee_role]}
+    - {label: People and Dependencies, fields: [assigned_to, depends_on]}
+    - {label: Details, fields: [description]}
+    - {label: Milestone Billing, collapsible: true, fields: [billing_percent, sales_invoice, billed_amount]}
+  rules:
+    - {name: expected_dates, check: "doc.exp_end_date == null || doc.exp_start_date == null || doc.exp_end_date >= doc.exp_start_date", message: "Expected end date is before the expected start date"}
+  actions:
+    - {name: make_milestone_invoice, label: Create Milestone Invoice, permission: read, condition: "doc.is_milestone && doc.billing_percent > 0.0", confirm: "Create a draft sales invoice for this milestone's share of the contract value?"}
+  list: {columns: [number, subject, project, status, exp_end_date, progress], sort: created_at desc}
+
+- name: TimesheetDetail
+  label: Time Log
+  kind: child
+  fields:
+    - {name: activity_type, type: link, to: ActivityType, required: true, link_filters: {disabled: false}, in_list: true}
+    - {name: project, type: link, to: Project, in_list: true, description: Defaults to the task's or the timesheet's project}
+    - {name: task, type: link, to: Task, in_list: true}
+    - {name: day, type: date, in_list: true, description: "The day of this time: from its start time when it has one, else given with the hours"}
+    - {name: from_time, type: datetime, in_list: true, description: "Optional: a day and its hours are enough"}
+    - {name: to_time, type: datetime, in_list: true, description: Leave empty to derive it from the hours}
+    - {name: hours, type: decimal, min: "0", in_list: true, description: Derived from the time span when it has one}
+    - {name: timer_started, type: datetime, no_copy: true, description: "A running timer: Stop Timer adds the time since then to the hours"}
+    - {name: is_billable, type: check, default: true, in_list: true, label: Billable, description: Only time on Time and Materials projects is billable}
+    - {name: billing_hours, type: decimal, min: "0", description: Follows the hours unless changed}
+    - {name: billing_rate, type: currency, min: "0", description: "Defaults to the rate cards' rate for the time, else the person's activity cost, else the activity type's"}
+    - {name: billing_amount, type: currency, read_only: true, in_list: true}
+    - {name: costing_rate, type: currency, read_only: true, perm_group: costing}
+    - {name: costing_amount, type: currency, read_only: true, perm_group: costing}
+    - {name: billed, type: check, read_only: true, no_copy: true}
+    - {name: description, type: text}
+
+- name: Timesheet
+  label: Timesheet
+  kind: document
+  module: projects
+  submittable: true
+  company_scoped: true
+  title_field: user
+  numbering: {template: "TS-{FY}-{seq:5}", date_field: start_date}
+  owner_fields: [user]
+  fields:
+    - {name: company, type: link, to: Company, required: true, default_expr: "user.default_company", in_filter: true}
+    - {name: user, type: email, required: true, default_expr: "user.email", in_list: true, in_filter: true}
+    - {name: project, type: link, to: Project, in_filter: true, description: Default project for the time logs}
+    - {name: week_start, type: date, label: Week Of, in_filter: true, description: "The first day of the week this timesheet is for: its time must fall within those seven days"}
+    - {name: start_date, type: date, read_only: true, in_list: true}
+    - {name: end_date, type: date, read_only: true}
+    - {name: time_logs, type: table, of: TimesheetDetail, required: true}
+    - {name: total_hours, type: decimal, read_only: true, in_list: true}
+    - {name: total_billable_hours, type: decimal, read_only: true}
+    - {name: total_billed_hours, type: decimal, read_only: true, no_copy: true}
+    - {name: total_billable_amount, type: currency, read_only: true}
+    - {name: total_billed_amount, type: currency, read_only: true, no_copy: true}
+    - {name: total_costing_amount, type: currency, read_only: true, perm_group: costing}
+    - {name: per_billed, type: percent, read_only: true, no_copy: true}
+    - {name: status, type: select, options: [Draft, Submitted, Partly Billed, Billed, Cancelled], default: Draft, read_only: true, no_copy: true, in_list: true, in_filter: true}
+    - {name: note, type: text}
+    - {name: portal_project, type: link, to: Project, read_only: true, hidden: true, no_copy: true, description: "The one project all its time is on: the customer's portal people reach an approved timesheet through it"}
+    - {name: portal_shared, type: check, read_only: true, hidden: true, no_copy: true, description: "That project is shared with its customer's portal people (kept in step with the project)"}
+    - {name: approvers, type: json, read_only: true, no_copy: true, description: "Who approves it where the workspace asks for approval before submitting: the managers of its projects, or the person's manager (Projects Settings)"}
+  indexes: [[user]]
+  actions:
+    - {name: start_timer, label: Start Timer, docstatus: [0], permission: write,
+       params: [{name: activity_type, type: link, to: ActivityType, label: Activity Type, required: true}, {name: project, type: link, to: Project, label: Project},
+                {name: task, type: link, to: Task, label: Task}, {name: description, type: text, label: Description}]}
+    - {name: stop_timer, label: Stop Timer, docstatus: [0], permission: write}
+  list: {columns: [number, user, week_start, start_date, total_hours, status], sort: start_date desc}
+
+- name: ProjectPerson
+  label: Person
+  kind: master
+  module: projects
+  title_field: user
+  description: "What Projects knows of a person who records time: their manager (who approves their time where the workspace says so) and the hours they are expected to record a week (who is reminded)."
+  fields:
+    - {name: user, type: email, required: true, unique: true, in_list: true}
+    - {name: manager, type: email, in_list: true, description: Approves the person's timesheets when Projects Settings says the person's manager does}
+    - {name: weekly_hours, type: decimal, min: "0", max: "168", in_list: true, label: Hours a Week, description: "Reminded when a week's recorded time falls short of these; empty or 0: never"}
+    - {name: reminded_week, type: date, read_only: true, no_copy: true, description: The last week they were reminded of}
+  list: {columns: [user, manager, weekly_hours], sort: user asc}
+
+- name: ProjectsSettings
+  label: Projects Settings
+  kind: settings
+  module: projects
+  description: "Who approves timesheets (where the workspace asks for approval before a timesheet is submitted), and when people short of their week's hours are reminded."
+  fields:
+    - {name: timesheet_approver, type: select, options: [Project Manager, Person's Manager], default: Project Manager, label: Timesheets Are Approved By,
+       description: "Project Manager: each project's manager on it (else its team's managers), all of them; Person's Manager: the manager on the person's Person record"}
+    - {name: move_with_dependencies, type: check, label: Dates Follow Dependencies, description: "A task's dates move (its length kept) when a task it depends on moves, to the earliest its dependencies allow"}
+    - {name: schedule_calendar, type: data, label: Business Calendar, description: "Whose working days dependency lags and moves count; empty: calendar days"}
+    - {name: week_starts_on, type: int, default: 1, min: 1, max: 7, label: Weeks Start On, description: "1 Monday ... 7 Sunday"}
+    - {name: reminder_weekday, type: int, default: 0, min: 0, max: 7, label: Remind On,
+       description: "The day of the week (1 Monday ... 7 Sunday) from which people whose time that week is short of their hours are told, once a week; 0: never"}

@@ -1,0 +1,106 @@
+- name: ProjectRisk
+  label: Risk
+  kind: master
+  module: projects
+  title_field: title
+  company_scoped: true
+  owner_fields: [owner_email]
+  fields:
+    - {name: title, type: data, required: true, in_list: true}
+    - {name: project, type: link, to: Project, required: true, in_list: true, in_filter: true}
+    - {name: company, type: link, to: Company, fetch_from: project.company, read_only: true, in_filter: true}
+    - {name: project_private, type: check, fetch_from: project.proj_private, read_only: true, hidden: true, no_copy: true, description: "Its project is its members' alone (kept in step with the project)"}
+    - {name: probability, type: select, options: [Low, Medium, High], required: true, default: Medium, in_list: true}
+    - {name: impact, type: select, options: [Low, Medium, High], required: true, default: Medium, in_list: true}
+    - {name: exposure, type: int, read_only: true, in_list: true, description: "Probability times impact, 1 to 9"}
+    - {name: status, type: select, options: [Open, Mitigating, Accepted, Closed], required: true, default: Open, in_list: true, in_filter: true}
+    - {name: owner_email, type: email, label: Owner}
+    - {name: review_by, type: date, in_list: true}
+    - {name: mitigation, type: text}
+  list: {columns: [title, project, probability, impact, exposure, status], sort: exposure desc}
+
+- name: ProjectIssue
+  label: Issue
+  kind: master
+  module: projects
+  title_field: title
+  company_scoped: true
+  owner_fields: [owner_email]
+  fields:
+    - {name: title, type: data, required: true, in_list: true}
+    - {name: project, type: link, to: Project, required: true, in_list: true, in_filter: true}
+    - {name: company, type: link, to: Company, fetch_from: project.company, read_only: true, in_filter: true}
+    - {name: project_private, type: check, fetch_from: project.proj_private, read_only: true, hidden: true, no_copy: true, description: "Its project is its members' alone (kept in step with the project)"}
+    - {name: task, type: link, to: Task, in_filter: true}
+    - {name: severity, type: select, options: [Low, Medium, High, Critical], required: true, default: Medium, in_list: true, in_filter: true}
+    - {name: status, type: select, options: [Open, In Progress, Resolved, Closed], required: true, default: Open, in_list: true, in_filter: true}
+    - {name: owner_email, type: email, label: Owner}
+    - {name: description, type: text}
+    - {name: resolution, type: text, required_if: "doc.status == 'Resolved' || doc.status == 'Closed'"}
+  list: {columns: [title, project, severity, status], sort: created_at desc}
+
+- name: ChangeRequest
+  label: Change Request
+  kind: document
+  submittable: true
+  module: projects
+  title_field: title
+  company_scoped: true
+  numbering: {template: "CR-{YYYY}-{seq:5}", on: submit}
+  fields:
+    - {name: title, type: data, required: true, in_list: true}
+    - {name: project, type: link, to: Project, required: true, in_list: true, in_filter: true}
+    - {name: company, type: link, to: Company, fetch_from: project.company, read_only: true, in_filter: true}
+    - {name: project_private, type: check, fetch_from: project.proj_private, read_only: true, hidden: true, no_copy: true, description: "Its project is its members' alone (kept in step with the project)"}
+    - {name: reason, type: text, required: true}
+    - {name: hours_impact, type: decimal, label: Effect on Hours, in_list: true}
+    - {name: cost_impact, type: currency, label: Effect on Cost, in_list: true, perm_group: costing}
+    - {name: days_impact, type: int, label: Effect on Schedule (Days), in_list: true}
+    - {name: price_impact, type: currency, label: Effect on Contract Value, perm_group: costing, description: "For a fixed price project: what the change adds to the contract value"}
+    - {name: decision, type: select, options: [Pending, Approved, Rejected], default: Pending, read_only: true, no_copy: true, in_list: true, in_filter: true}
+    - {name: decided_by, type: email, read_only: true, no_copy: true}
+    - {name: decided_at, type: datetime, read_only: true, no_copy: true}
+    - {name: decision_note, type: text, read_only: true, no_copy: true}
+  actions:
+    - {name: approve, label: Approve, permission: submit, condition: "doc.docstatus == 1 && doc.decision == 'Pending'", params: [{name: note, type: text, label: Note}]}
+    - {name: reject, label: Reject, permission: submit, condition: "doc.docstatus == 1 && doc.decision == 'Pending'", params: [{name: note, type: text, label: Note}]}
+  list: {columns: [number, title, project, decision, hours_impact, days_impact], sort: created_at desc}
+
+- name: ResourceAllocation
+  label: Resource Allocation
+  kind: master
+  module: projects
+  title_field: person
+  company_scoped: true
+  owner_fields: [person]
+  description: "Who is planned onto a project, when, and for how many hours a day. Over-allocation is reported, not refused: planners often know better."
+  fields:
+    - {name: person, type: email, required: true, in_list: true, in_filter: true, index: true}
+    - {name: project, type: link, to: Project, required: true, in_list: true, in_filter: true}
+    - {name: company, type: link, to: Company, fetch_from: project.company, read_only: true, in_filter: true}
+    - {name: project_private, type: check, fetch_from: project.proj_private, read_only: true, hidden: true, no_copy: true, description: "Its project is its members' alone (kept in step with the project)"}
+    - {name: task, type: link, to: Task}
+    - {name: from_date, type: date, required: true, in_list: true, in_filter: true}
+    - {name: to_date, type: date, required: true, in_list: true}
+    - {name: hours_per_day, type: decimal, required: true, default: "8", min: "0.25", max: "24", in_list: true}
+  rules:
+    - {name: period, check: "doc.to_date >= doc.from_date", message: "An allocation cannot end before it starts"}
+  list: {columns: [person, project, from_date, to_date, hours_per_day], sort: from_date desc}
+
+- name: PortfolioProject
+  label: Portfolio Project
+  kind: child
+  fields:
+    - {name: project, type: link, to: Project, required: true, in_list: true}
+
+- name: Portfolio
+  label: Portfolio
+  kind: master
+  module: projects
+  title_field: portfolio_name
+  fields:
+    - {name: portfolio_name, type: data, label: Name, required: true, unique: true, in_list: true}
+    - {name: owner_email, type: email, label: Owner, in_list: true}
+    - {name: projects, type: table, of: PortfolioProject}
+    - {name: description, type: text}
+  list: {columns: [portfolio_name, owner_email], sort: portfolio_name asc}

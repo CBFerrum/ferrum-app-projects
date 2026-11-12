@@ -15,7 +15,6 @@
   label: Activity Cost
   kind: master
   module: projects
-  title_field: user
   description: Per-user hourly rates for an activity type; they override the activity type's defaults.
   fields:
     - {name: user, type: email, required: true, in_list: true, in_filter: true}
