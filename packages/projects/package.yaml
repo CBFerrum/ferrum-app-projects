@@ -56,7 +56,7 @@ modules:
     label: Projects
     icon: briefcase
     order: 50
-    items: [Project, Task, Timesheet, ProjectRisk, ProjectIssue, ChangeRequest, ResourceAllocation, Portfolio, ActivityType, ActivityCost, TaskStatus, TaskWorkflow, ProjectType, ProjectPerson, ProjectsSettings, report:project_profitability,
+    items: [Project, Task, Timesheet, ProjectRisk, ProjectIssue, ChangeRequest, ResourceAllocation, Portfolio, ActivityType, ActivityCost, RateCard, TaskStatus, TaskWorkflow, ProjectType, ProjectPerson, ProjectsSettings, report:project_profitability,
             report:timesheet_summary, report:task_overview, report:workload, report:portfolio_overview]
 
 roles:
@@ -69,6 +69,7 @@ roles:
       - {entity: TimesheetDetail, read_groups: [costing], write_groups: [costing]}
       - {entity: ActivityType, read: true, write: true, create: true, delete: true, read_groups: [costing], write_groups: [costing]}
       - {entity: ActivityCost, read: true, write: true, create: true, delete: true, import: true}
+      - {entity: RateCard, read: true, write: true, create: true, delete: true, import: true, export: true, read_groups: [costing], write_groups: [costing]}
       - {entity: ProjectRisk, read: true, write: true, create: true, delete: true, export: true}
       - {entity: ProjectIssue, read: true, write: true, create: true, delete: true, export: true}
       - {entity: ChangeRequest, read: true, write: true, create: true, delete: true, submit: true, cancel: true, export: true, read_groups: [costing], write_groups: [costing]}
@@ -108,10 +109,12 @@ roles:
       - {entity: Task, read: true, read_groups: [billing]}
       - {entity: ActivityType, read: true, read_groups: [costing]}
       - {entity: ActivityCost, read: true}
+      - {entity: RateCard, read: true, read_groups: [costing]}
 personal_data:
   - {entity: Timesheet, match: user, retain: "Billing records"}
   - {entity: ActivityCost, match: user, retain: "Costing records"}
   - {entity: ProjectPerson, match: user, retain: "Staffing records"}
+  - {entity: RateCard, match: user, retain: "Costing records"}
 handover:
   - {entity: Task, field: assigned_to.user, where: {status_category: [To Do, In Progress]}}
 

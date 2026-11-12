@@ -183,6 +183,7 @@ async fn scenario() {
     statuses(&w).await;
     weekly_time(&w).await;
     templates(&w).await;
+    rates(&w).await;
     // Last: it rewinds the workspace to before this release.
     upgrade(&w).await;
 }
@@ -543,4 +544,84 @@ async fn templates(w: &World) {
     assert_eq!(d["exp_start_date"], json!("2027-06-05"));
     let r = pm.try_action("Project", tpl, "create_from_template", json!({"project_name": "X", "start_date": "2027-06-04", "calendar": "nowhere"})).await;
     assert!(field_error(&r, "calendar", "no business calendar"), "{r:?}");
+}
+
+/// PJ-46: rate cards by project, customer, role on the project, person and activity, with dates and
+/// a stated order; costs on their own; an invoice in the customer's currency at the day's rate.
+/// The billing and costing rates an hour of `advice` today on `project` takes for `who` (a draft
+/// made, read back and dropped).
+async fn rate_today(w: &World, who: &U, advice: &Value, project: Uuid, today: chrono::NaiveDate) -> (Decimal, Decimal) {
+    let sheet = who
+        .insert(
+            "Timesheet",
+            json!({"company": w.cid, "time_logs": [{"activity_type": advice, "project": project.to_string(), "day": today.to_string(), "hours": "1"}]}),
+        )
+        .await;
+    let row = w.users["pm"].get("Timesheet", uid(&sheet)).await["time_logs"][0].clone();
+    who.k.delete(&who.ctx, "Timesheet", uid(&sheet), None).await.unwrap();
+    (dec(&row["billing_rate"]), dec(&row["costing_rate"]))
+}
+
+async fn rates(w: &World) {
+    let (admin, pm) = (&w.admin, &w.users["pm"]);
+    let (mia, lead) = (&reload(&w.users["mia"]).await, &reload(&w.users["lead"]).await);
+    let today = Utc::now().date_naive();
+    let services = admin.find_one("ItemGroup", json!({"group_name": "Services"})).await;
+    let hour = admin.find_one("Uom", json!({"uom_name": "Hour"})).await;
+    let item = admin
+        .insert(
+            "Item",
+            json!({"item_code": "SVC-ADVICE", "item_name": "Advice", "item_group": services["id"], "stock_uom": hour["id"], "is_stock_item": false}),
+        )
+        .await;
+    let advice =
+        pm.insert("ActivityType", json!({"activity_type": "Advice", "billing_rate": "100", "costing_rate": "50", "item": item["id"]})).await["id"].clone();
+    let usd = admin.find_one("Currency", json!({"code": "USD"})).await;
+    let rated = uid(&pm
+        .insert(
+            "Project",
+            json!({"project_name": "Rated", "company": w.cid, "customer": w.globex, "proj_billing_method": "Time and Materials",
+                   "proj_members": [{"person": "lead@acme.test", "project_role": "Manager"}, {"person": "mia@acme.test", "project_role": "Member"}]}),
+        )
+        .await);
+    assert_eq!(rate_today(w, mia, &advice, rated, today).await, (n("100"), n("50")), "the activity type's");
+    let card = |v: Value| async move { pm.insert("RateCard", v).await };
+    card(json!({"label": "Advice", "activity_type": advice, "billing_rate": "110"})).await;
+    assert_eq!(rate_today(w, mia, &advice, rated, today).await.0, n("110"));
+    card(json!({"label": "Mia", "user": "mia@acme.test", "billing_rate": "120", "costing_rate": "70"})).await;
+    assert_eq!(rate_today(w, mia, &advice, rated, today).await, (n("120"), n("70")), "a person beats an activity");
+    card(json!({"label": "Members", "project_role": "Member", "billing_rate": "125"})).await;
+    assert_eq!(rate_today(w, mia, &advice, rated, today).await, (n("125"), n("70")), "a role beats a person; her cost stays hers");
+    card(json!({"label": "Globex", "customer": w.globex, "billing_rate": "135"})).await;
+    assert_eq!(rate_today(w, mia, &advice, rated, today).await.0, n("135"), "a customer beats a role");
+    card(json!({"label": "Old deal", "project": rated.to_string(), "billing_rate": "160", "valid_to": (today - Duration::days(1)).to_string()})).await;
+    assert_eq!(rate_today(w, mia, &advice, rated, today).await.0, n("135"), "a rate that has ended does not count");
+    card(json!({"label": "Deal", "project": rated.to_string(), "billing_rate": "150", "valid_from": today.to_string()})).await;
+    assert_eq!(rate_today(w, mia, &advice, rated, today).await, (n("150"), n("70")), "the project beats all");
+    assert_eq!(rate_today(w, lead, &advice, rated, today).await, (n("150"), n("50")));
+    let r = pm.try_insert("RateCard", json!({"label": "Bad", "valid_from": "2027-01-02", "valid_to": "2027-01-01"})).await;
+    assert!(field_error(&r, "valid_to", "before it starts"), "{r:?}");
+
+    // Invoiced in the customer's currency at the day's rate; the project's figures stay the company's.
+    admin.insert("ExchangeRate", json!({"from_currency": usd["id"], "to_currency": w.admin.find_one("Currency", json!({"code": "INR"})).await["id"], "rate": "80", "valid_from": "2026-01-01"})).await;
+    pm.update("Project", rated, json!({"proj_invoice_currency": usd["id"]})).await;
+    let sheet = mia
+        .insert(
+            "Timesheet",
+            json!({"company": w.cid, "time_logs": [{"activity_type": advice, "project": rated.to_string(), "day": today.to_string(), "hours": "2"}]}),
+        )
+        .await;
+    // The workspace's approval from the step before, by project managers again: this project names
+    // none, so its team's manager approves.
+    let settings = admin.find_one("ProjectsSettings", json!({})).await;
+    admin.update("ProjectsSettings", uid(&settings), json!({"timesheet_approver": "Project Manager"})).await;
+    mia.update("Timesheet", uid(&sheet), json!({"note": "approvers again"})).await;
+    mia.k.submit(&mia.ctx, "Timesheet", uid(&sheet), None).await.expect("asked");
+    lead.k.decide_approval(&lead.ctx, "Timesheet", uid(&sheet), true, Some("ok")).await.expect("approved by the team's manager");
+    assert_eq!(pm.get("Timesheet", uid(&sheet)).await["docstatus"], json!(1));
+    let si = pm.action("Project", rated, "make_sales_invoice", json!({})).await;
+    let inv = pm.get("SalesInvoice", si["id"].as_str().unwrap().parse().unwrap()).await;
+    assert_eq!((inv["currency"].clone(), dec(&inv["conversion_rate"])), (usd["id"].clone(), n("80")));
+    assert_eq!(dec(&inv["items"][0]["price_list_rate"]), n("1.875"), "150 rupees an hour at 80 to the dollar");
+    assert_eq!(dec(&pm.get("Project", rated).await["proj_billable_amount"]), n("300"), "in the company's currency");
 }

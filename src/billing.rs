@@ -17,9 +17,31 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashSet};
 use uuid::Uuid;
 
-/// The invoice header for a project: its company, customer and cost center, in the company
-/// currency the rates and the contract value are kept in.
-async fn invoice_header(hc: &mut HookCtx<'_>, project: &Doc) -> Result<(Doc, Company)> {
+/// What an amount kept in the company's currency is in the invoice's: divided by the exchange rate
+/// (invoice currency → company currency), unrounded to 9 places for a price, or to the invoice
+/// currency's precision for an amount; as it is when the invoice is in the company's currency.
+#[derive(Clone, Copy)]
+struct Convert(Option<(Decimal, u32)>);
+
+impl Convert {
+    fn price(self, v: Decimal) -> Decimal {
+        match self.0 {
+            Some((rate, _)) => (v / rate).round_dp(9),
+            None => v,
+        }
+    }
+    fn amount(self, v: Decimal, company_precision: u32) -> Decimal {
+        match self.0 {
+            Some((rate, precision)) => round(v / rate, precision),
+            None => round(v, company_precision),
+        }
+    }
+}
+
+/// The invoice header for a project: its company, customer and cost center, in the project's invoice
+/// currency at the day's exchange rate when it names one, else in the company currency the rates
+/// and the contract value are kept in.
+async fn invoice_header(hc: &mut HookCtx<'_>, project: &Doc) -> Result<(Doc, Company, Convert)> {
     let cid = id(project, "company").ok_or_else(|| Error::invalid("the project has no company"))?;
     let customer = id(project, "customer").ok_or_else(|| Error::invalid(format!("set the customer of project {} before invoicing it", label(project))))?;
     let co = company(hc.kernel, hc.ctx, hc.tx, cid).await?;
@@ -27,11 +49,23 @@ async fn invoice_header(hc: &mut HookCtx<'_>, project: &Doc) -> Result<(Doc, Com
     h.insert("company".into(), json!(cid.to_string()));
     h.insert("customer".into(), json!(customer.to_string()));
     h.insert("project".into(), project.get("id").cloned().unwrap_or(Value::Null));
-    h.insert("currency".into(), json!(co.currency_id.to_string()));
+    let convert = match id(project, "proj_invoice_currency").filter(|c| *c != co.currency_id) {
+        Some(cur) => {
+            let rate = ferrum_domain::util::exchange_rate(hc.kernel, hc.ctx, hc.tx, cur, co.currency_id, hc.ctx.today()).await?;
+            let precision = ferrum_domain::util::currency(hc.kernel, hc.ctx, hc.tx, cur).await?.1;
+            h.insert("currency".into(), json!(cur.to_string()));
+            h.insert("conversion_rate".into(), money(rate));
+            Convert(Some((rate, precision)))
+        }
+        None => {
+            h.insert("currency".into(), json!(co.currency_id.to_string()));
+            Convert(None)
+        }
+    };
     if let Some(cc) = id(project, "proj_cost_center") {
         h.insert("cost_center".into(), json!(cc.to_string()));
     }
-    Ok((h, co))
+    Ok((h, co, convert))
 }
 
 /// The user must be allowed to create invoices; the draft is inserted with engine rights because
@@ -89,7 +123,7 @@ async fn invoice_time(hc: &mut HookCtx<'_>, project: &Doc, timesheet: Option<Uui
     if s(project, "proj_billing_method") != Some("Time and Materials") {
         return Err(Error::invalid(format!("project {} is not billed on time and materials", label(project))));
     }
-    let (mut input, _) = invoice_header(hc, project).await?;
+    let (mut input, _, convert) = invoice_header(hc, project).await?;
     let pending = pending_logs(hc, project_id).await?;
     let found: Vec<(Uuid, Option<Uuid>, Option<Decimal>, Option<Decimal>, Option<DateTime<Utc>>, Option<DateTime<Utc>>)> = sqlx::query_as(
         "select l.id, l.activity_type, l.billing_hours, l.billing_rate, \
@@ -125,7 +159,7 @@ async fn invoice_time(hc: &mut HookCtx<'_>, project: &Doc, timesheet: Option<Uui
         items.push(json!({
             "item": item.to_string(),
             "qty": money(line.hours),
-            "price_list_rate": money(line.rate),
+            "price_list_rate": money(convert.price(line.rate)),
             "discount_percent": "0",
             "description": format!("{activity}: {} h, {}", line.hours.normalize(), span_text(line.from, line.to)),
             "proj_time_logs": line.logs.iter().map(Uuid::to_string).collect::<Vec<_>>(),
@@ -192,8 +226,8 @@ pub(crate) async fn invoice_milestone(hc: &mut HookCtx<'_>, task: &Doc) -> Resul
         return Err(Error::invalid(format!("set the contract value of project {}", label(&project))));
     }
     let item = id(&project, "proj_billing_item").ok_or_else(|| Error::invalid(format!("set the milestone billing item of project {}", label(&project))))?;
-    let (mut input, co) = invoice_header(hc, &project).await?;
-    let amount = round(value * pct / Decimal::ONE_HUNDRED, co.precision);
+    let (mut input, co, convert) = invoice_header(hc, &project).await?;
+    let amount = convert.amount(value * pct / Decimal::ONE_HUNDRED, co.precision);
     input.insert(
         "items".into(),
         json!([{
