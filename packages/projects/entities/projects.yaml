@@ -103,6 +103,14 @@
     - {name: editor, type: email, read_only: true, hidden: true, computed: "doc.project_role == 'Viewer' ? '' : doc.person", description: The person while their role changes the project's tasks}
     - {name: manager, type: email, read_only: true, hidden: true, computed: "doc.project_role == 'Manager' ? doc.person : ''", description: The person while their role changes the project}
 
+- name: ProjectClientPerson
+  label: Client Person
+  kind: child
+  description: "Someone of a customer who reads its shared projects on the portal: their sign-in email (given the Project Client role by an administrator)."
+  fields:
+    - {name: email, type: email, required: true, in_list: true}
+    - {name: person_name, type: data, label: Name}
+
 - name: TaskAssignee
   label: Task Assignee
   kind: child
@@ -138,6 +146,8 @@
     - {name: priority, type: select, options: [Low, Medium, High, Urgent], default: Medium, in_list: true, in_filter: true}
     - {name: parent_task, type: link, to: Task, in_filter: true, description: Makes this a sub-task}
     - {name: is_milestone, type: check, in_filter: true}
+    - {name: client_visible, type: check, in_filter: true, label: Visible to the Client, description: "The customer's portal people read it (and the project's milestones marked so), when its project is shared"}
+    - {name: project_shared, type: check, fetch_from: project.proj_shared, read_only: true, hidden: true, no_copy: true, description: "Its project is shared with its customer's portal people (kept in step with the project)"}
     - {name: exp_start_date, type: date, label: Expected Start Date}
     - {name: exp_end_date, type: date, label: Expected End Date, in_list: true, in_filter: true}
     - {name: expected_hours, type: decimal, min: "0"}
@@ -216,6 +226,8 @@
     - {name: per_billed, type: percent, read_only: true, no_copy: true}
     - {name: status, type: select, options: [Draft, Submitted, Partly Billed, Billed, Cancelled], default: Draft, read_only: true, no_copy: true, in_list: true, in_filter: true}
     - {name: note, type: text}
+    - {name: portal_project, type: link, to: Project, read_only: true, hidden: true, no_copy: true, description: "The one project all its time is on: the customer's portal people reach an approved timesheet through it"}
+    - {name: portal_shared, type: check, read_only: true, hidden: true, no_copy: true, description: "That project is shared with its customer's portal people (kept in step with the project)"}
     - {name: approvers, type: json, read_only: true, no_copy: true, description: "Who approves it where the workspace asks for approval before submitting: the managers of its projects, or the person's manager (Projects Settings)"}
   indexes: [[user]]
   actions:

@@ -1,5 +1,5 @@
 package: projects
-version: 0.3.0
+version: 0.4.0
 label: Projects
 description: Projects with task trees, dependencies and milestones, timesheets with costing and billing, activity rates, milestone and time-and-materials invoicing, and project profitability.
 # Projects and customers are shared records; invoicing through ERP comes with the projects_erp
@@ -19,6 +19,7 @@ overlays:
       - {op: add_field, after: proj_project_manager, field: {name: proj_project_type, type: link, to: ProjectType, label: Project Type, in_filter: true}}
       - {op: add_field, after: proj_project_type, field: {name: proj_task_workflow, type: link, to: TaskWorkflow, label: Task Workflow, description: "The statuses its tasks go through; empty: its type's, else the default"}}
       - {op: add_field, after: proj_task_workflow, field: {name: proj_is_template, type: check, label: Template, in_filter: true, no_copy: true, description: "A plan to copy: its tasks hold days from the start instead of dates, and no time is booked on it"}}
+      - {op: add_field, after: proj_private, field: {name: proj_shared, type: check, label: Shared with the Client, in_filter: true, description: "The customer's portal people (Customer, Client People) read it, its client-visible tasks and milestones, its approved timesheets and invoices"}}
       - {op: add_field, after: proj_private, field: {name: proj_members, type: table, of: ProjectMember, label: Team, description: "Who works on it and their role: a manager changes the project and its tasks, a member its tasks, a viewer reads them"}}
       - {op: add_field, after: end_date, field: {name: proj_actual_start_date, type: date, label: Actual Start Date, read_only: true, no_copy: true, description: First submitted time log}}
       - {op: add_field, after: proj_actual_start_date, field: {name: proj_actual_end_date, type: date, label: Actual End Date, read_only: true, no_copy: true, description: Last submitted time log}}
@@ -50,6 +51,9 @@ overlays:
                                            {name: customer, type: link, to: Customer, label: Customer},
                                            {name: calendar, type: data, label: Business Calendar, description: "Place the tasks on its working days; empty: calendar days"}]}}
       - {op: set_entity_property, property: list, value: {columns: [number, project_name, customer, status, proj_percent_complete], sort: created_at desc}}
+  - entity: Customer
+    ops:
+      - {op: add_field, field: {name: proj_portal_people, type: table, of: ProjectClientPerson, label: Client People, description: "The customer's people who read its shared projects on the portal"}}
 
 modules:
   - name: projects
@@ -88,13 +92,24 @@ roles:
   - name: Projects User
     description: Records own time and works on the tasks assigned to them.
     permissions:
-      - {entity: ProjectRisk, read: true}
-      - {entity: ProjectIssue, read: true, write: true, create: true}
-      - {entity: ChangeRequest, read: true, write: true, create: true, submit: true}
+      # A project's people read it and its records and write by their role on it; an open project is every Projects
+      # User's to read, a private one its team's alone (Project, Task and the rest follow the project's `proj_private`).
+      - {entity: ProjectRisk, read: true, where: {project_private: false}}
+      - {entity: ProjectRisk, read: true, via: project.proj_members.person}
+      - {entity: ProjectIssue, read: true, write: true, create: true, where: {project_private: false}}
+      - {entity: ProjectIssue, read: true, write: true, create: true, via: project.proj_members.person}
+      - {entity: ChangeRequest, read: true, write: true, create: true, submit: true, where: {project_private: false}}
+      - {entity: ChangeRequest, read: true, write: true, create: true, submit: true, via: project.proj_members.person}
       - {entity: ResourceAllocation, read: true, if_owner: true}
       - {entity: Portfolio, read: true}
-      - {entity: Project, read: true}
-      - {entity: Task, read: true, write: true, create: true, if_owner: true, read_groups: [billing]}
+      - {entity: Project, read: true, where: {proj_private: false}}
+      - {entity: Project, read: true, via: proj_members.person}
+      - {entity: Project, read: true, write: true, via: proj_members.manager}
+      - {entity: Task, read: true, write: true, if_owner: true, read_groups: [billing]}
+      - {entity: Task, create: true, if_owner: true, where: {project_private: false}}
+      - {entity: Task, read: true, where: {project_private: false}, read_groups: [billing]}
+      - {entity: Task, read: true, via: project.proj_members.person, read_groups: [billing]}
+      - {entity: Task, read: true, write: true, create: true, via: project.proj_members.editor, read_groups: [billing]}
       - {entity: Timesheet, read: true, write: true, create: true, delete: true, submit: true, cancel: true, if_owner: true}
       - {entity: ActivityType, read: true}
       - {entity: TaskStatus, read: true}
@@ -102,6 +117,13 @@ roles:
       - {entity: ProjectType, read: true}
       - {entity: Company, read: true}
       - {entity: Customer, read: true}
+  - name: Project Client
+    description: "For a customer's people, given to them by an administrator: read the projects of their customer that are shared with it, the tasks and milestones marked visible to the client, and the project's approved timesheets and invoices. Comments and files are not shared with portal people yet."
+    portal: true
+    permissions:
+      - {entity: Project, read: true, via: customer.proj_portal_people.email, where: {proj_shared: true}}
+      - {entity: Task, read: true, via: project.customer.proj_portal_people.email, where: {client_visible: true, project_shared: true}}
+      - {entity: Timesheet, read: true, via: portal_project.customer.proj_portal_people.email, where: {portal_shared: true, status: [Submitted, Partly Billed, Billed]}}
   - name: Accounts Manager
     permissions:
       - {entity: Timesheet, read: true, export: true, read_groups: [costing]}
@@ -111,10 +133,21 @@ roles:
       - {entity: ActivityCost, read: true}
       - {entity: RateCard, read: true, read_groups: [costing]}
 personal_data:
+  - {entity: Project, match: proj_members.person, erase: [proj_members]}
+  - {entity: Customer, match: proj_portal_people.email, erase: [proj_portal_people]}
   - {entity: Timesheet, match: user, retain: "Billing records"}
   - {entity: ActivityCost, match: user, retain: "Costing records"}
   - {entity: ProjectPerson, match: user, retain: "Staffing records"}
   - {entity: RateCard, match: user, retain: "Costing records"}
+# What a workspace used to add by hand: a timesheet asks the approvers the app names (its projects' managers, or the
+# person's manager, as Projects Settings says; never the person themselves), and goes straight through when it names none.
+approvals:
+  - entity: Timesheet
+    on: submit
+    policy:
+      steps:
+        - {label: Managers, approvers: {field: approvers}, need: all, when: "!isEmpty(doc.approvers)"}
+      lock: true
 handover:
   - {entity: Task, field: assigned_to.user, where: {status_category: [To Do, In Progress]}}
 

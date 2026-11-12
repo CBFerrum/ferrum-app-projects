@@ -261,6 +261,15 @@ async fn derive(hc: &mut HookCtx<'_>, doc: &mut Doc) -> Result<()> {
         set(doc, "status", "Draft");
         let approvers = approvers(hc, &user, &logs, &mut projects).await?;
         set(doc, "approvers", json!(approvers));
+        // The one project all its time is on, for the customer's portal people (a timesheet of several is nobody's but staff's).
+        let mut on = logs.iter().map(|r| id(r, "project"));
+        let single = on.next().flatten().filter(|p| on.all(|q| q == Some(*p)));
+        let shared = match single {
+            Some(p) => cached(hc, &mut projects, "Project", p).await?.is_some_and(|pr| b(&pr, "proj_shared")),
+            None => false,
+        };
+        set(doc, "portal_project", json!(single));
+        set(doc, "portal_shared", json!(shared));
     }
     set(doc, "time_logs", Value::Array(logs.into_iter().map(Value::Object).collect()));
     Ok(())
@@ -451,6 +460,7 @@ async fn approvers(hc: &mut HookCtx<'_>, user: &str, logs: &[Doc], projects: &mu
         }
     }
     let mut out: Vec<String> = out.into_iter().map(|e| e.trim().to_lowercase()).filter(|e| !e.is_empty()).collect();
+    out.retain(|e| e != user);
     out.sort();
     out.dedup();
     Ok(out)
