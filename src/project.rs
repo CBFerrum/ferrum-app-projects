@@ -48,6 +48,14 @@ const PRIVATE_TABLES: [(&str, &str); 5] = [
     ("ResourceAllocation", "e_resource_allocation"),
 ];
 
+/// The records a customer's portal people reach by their project being shared: `(entity, table, the link to the project,
+/// the copy of `proj_shared`)`.
+const SHARED_TABLES: [(&str, &str, &str, &str); 3] = [
+    ("Task", "e_task", "project", "project_shared"),
+    ("Timesheet", "e_timesheet", "portal_project", "portal_shared"),
+    ("SalesInvoice", "e_sales_invoice", "project", "proj_project_shared"),
+];
+
 /// The project's tasks that are neither completed nor cancelled, as `(id, label)`.
 async fn open_tasks(tx: &mut Tx, tenant: Uuid, project: Uuid) -> Result<Vec<(Uuid, String)>> {
     let open: Vec<(Uuid, Option<String>, Option<String>)> = sqlx::query_as(
@@ -106,6 +114,18 @@ impl DocHook for ProjectHook {
                 if hc.ctx.schema.entity(entity).is_some() {
                     let sql = format!("update {table} set project_private = $3 where tenant_id = $1 and project = $2");
                     sqlx::query(sqlx::AssertSqlSafe(sql)).bind(hc.ctx.tenant).bind(pid).bind(private).execute(&mut **hc.tx).await?;
+                }
+            }
+        }
+        // The same for whether it is shared with its customer's portal people.
+        let shared = b(doc, "proj_shared");
+        if let (Some(pid), Some(o)) = (id(doc, "id"), old)
+            && b(o, "proj_shared") != shared
+        {
+            for (entity, table, link, flag) in SHARED_TABLES {
+                if hc.ctx.schema.entity(entity).is_some_and(|e| e.field(flag).is_some()) {
+                    let sql = format!("update {table} set {flag} = $3 where tenant_id = $1 and {link} = $2");
+                    sqlx::query(sqlx::AssertSqlSafe(sql)).bind(hc.ctx.tenant).bind(pid).bind(shared).execute(&mut **hc.tx).await?;
                 }
             }
         }

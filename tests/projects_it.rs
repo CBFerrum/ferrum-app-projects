@@ -145,6 +145,10 @@ async fn scenario() {
         .expect("tenant");
     let session = k.login("acme", "admin@acme.test", "Correct-Horse-9").await.expect("login");
     let admin = U { k: k.clone(), ctx: k.load_ctx(tenant, session.user, Some(session.token_version), "it".into()).await.expect("ctx") };
+    // The package asks a project's manager to approve timesheets; this suite submits them straight away, as a workspace that switched it off.
+    let off: ferrum_kernel::customize::NewCustomization =
+        serde_json::from_value(json!({"entity": "Timesheet", "op": {"op": "set_approval", "on": "submit", "approval": null}})).unwrap();
+    k.batch_customizations(&admin.ctx, vec![off], false).await.map_err(|(_, e)| e).expect("approval off");
     let mut users = HashMap::new();
     for (email, role) in [("alice", "Projects User"), ("bob", "Projects User"), ("pm", "Projects Manager"), ("acc", "Accounts Manager")] {
         let id = k.create_user(&admin.ctx, &format!("{email}@acme.test"), email, Some("Correct-Horse-9"), &[role.into()], false).await.expect("user");
@@ -292,7 +296,11 @@ async fn scenario() {
         "the version and number a change needs: {all}"
     );
     let bobs = get(bob, "/tasks", json!({"project": web.to_string()})).await.expect("Bob's board");
-    assert_eq!((bobs["rows"].as_array().unwrap().len(), bobs["total"].clone()), (2, json!(2)), "only his own tasks: {bobs}");
+    assert_eq!(
+        (bobs["rows"].as_array().unwrap().len(), bobs["total"].clone()),
+        (4, json!(4)),
+        "an open project's board is every Projects User's to read: {bobs}"
+    );
     assert!(matches!(get(pm, "/tasks", json!({})).await, Err(Error::Invalid(m)) if m.contains("project")), "a project is asked for");
 
     let r = pm.try_update("Task", design, json!({"depends_on": [{"task": test.to_string()}]})).await;
@@ -319,12 +327,11 @@ async fn scenario() {
     // Staff see and change the tasks assigned to them (owner_fields), and never billing.
     let seen: Vec<String> =
         bob.k.list(&bob.ctx, "Task", &ListQuery::default()).await.unwrap().rows.iter().map(|t| t["subject"].as_str().unwrap().to_string()).collect();
-    assert_eq!(seen.len(), 2, "Bob is assigned to Build and Test only: {seen:?}");
-    assert!(seen.contains(&"Build".to_string()) && seen.contains(&"Test".to_string()));
+    assert_eq!(seen.len(), 4, "an open project's tasks are every Projects User's to read: {seen:?}");
     let r = bob.k.get(&bob.ctx, "Task", design, false).await;
-    assert!(matches!(r, Err(Error::NotFound(_))), "Design is not Bob's: {r:?}");
+    assert!(r.is_ok(), "Design is readable: {r:?}");
     let r = bob.try_update("Task", design, json!({"description": "bob was here"})).await;
-    assert!(matches!(r, Err(Error::NotFound(_))), "nor can he change it: {r:?}");
+    assert!(matches!(r, Err(Error::NotFound(_) | Error::Forbidden(_))), "but not Bob's to change: {r:?}");
     bob.update("Task", test, json!({"description": "Regression suite ready"})).await;
     alice.update("Task", design, json!({"description": "Signed off by the client"})).await;
     let r = alice.try_update("Task", build, json!({"billing_percent": "10"})).await;

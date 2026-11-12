@@ -1,5 +1,5 @@
 package: projects_erp
-version: 0.2.0
+version: 0.3.0
 label: Projects and ERP
 description: Invoicing projects' time and milestones through ERP, with the service items and cost centers it uses.
 depends: [projects, selling]
@@ -13,6 +13,9 @@ overlays:
       - {op: add_field, after: proj_billing_item, field: {name: proj_cost_center, type: link, to: CostCenter, label: Cost Center, link_filters: {is_group: false}, description: Used on this project's invoices}}
       - {op: add_action, action: {name: make_sales_invoice, label: Create Sales Invoice, permission: read, condition: "doc.proj_billing_method == 'Time and Materials'", confirm: "Invoice the project's unbilled time (optionally only up to a date)?",
                                   params: [{name: to_date, type: date, label: Up To, description: "Time ending on or before this day; all unbilled time when empty"}]}}
+  - entity: SalesInvoice
+    ops:
+      - {op: add_field, column: true, field: {name: proj_project_shared, type: check, fetch_from: project.proj_shared, read_only: true, hidden: true, no_copy: true, description: "Its project is shared with its customer's portal people (kept in step with the project)"}}
   - entity: SalesInvoiceItem
     ops:
       - {op: add_field, field: {name: proj_time_logs, type: json, label: Billed Time Logs, hidden: true, description: Timesheet log ids this line bills; marked billed when the invoice is submitted}}
@@ -33,6 +36,9 @@ overlays:
                                            {name: to_date, type: date, label: Up To, description: "Time ending on or before this day; all unbilled time when empty"}]}}
 
 roles:
+  - name: Project Client
+    permissions:
+      - {entity: SalesInvoice, read: true, via: project.customer.proj_portal_people.email, where: {proj_project_shared: true, status: [Unpaid, Partly Paid, Paid, Credit Note Issued]}}
   - name: Projects Manager
     permissions:
       - {entity: SalesInvoice, read: true, write: true, create: true, delete: true}

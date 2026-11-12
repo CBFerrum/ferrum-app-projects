@@ -186,28 +186,27 @@ erDiagram
 
 A project lists its team (`proj_members`: a person and their role on it, Manager, Member or Viewer) and may be
 private (`proj_private`); its tasks, risks, issues, change requests and allocations carry that (`project_private`).
-A package's role rules cannot yet name fields its overlays add to core's Project, so a workspace gives its
-Projects User role these rules itself (Administration, Roles & permissions), in place of its whole-read rules on
-Project, ProjectRisk, ProjectIssue and ChangeRequest, and its own-task rule's create:
-
-| Entity | Rule |
-|---|---|
-| Project | read where `proj_private` is false; read `via: proj_members.person`; read and write `via: proj_members.manager` |
-| Task | read where `project_private` is false; read `via: project.proj_members.person`; read, write, create `via: project.proj_members.editor`; read and write own (`if_owner`); create own where `project_private` is false |
-| ProjectRisk | read where `project_private` is false; read `via: project.proj_members.person` |
-| ProjectIssue, ChangeRequest | as today, where `project_private` is false; the same `via: project.proj_members.person` |
-
-A member's `editor` and `manager` are computed from their role, so a workspace that adds a role decides there
-what it may change.
+The Projects User role ships the rules: a project and its tasks, risks, issues and change requests are read by every
+Projects User while the project is not private and by its team always; a manager changes the project, a member or
+manager its tasks (a viewer reads); a task's own people change theirs. A member's `editor` and `manager` are computed
+from their role, so a workspace that adds a role decides there what it may change. Erasing a person removes them from
+every team.
 
 #### Timesheet approval
 
-Projects names who approves a timesheet (`approvers`: each of its projects' managers, else their teams' managers,
-or the person's manager on their Person record, as Projects Settings says). A workspace that wants approval adds
-one policy on Timesheet's submit:
-`{"op": "set_approval", "on": "submit", "approval": {"steps": [{"label": "Managers", "approvers": {"field": "approvers"}, "need": "all"}], "lock": true}}`.
-Submitting then asks; a rejection (with its reason) leaves the timesheet a draft to change and submit again; once
-approved it is submitted and locked.
+Projects names who approves a timesheet (`approvers`: each of its projects' managers, else their teams' managers, or
+the person's manager on their Person record, as Projects Settings says; never the person themselves). Submitting asks
+them (all of them), a rejection (with its reason) leaves the timesheet a draft to change and submit again, and once
+approved it is submitted and locked. A timesheet with no approver goes straight through. A workspace switches the
+policy off or replaces it (Studio, Customize).
+
+#### Client portal
+
+**Project Client** is a portal role an administrator gives to a customer's people, who are listed on the customer
+(Client People). They read, and change nothing: the customer's projects marked *Shared with the Client*, the tasks and
+milestones on them marked *Visible to the Client*, the approved timesheets whose time is all on a shared project, and,
+with ERP, the project's submitted invoices. Not shared: comments, files and anything internal (risks, issues, rates and
+costs); the platform does not give portal people a record's comments or files yet.
 
 <details>
 <summary><b>Reports (3)</b></summary>
@@ -293,6 +292,7 @@ CHANGELOG.md  what changed in each version
 
 | Version | Highlights |
 |---|---|
+| **0.9.0** | Teams and private projects work without setup, timesheet approval is a package default, team members' personal data is declared for erasure, and customers' people read their shared projects on the portal. |
 | **0.8.0** | Project teams and private projects (rules a workspace adds), statuses with categories and workflows, weekly timesheets with a timer and approval, templates, rate cards, invoices in another currency, four kinds of dependency. |
 | **0.7.2** | Rebuilt on the tuned design system: better menu icons, a lighter first page, a visible scroll cue, cleaner print. |
 | **0.7.1** | The redesigned interface: the upgraded design system, shaped loading, told-apart states. |

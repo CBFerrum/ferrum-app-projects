@@ -185,6 +185,7 @@ async fn scenario() {
     templates(&w).await;
     rates(&w).await;
     dependencies(&w).await;
+    client_portal(&w).await;
     // Last: it rewinds the workspace to before this release.
     upgrade(&w).await;
 }
@@ -193,25 +194,7 @@ async fn scenario() {
 /// private project is its members' alone, an open one every Projects User's to read.
 async fn teams(w: &World) {
     let (pm, lead, mia, vic, nora) = (&w.users["pm"], &w.users["lead"], &w.users["mia"], &w.users["vic"], &w.users["nora"]);
-    // The rules a package cannot ship yet (its role rules may not name fields its overlays add to
-    // core's Project), set as a workspace administrator would.
-    let rule = |v: Value| serde_json::from_value::<ferrum_meta::PermissionDef>(v).unwrap();
-    for r in [
-        json!({"entity": "Project", "read": false}),
-        json!({"entity": "ProjectRisk", "read": false}),
-        json!({"entity": "Task", "read": true, "write": true, "if_owner": true}),
-        json!({"entity": "Project", "read": true, "where": {"proj_private": false}}),
-        json!({"entity": "Project", "read": true, "via": "proj_members.person"}),
-        json!({"entity": "Project", "read": true, "write": true, "via": "proj_members.manager"}),
-        json!({"entity": "Task", "read": true, "where": {"project_private": false}}),
-        json!({"entity": "Task", "read": true, "via": "project.proj_members.person"}),
-        json!({"entity": "Task", "read": true, "write": true, "create": true, "via": "project.proj_members.editor"}),
-        json!({"entity": "Task", "create": true, "if_owner": true, "where": {"project_private": false}}),
-        json!({"entity": "ProjectRisk", "read": true, "where": {"project_private": false}}),
-        json!({"entity": "ProjectRisk", "read": true, "via": "project.proj_members.person"}),
-    ] {
-        w.admin.k.set_role_permission(&w.admin.ctx, "Projects User", &rule(r)).await.expect("rule");
-    }
+    // The package's own rules: no workspace customization applied.
     let (lead, mia, vic, nora) = (&reload(lead).await, &reload(mia).await, &reload(vic).await, &reload(nora).await);
     let members = json!([
         {"person": "lead@acme.test", "project_role": "Manager"},
@@ -424,11 +407,7 @@ async fn weekly_time(w: &World) {
     assert!(after["time_logs"].as_array().unwrap().iter().all(|r| r["timer_started"].is_null()));
     assert_eq!(dec(&after["total_hours"]), n("8.5") + added);
 
-    // The workspace asks for approval before a timesheet is submitted, by the approvers the app names.
-    let policy = json!({"steps": [{"label": "Managers", "approvers": {"field": "approvers"}, "need": "all"}], "lock": true});
-    let op: ferrum_kernel::customize::NewCustomization =
-        serde_json::from_value(json!({"entity": "Timesheet", "op": {"op": "set_approval", "on": "submit", "approval": policy}})).unwrap();
-    admin.k.batch_customizations(&admin.ctx, vec![op], false).await.map_err(|(_, e)| e).expect("the policy");
+    // The package asks for approval before a timesheet is submitted, of the approvers the app names.
     let (mia, boss) = (&reload(mia).await, &reload(boss).await);
     let asked = mia.k.submit(&mia.ctx, "Timesheet", sheet, None).await.expect("asked");
     assert_eq!((asked["docstatus"].as_i64(), asked["_approval"]["status"].as_str()), (Some(0), Some("pending")), "{asked:?}");
@@ -673,4 +652,114 @@ async fn dependencies(w: &World) {
     pm.update("Task", id(&b), json!({"status": "Working"})).await;
     pm.update("Task", id(&c), json!({"status": "Working"})).await;
     pm.update("Task", id(&d), json!({"status": "Completed"})).await;
+}
+
+/// A portal person of the customer, holding the Project Client role.
+async fn client(w: &World, email: &str) -> U {
+    let k = &w.admin.k;
+    let id = k.create_user(&w.admin.ctx, email, email, None, &["Project Client".to_string()], false).await.expect("user");
+    k.set_user_kind(&w.admin.ctx, id, "portal").await.expect("a portal person");
+    let version = k.token_version(w.admin.ctx.tenant, id).await.expect("token version");
+    U { k: k.clone(), ctx: k.load_ctx(w.admin.ctx.tenant, id, Some(version), "it".into()).await.expect("ctx") }
+}
+
+fn names(rows: &[Doc], field: &str) -> Vec<String> {
+    let mut v: Vec<String> = rows.iter().map(|r| r[field].as_str().unwrap().to_string()).collect();
+    v.sort();
+    v
+}
+
+/// The client portal: a customer's people read the projects of theirs that are shared, the tasks and milestones marked
+/// visible, and the approved timesheets and invoices of a shared project; nothing of another customer's or of an internal
+/// project. Also what the package asks of timesheets, and what erasure takes.
+async fn client_portal(w: &World) {
+    let (admin, pm, mia) = (&w.admin, &w.users["pm"], &reload(&w.users["mia"]).await);
+    let globex: Uuid = w.globex.parse().unwrap();
+    let initech = uid(&admin.insert("Customer", json!({"customer_name": "Initech"})).await);
+    admin.update("Customer", globex, json!({"proj_portal_people": [{"email": "cleo@globex.test"}, {"email": "dan@globex.test"}]})).await;
+    admin.update("Customer", initech, json!({"proj_portal_people": [{"email": "ian@initech.test"}]})).await;
+    let (cleo, ian) = (&client(w, "cleo@globex.test").await, &client(w, "ian@initech.test").await);
+    let project = |name: &str, customer: &str, shared: bool| json!({"project_name": name, "company": w.cid, "customer": customer, "proj_shared": shared, "proj_billing_method": "Non-billable"});
+    let shared = uid(&pm.insert("Project", project("Shared Build", &w.globex, true)).await);
+    let internal = uid(&pm.insert("Project", project("Internal Review", &w.globex, false)).await);
+    let theirs = uid(&pm.insert("Project", project("Initech Rollout", &initech.to_string(), true)).await);
+    let task = |subject: &str, project: Uuid, visible: bool, milestone: bool| json!({"subject": subject, "project": project.to_string(), "client_visible": visible, "is_milestone": milestone});
+    pm.insert("Task", task("Kickoff", shared, true, true)).await;
+    pm.insert("Task", task("Hidden chores", shared, false, false)).await;
+    pm.insert("Task", task("Visible but internal", internal, true, false)).await;
+    pm.insert("Task", task("Initech go-live", theirs, true, true)).await;
+
+    // Their customer's shared project, its marked tasks and milestones: read, and nothing more.
+    assert_eq!(names(&cleo.list("Project", json!({})).await, "project_name"), ["Shared Build"]);
+    assert_eq!(names(&cleo.list("Task", json!({})).await, "subject"), ["Kickoff"], "marked visible, on a shared project");
+    assert_eq!(names(&ian.list("Project", json!({})).await, "project_name"), ["Initech Rollout"]);
+    assert!(denied(&cleo.try_get("Project", internal).await) && denied(&cleo.try_get("Project", theirs).await));
+    assert!(denied(&cleo.try_update("Project", shared, json!({"notes": "mine"})).await), "read only");
+    for internal_records in ["ProjectRisk", "ProjectIssue", "ChangeRequest", "ResourceAllocation"] {
+        assert!(cleo.k.list(&cleo.ctx, internal_records, &Default::default()).await.is_err(), "no {internal_records}s for the client");
+    }
+    assert!(denied(&cleo.try_insert("Task", task("Gatecrash", shared, true, false)).await));
+
+    // Approved timesheets of the shared project's time alone: not a draft, not time on several projects.
+    let consult = pm.insert("ActivityType", json!({"activity_type": "Consult", "billing_rate": "100", "costing_rate": "50"})).await["id"].clone();
+    let today = Utc::now().date_naive();
+    let monday = today - Duration::days(today.weekday().num_days_from_monday() as i64);
+    let line = |project: Uuid| json!({"activity_type": consult, "project": project.to_string(), "day": monday.to_string(), "hours": "2"});
+    let sheet = |logs: Vec<Value>| json!({"company": w.cid, "week_start": monday.to_string(), "time_logs": logs});
+    let draft = uid(&mia.insert("Timesheet", sheet(vec![line(shared)])).await);
+    assert!(cleo.list("Timesheet", json!({})).await.is_empty(), "a draft is not approved");
+    let own = mia.k.submit(&mia.ctx, "Timesheet", draft, None).await.expect("no approver named: it goes through");
+    assert_eq!(own["status"], json!("Submitted"));
+    let mixed = uid(&mia.insert("Timesheet", sheet(vec![line(shared), line(internal)])).await);
+    mia.k.submit(&mia.ctx, "Timesheet", mixed, None).await.expect("submitted");
+    assert_eq!(cleo.list("Timesheet", json!({})).await.iter().map(uid).collect::<Vec<_>>(), [draft], "only the sheet whose time is all on the shared project");
+    assert!(denied(&cleo.try_get("Timesheet", mixed).await));
+    assert!(ian.list("Timesheet", json!({})).await.is_empty());
+
+    // Invoices of the shared project, once submitted.
+    let billable = pm
+        .insert(
+            "Project",
+            json!({"project_name": "Billed Build", "company": w.cid, "customer": w.globex, "proj_shared": true, "proj_billing_method": "Time and Materials"}),
+        )
+        .await;
+    let billable = uid(&billable);
+    let services = admin.find_one("ItemGroup", json!({"group_name": "Services"})).await;
+    let hour = admin.find_one("Uom", json!({"uom_name": "Hour"})).await;
+    let item = admin
+        .insert(
+            "Item",
+            json!({"item_code": "SVC-CLIENT", "item_name": "Client work", "item_group": services["id"], "stock_uom": hour["id"], "is_stock_item": false}),
+        )
+        .await;
+    let billed =
+        pm.insert("ActivityType", json!({"activity_type": "Billed", "billing_rate": "80", "costing_rate": "40", "item": item["id"]})).await["id"].clone();
+    let bl = json!({"activity_type": billed, "project": billable.to_string(), "day": monday.to_string(), "hours": "3"});
+    let ts = uid(&mia.insert("Timesheet", sheet(vec![bl])).await);
+    mia.k.submit(&mia.ctx, "Timesheet", ts, None).await.expect("submitted");
+    pm.action("Project", billable, "make_sales_invoice", json!({})).await;
+    let invoice = uid(&admin.find_one("SalesInvoice", json!({"project": billable.to_string()})).await);
+    assert!(cleo.list("SalesInvoice", json!({})).await.is_empty(), "a draft invoice is not theirs yet");
+    admin.k.submit(&admin.ctx, "SalesInvoice", invoice, None).await.expect("the invoice is submitted");
+    assert_eq!(cleo.list("SalesInvoice", json!({})).await.iter().map(uid).collect::<Vec<_>>(), [invoice]);
+    assert!(ian.list("SalesInvoice", json!({})).await.is_empty());
+
+    // Unsharing takes everything back at once; sharing again gives it back.
+    pm.update("Project", shared, json!({"proj_shared": false})).await;
+    pm.update("Project", billable, json!({"proj_shared": false})).await;
+    assert!(cleo.list("Project", json!({})).await.is_empty() && cleo.list("Task", json!({})).await.is_empty());
+    assert!(cleo.list("Timesheet", json!({})).await.is_empty() && cleo.list("SalesInvoice", json!({})).await.is_empty());
+    pm.update("Project", shared, json!({"proj_shared": true})).await;
+    assert_eq!(names(&cleo.list("Task", json!({})).await, "subject"), ["Kickoff"]);
+    assert_eq!(cleo.list("Timesheet", json!({})).await.len(), 1);
+
+    // Erasure takes a person off the customer's list and off a project's team.
+    admin.k.erase_personal_data(&admin.ctx, "dan@globex.test", "asked").await.expect("a client person erased");
+    let people = admin.get("Customer", globex).await["proj_portal_people"].as_array().unwrap().iter().map(|p| p["email"].clone()).collect::<Vec<_>>();
+    assert_eq!(people, [json!("cleo@globex.test")]);
+    admin.k.erase_personal_data(&admin.ctx, "vic@acme.test", "asked").await.expect("a team member erased");
+    let secret = admin.find_one("Project", json!({"project_name": "Secret"})).await;
+    let secret = Value::Object(admin.get("Project", uid(&secret)).await);
+    assert!(!secret.to_string().contains("vic@acme.test"), "{secret}");
+    assert!(secret.to_string().contains("lead@acme.test"), "the others stay");
 }
