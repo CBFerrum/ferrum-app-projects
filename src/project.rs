@@ -39,6 +39,15 @@ fn task_label(number: Option<String>, subject: Option<String>) -> String {
 
 pub struct ProjectHook;
 
+/// The tables of the records that follow their project's privacy (`project_private`).
+const PRIVATE_TABLES: [(&str, &str); 5] = [
+    ("Task", "e_task"),
+    ("ProjectRisk", "e_project_risk"),
+    ("ProjectIssue", "e_project_issue"),
+    ("ChangeRequest", "e_change_request"),
+    ("ResourceAllocation", "e_resource_allocation"),
+];
+
 /// The project's tasks that are neither completed nor cancelled, as `(id, label)`.
 async fn open_tasks(tx: &mut Tx, tenant: Uuid, project: Uuid) -> Result<Vec<(Uuid, String)>> {
     let open: Vec<(Uuid, Option<String>, Option<String>)> = sqlx::query_as(
@@ -84,12 +93,39 @@ impl DocHook for ProjectHook {
         }
     }
 
+    async fn after_save(&self, hc: &mut HookCtx<'_>, doc: &Doc, old: Option<&Doc>) -> Result<()> {
+        // Whether a project is private is copied onto its records, which permission rules read: a
+        // change reaches them in the same transaction, so nobody reads one in between.
+        let private = b(doc, "proj_private");
+        if let (Some(pid), Some(o)) = (id(doc, "id"), old)
+            && b(o, "proj_private") != private
+        {
+            for (entity, table) in PRIVATE_TABLES {
+                if hc.ctx.schema.entity(entity).is_some() {
+                    let sql = format!("update {table} set project_private = $3 where tenant_id = $1 and project = $2");
+                    sqlx::query(sqlx::AssertSqlSafe(sql)).bind(hc.ctx.tenant).bind(pid).bind(private).execute(&mut **hc.tx).await?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     async fn validate(&self, hc: &mut HookCtx<'_>, doc: &Doc) -> Result<()> {
         let mut errors = Vec::new();
         if let Some(pm) = s(doc, "proj_project_manager")
             && !unknown_users(hc.tx, hc.ctx.tenant, &[pm.to_string()]).await?.is_empty()
         {
             errors.push(FieldError::new("proj_project_manager", "no user has this email"));
+        }
+        // The team: each person once, and (when newly added) a user of this tenant.
+        let team: Vec<String> = rows(doc, "proj_members").iter().map(|r| s(r, "person").unwrap_or_default().trim().to_lowercase()).collect();
+        let unknown = unknown_users(hc.tx, hc.ctx.tenant, &team).await?;
+        for (i, e) in team.iter().enumerate() {
+            if team[..i].contains(e) {
+                errors.push(FieldError::new("person", "is on the team twice").in_row("proj_members", i));
+            } else if unknown.contains(e) {
+                errors.push(FieldError::new("person", "no user has this email").in_row("proj_members", i));
+            }
         }
         if let Some(cc) = id(doc, "proj_cost_center") {
             let center = get(hc.kernel, hc.ctx, hc.tx, "CostCenter", cc).await?;
