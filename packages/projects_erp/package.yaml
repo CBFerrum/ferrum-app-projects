@@ -1,5 +1,5 @@
 package: projects_erp
-version: 0.1.1
+version: 0.2.0
 label: Projects and ERP
 description: Invoicing projects' time and milestones through ERP, with the service items and cost centers it uses.
 depends: [projects, selling]
