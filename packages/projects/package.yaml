@@ -16,6 +16,8 @@ overlays:
       - {op: add_field, after: status, field: {name: proj_priority, type: select, label: Priority, options: [Low, Medium, High, Urgent], default: Medium, in_filter: true}}
       - {op: add_field, after: proj_priority, field: {name: proj_project_manager, type: email, label: Project Manager, in_filter: true, description: Email of the user who manages the project}}
       - {op: add_field, after: proj_project_manager, field: {name: proj_private, type: check, label: Private, in_filter: true, description: "Only its team (and Projects Managers) see it and its tasks; otherwise every Projects User reads them"}}
+      - {op: add_field, after: proj_project_manager, field: {name: proj_project_type, type: link, to: ProjectType, label: Project Type, in_filter: true}}
+      - {op: add_field, after: proj_project_type, field: {name: proj_task_workflow, type: link, to: TaskWorkflow, label: Task Workflow, description: "The statuses its tasks go through; empty: its type's, else the default"}}
       - {op: add_field, after: proj_private, field: {name: proj_members, type: table, of: ProjectMember, label: Team, description: "Who works on it and their role: a manager changes the project and its tasks, a member its tasks, a viewer reads them"}}
       - {op: add_field, after: end_date, field: {name: proj_actual_start_date, type: date, label: Actual Start Date, read_only: true, no_copy: true, description: First submitted time log}}
       - {op: add_field, after: proj_actual_start_date, field: {name: proj_actual_end_date, type: date, label: Actual End Date, read_only: true, no_copy: true, description: Last submitted time log}}
@@ -23,7 +25,7 @@ overlays:
       - {op: add_field, after: proj_billing_method, field: {name: proj_contract_value, type: currency, currency: currency, label: Contract Value, min: "0", visible_if: "doc.proj_billing_method == 'Fixed Price'", required_if: "doc.proj_billing_method == 'Fixed Price'"}}
       - {op: add_field, after: budget, field: {name: proj_estimated_cost, type: currency, currency: currency, label: Estimated Cost, min: "0"}}
       - {op: add_field, after: proj_estimated_cost, field: {name: proj_estimated_hours, type: decimal, label: Estimated Hours, min: "0"}}
-      - {op: add_field, after: proj_estimated_hours, field: {name: proj_percent_complete_method, type: select, label: "% Complete Method", options: [Task Progress, Manual], default: Task Progress, description: Task Progress weighs each task's progress by its expected hours}}
+      - {op: add_field, after: proj_estimated_hours, field: {name: proj_percent_complete_method, type: select, label: "% Complete Method", options: [Task Progress, Manual], default: Task Progress, description: "Task Progress: the tasks without sub-tasks (a parent is its sub-tasks), each weighed by its expected hours (all alike when none has any); done counts as 100%, cancelled tasks drop out"}}
       - {op: add_field, after: proj_percent_complete_method, field: {name: proj_percent_complete, type: percent, label: "% Complete", min: "0", max: "100", read_only_if: "doc.proj_percent_complete_method != 'Manual'", in_list: true}}
       - {op: add_field, field: {name: proj_actual_hours, type: decimal, label: Actual Hours, read_only: true, no_copy: true}}
       - {op: add_field, field: {name: proj_costing_amount, type: currency, currency: currency, label: Timesheet Cost, read_only: true, no_copy: true}}
@@ -46,7 +48,7 @@ modules:
     label: Projects
     icon: briefcase
     order: 50
-    items: [Project, Task, Timesheet, ProjectRisk, ProjectIssue, ChangeRequest, ResourceAllocation, Portfolio, ActivityType, ActivityCost, report:project_profitability,
+    items: [Project, Task, Timesheet, ProjectRisk, ProjectIssue, ChangeRequest, ResourceAllocation, Portfolio, ActivityType, ActivityCost, TaskStatus, TaskWorkflow, ProjectType, report:project_profitability,
             report:timesheet_summary, report:task_overview, report:workload, report:portfolio_overview]
 
 roles:
@@ -64,6 +66,9 @@ roles:
       - {entity: ChangeRequest, read: true, write: true, create: true, delete: true, submit: true, cancel: true, export: true, read_groups: [costing], write_groups: [costing]}
       - {entity: ResourceAllocation, read: true, write: true, create: true, delete: true, export: true}
       - {entity: Portfolio, read: true, write: true, create: true, delete: true}
+      - {entity: TaskStatus, read: true, write: true, create: true, delete: true}
+      - {entity: TaskWorkflow, read: true, write: true, create: true, delete: true}
+      - {entity: ProjectType, read: true, write: true, create: true, delete: true}
       - {entity: Customer, read: true}
       - {entity: Company, read: true}
       - {entity: Currency, read: true}
@@ -81,6 +86,9 @@ roles:
       - {entity: Task, read: true, write: true, create: true, if_owner: true, read_groups: [billing]}
       - {entity: Timesheet, read: true, write: true, create: true, delete: true, submit: true, cancel: true, if_owner: true}
       - {entity: ActivityType, read: true}
+      - {entity: TaskStatus, read: true}
+      - {entity: TaskWorkflow, read: true}
+      - {entity: ProjectType, read: true}
       - {entity: Company, read: true}
       - {entity: Customer, read: true}
   - name: Accounts Manager
@@ -94,4 +102,29 @@ personal_data:
   - {entity: Timesheet, match: user, retain: "Billing records"}
   - {entity: ActivityCost, match: user, retain: "Costing records"}
 handover:
-  - {entity: Task, field: assigned_to.user, where: {status: [Open, Working, Pending Review, Overdue]}}
+  - {entity: Task, field: assigned_to.user, where: {status_category: [To Do, In Progress]}}
+
+# The statuses every workspace starts with (sql/001_task_statuses.sql gives a workspace already there
+# the same, and its tasks their status records).
+seed:
+  - entity: TaskStatus
+    key: [status_name]
+    records:
+      - {status_name: Overdue, category: To Do, sort_order: 4}
+      - {status_name: Open, category: To Do, sort_order: 1, late_status: "@TaskStatus:status_name=Overdue"}
+      - {status_name: Working, category: In Progress, sort_order: 2}
+      - {status_name: Pending Review, category: In Progress, sort_order: 3}
+      - {status_name: Completed, category: Done, sort_order: 5}
+      - {status_name: Cancelled, category: Cancelled, sort_order: 6}
+  - entity: TaskWorkflow
+    key: [workflow_name]
+    records:
+      - workflow_name: Standard
+        is_default: true
+        statuses:
+          - {status: "@TaskStatus:status_name=Open"}
+          - {status: "@TaskStatus:status_name=Working"}
+          - {status: "@TaskStatus:status_name=Pending Review"}
+          - {status: "@TaskStatus:status_name=Overdue"}
+          - {status: "@TaskStatus:status_name=Completed"}
+          - {status: "@TaskStatus:status_name=Cancelled"}

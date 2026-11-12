@@ -25,6 +25,51 @@
   unique: [[user, activity_type]]
   list: {columns: [user, activity_type, billing_rate, costing_rate], sort: user asc}
 
+- name: TaskStatus
+  label: Task Status
+  kind: master
+  module: projects
+  title_field: status_name
+  description: "A status a task can be in. What it means comes from its category (to do, in progress, done, cancelled), which the app reads; the name is the workspace's own."
+  fields:
+    - {name: status_name, type: data, label: Name, required: true, unique: true, in_list: true}
+    - {name: category, type: select, options: [To Do, In Progress, Done, Cancelled], required: true, in_list: true, in_filter: true,
+       description: "To Do: not started; In Progress: started (waits for its dependencies); Done: finished (counts as 100%); Cancelled: left out of progress"}
+    - {name: late_status, type: link, to: TaskStatus, label: When Late, description: "A task of this status past its expected end moves to this one, and back once its end is moved on (To Do statuses only)"}
+    - {name: sort_order, type: int, label: Order, in_list: true, description: "Where it stands among statuses when no workflow orders them"}
+  list: {columns: [status_name, category, sort_order], sort: sort_order asc}
+
+- name: TaskWorkflowStatus
+  label: Workflow Status
+  kind: child
+  fields:
+    - {name: status, type: link, to: TaskStatus, required: true, in_list: true}
+    - {name: category, type: data, fetch_from: status.category, read_only: true, in_list: true}
+
+- name: TaskWorkflow
+  label: Task Workflow
+  kind: master
+  module: projects
+  title_field: workflow_name
+  description: "The statuses a project's tasks go through, in order; a new task takes the first. A project uses its own workflow, else its type's, else the default one."
+  fields:
+    - {name: workflow_name, type: data, label: Name, required: true, unique: true, in_list: true}
+    - {name: is_default, type: check, label: Default, in_list: true, description: For projects that name no workflow and whose type names none}
+    - {name: statuses, type: table, of: TaskWorkflowStatus, required: true}
+  list: {columns: [workflow_name, is_default], sort: workflow_name asc}
+
+- name: ProjectType
+  label: Project Type
+  kind: master
+  module: projects
+  title_field: type_name
+  description: Kinds of project, each with the task workflow its projects use unless a project names its own.
+  fields:
+    - {name: type_name, type: data, label: Name, required: true, unique: true, in_list: true}
+    - {name: task_workflow, type: link, to: TaskWorkflow, in_list: true}
+    - {name: description, type: text}
+  list: {columns: [type_name, task_workflow], sort: type_name asc}
+
 - name: ProjectMember
   label: Project Member
   kind: child
@@ -63,7 +108,9 @@
     - {name: project, type: link, to: Project, required: true, in_list: true, in_filter: true}
     - {name: company, type: link, to: Company, fetch_from: project.company, read_only: true, in_filter: true}
     - {name: project_private, type: check, fetch_from: project.proj_private, read_only: true, hidden: true, no_copy: true, description: "Its project is its members' alone (kept in step with the project)"}
-    - {name: status, type: select, options: [Open, Working, Pending Review, Overdue, Completed, Cancelled], default: Open, required: true, in_list: true, in_filter: true}
+    - {name: task_status, type: link, to: TaskStatus, label: Status, in_filter: true, description: "One of the project's workflow; a new task takes its first"}
+    - {name: status, type: data, label: Status Name, in_list: true, in_filter: true, description: "The status's name (setting it chooses the status of that name)"}
+    - {name: status_category, type: select, label: Status Category, options: [To Do, In Progress, Done, Cancelled], read_only: true, no_copy: true, in_filter: true}
     - {name: priority, type: select, options: [Low, Medium, High, Urgent], default: Medium, in_list: true, in_filter: true}
     - {name: parent_task, type: link, to: Task, in_filter: true, description: Makes this a sub-task}
     - {name: is_milestone, type: check, in_filter: true}
@@ -83,7 +130,7 @@
     - {name: billing_percent, type: percent, min: "0", max: "100", perm_group: billing, label: "Billing % of Contract Value", visible_if: "doc.is_milestone"}
     - {name: billed_amount, type: currency, read_only: true, no_copy: true, visible_if: "doc.is_milestone"}
   form:
-    - {label: Task, fields: [subject, project, company, status, priority, parent_task, is_milestone]}
+    - {label: Task, fields: [subject, project, company, task_status, priority, parent_task, is_milestone]}
     - {label: Schedule, fields: [exp_start_date, exp_end_date, expected_hours, progress, actual_hours, completed_on, repeat, repeat_until]}
     - {label: People and Dependencies, fields: [assigned_to, depends_on]}
     - {label: Details, fields: [description]}

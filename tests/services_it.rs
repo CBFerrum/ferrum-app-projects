@@ -2,16 +2,32 @@
 //! PostgreSQL (`FERRUM_PROJECTS2_TEST_DATABASE_URL`, default
 //! `postgres://ferrum:ferrum@localhost:5432/ferrum_projects2_test`). The database is reset first.
 
+use chrono::{Duration, Utc};
 use ferrum_kernel::tenant::NewTenant;
 use ferrum_kernel::{Ctx, Db, DbConfig, Doc, Error, HookRegistry, Kernel, KernelSettings, ListQuery, Result};
 use ferrum_meta::Catalog;
+use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::Arc;
 use uuid::Uuid;
 
 fn obj(v: Value) -> Doc {
     v.as_object().cloned().unwrap()
+}
+
+fn dec(v: &Value) -> Decimal {
+    match v {
+        Value::String(s) => Decimal::from_str(s).unwrap_or_else(|_| panic!("not a decimal: {s}")),
+        Value::Number(n) => Decimal::from_str(&n.to_string()).unwrap(),
+        Value::Null => Decimal::ZERO,
+        other => panic!("not a decimal: {other}"),
+    }
+}
+
+fn n(s: &str) -> Decimal {
+    Decimal::from_str(s).unwrap()
 }
 
 fn uid(doc: &Doc) -> Uuid {
@@ -71,6 +87,12 @@ impl U {
     }
     async fn get(&self, entity: &str, id: Uuid) -> Doc {
         self.try_get(entity, id).await.unwrap_or_else(|e| panic!("get {entity}: {e:?}"))
+    }
+    async fn try_action(&self, entity: &str, id: Uuid, action: &str, params: Value) -> Result<Value> {
+        self.k.run_action(&self.ctx, entity, id, action, params).await
+    }
+    async fn action(&self, entity: &str, id: Uuid, action: &str, params: Value) -> Value {
+        self.try_action(entity, id, action, params).await.unwrap_or_else(|e| panic!("{entity}.{action}: {e:?}"))
     }
     async fn list(&self, entity: &str, filters: Value) -> Vec<Doc> {
         let q = ListQuery { filters: ferrum_kernel::query::parse_filters(&filters).unwrap(), limit: Some(500), ..Default::default() };
@@ -158,6 +180,9 @@ async fn world() -> World {
 async fn scenario() {
     let w = world().await;
     teams(&w).await;
+    statuses(&w).await;
+    // Last: it rewinds the workspace to before this release.
+    upgrade(&w).await;
 }
 
 /// PJ-02, PJ-03: a project's members read it and all its tasks and write by their role on it; a
@@ -246,4 +271,90 @@ async fn teams(w: &World) {
     assert!(denied(&mia.try_get("Project", secret).await));
     // What she made is still hers (she is its creator).
     assert_eq!(mia.get("Task", uid(&mine)).await["subject"], json!("Invite the press"));
+}
+
+/// PJ-04: statuses are records with a category, chosen from the project's workflow (its own, else
+/// its type's, else the default); the code reads the category. % complete counts tasks without
+/// sub-tasks only.
+async fn statuses(w: &World) {
+    let pm = &w.users["pm"];
+    let yesterday = (Utc::now().date_naive() - Duration::days(1)).to_string();
+    let plain = uid(&pm.insert("Project", json!({"project_name": "Plain", "company": w.cid})).await);
+    let first = pm.insert("Task", json!({"subject": "First", "project": plain.to_string()})).await;
+    let open = pm.find_one("TaskStatus", json!({"status_name": "Open"})).await;
+    assert_eq!((first["status"].clone(), first["status_category"].clone(), first["task_status"].clone()), (json!("Open"), json!("To Do"), open["id"].clone()));
+    let late = pm.insert("Task", json!({"subject": "Late", "project": plain.to_string(), "exp_end_date": yesterday})).await;
+    assert_eq!((late["status"].clone(), late["status_category"].clone()), (json!("Overdue"), json!("To Do")), "Open's late status");
+
+    // A workflow in the workspace's own words, for a type of project.
+    let status = |name: &'static str, category: &'static str| async move {
+        pm.insert("TaskStatus", json!({"status_name": name, "category": category})).await["id"].clone()
+    };
+    let (backlog, qa, shipped, dropped) =
+        (status("Backlog", "To Do").await, status("In QA", "In Progress").await, status("Shipped", "Done").await, status("Dropped", "Cancelled").await);
+    let rows = json!([{"status": backlog}, {"status": qa}, {"status": shipped}, {"status": dropped}]);
+    let software = pm.insert("TaskWorkflow", json!({"workflow_name": "Software", "statuses": rows})).await;
+    let kind = pm.insert("ProjectType", json!({"type_name": "Software", "task_workflow": software["id"]})).await;
+    let app = uid(&pm.insert("Project", json!({"project_name": "App", "company": w.cid, "proj_project_type": kind["id"]})).await);
+    let spec = pm.insert("Task", json!({"subject": "Spec", "project": app.to_string(), "expected_hours": "10", "exp_end_date": yesterday})).await;
+    assert_eq!((spec["status"].clone(), spec["status_category"].clone()), (json!("Backlog"), json!("To Do")), "its type's workflow; no late status here");
+    let spec = uid(&spec);
+    let r = pm.try_update("Task", spec, json!({"status": "Working"})).await;
+    assert!(field_error(&r, "status", "not a status of this project's workflow (Backlog, In QA, Shipped, Dropped)"), "{r:?}");
+    let r = pm.try_update("Task", spec, json!({"task_status": open["id"]})).await;
+    assert!(field_error(&r, "task_status", "Open is not a status"), "{r:?}");
+    let code = uid(&pm
+        .insert("Task", json!({"subject": "Code", "project": app.to_string(), "expected_hours": "30", "depends_on": [{"task": spec.to_string()}]}))
+        .await);
+    let r = pm.try_update("Task", code, json!({"task_status": qa})).await;
+    assert!(field_error(&r, "status", "until these tasks are completed: TASK-"), "In QA is started, by its category: {r:?}");
+    let done = pm.update("Task", spec, json!({"task_status": shipped})).await;
+    assert_eq!((done["status_category"].clone(), dec(&done["progress"]), done["completed_on"].is_string()), (json!("Done"), n("100"), true));
+    let coded = pm.update("Task", code, json!({"status": "in qa"})).await;
+    assert_eq!((coded["status"].clone(), coded["task_status"].clone()), (json!("In QA"), qa.clone()), "a name chooses its status");
+    // % complete: (100 × 10 + 0 × 30) / 40; then Code's sub-task stands for it.
+    assert_eq!(dec(&pm.get("Project", app).await["proj_percent_complete"]), n("25"));
+    pm.insert("Task", json!({"subject": "Unit tests", "project": app.to_string(), "expected_hours": "10", "parent_task": code.to_string()})).await;
+    assert_eq!(dec(&pm.get("Project", app).await["proj_percent_complete"]), n("50"), "Spec and Unit tests, not Code as well");
+    // A project's own workflow wins over its type's.
+    let standard = pm.find_one("TaskWorkflow", json!({"workflow_name": "Standard"})).await;
+    let own = uid(&pm
+        .insert("Project", json!({"project_name": "Own", "company": w.cid, "proj_project_type": kind["id"], "proj_task_workflow": standard["id"]}))
+        .await);
+    assert_eq!(pm.insert("Task", json!({"subject": "Mine", "project": own.to_string()})).await["status"], json!("Open"));
+    // Completing with force cancels into the workflow's cancelled status.
+    pm.action("Project", app, "complete", json!({"force": "Yes"})).await;
+    let code = pm.get("Task", code).await;
+    assert_eq!((code["status"].clone(), code["status_category"].clone()), (json!("Dropped"), json!("Cancelled")));
+}
+
+/// A workspace from before statuses were records: the release's SQL gives it the six it had, the
+/// Standard workflow, and each task its status record and category.
+async fn upgrade(w: &World) {
+    let k = &w.admin.k;
+    let mut tx = k.db.system_tx().await.unwrap();
+    sqlx::raw_sql(
+        "select set_config('ferrum.system', 'on', true); \
+         update e_task set task_status = null, status_category = null; \
+         delete from e_task_workflow__statuses; delete from e_project_type; delete from e_task_workflow; \
+         update e_task_status set late_status = null; delete from e_task_status;",
+    )
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    sqlx::raw_sql(include_str!("../packages/projects/sql/001_task_statuses.sql")).execute(&mut *tx).await.unwrap();
+    sqlx::raw_sql(include_str!("../packages/projects/sql/001_task_statuses.sql")).execute(&mut *tx).await.expect("twice changes nothing");
+    tx.commit().await.unwrap();
+    let pm = &w.users["pm"];
+    let names: Vec<String> = pm.list("TaskStatus", json!({})).await.iter().map(|s| s["status_name"].as_str().unwrap().to_string()).collect();
+    assert_eq!(names.len(), 6, "{names:?}");
+    let standard = pm.find_one("TaskWorkflow", json!({"is_default": true})).await;
+    assert_eq!(pm.get("TaskWorkflow", uid(&standard)).await["statuses"].as_array().unwrap().len(), 6);
+    let late = pm.find_one("Task", json!({"subject": "Late"})).await;
+    let overdue = pm.find_one("TaskStatus", json!({"status_name": "Overdue"})).await;
+    assert_eq!((late["task_status"].clone(), late["status_category"].clone()), (overdue["id"].clone(), json!("To Do")));
+    let first = pm.find_one("Task", json!({"subject": "First"})).await;
+    assert_eq!(first["status_category"], json!("To Do"));
+    let moved = pm.update("Task", uid(&late), json!({"exp_end_date": (Utc::now().date_naive() + Duration::days(2)).to_string()})).await;
+    assert_eq!(moved["status"], json!("Open"), "Open's late status, found again");
 }

@@ -10,8 +10,8 @@ use serde_json::{Map, Value, json};
 use std::collections::HashMap;
 use uuid::Uuid;
 
-/// Statuses that are no longer anyone's work.
-const DONE: [&str; 2] = ["Completed", "Cancelled"];
+/// Status categories that are no longer anyone's work.
+const DONE: &[&str] = crate::logic::CLOSED;
 
 pub struct ProjectsSite;
 
@@ -33,11 +33,13 @@ impl Site for ProjectsSite {
 
 /// What the interface draws of a task. A list gives these; the people on a task and what it waits
 /// for are child rows, which a list leaves out and only a single record carries.
-const TASK_FIELDS: [&str; 14] = [
+const TASK_FIELDS: [&str; 16] = [
     "number",
     "subject",
     "project",
     "status",
+    "task_status",
+    "status_category",
     "priority",
     "exp_start_date",
     "exp_end_date",
@@ -147,7 +149,7 @@ async fn work(k: &Kernel, user: &Ctx) -> Result<Value> {
         return Ok(json!({"items": []}));
     }
     let q = ListQuery {
-        filters: vec![Filter::eq("assigned_to.user", user.email.to_lowercase()), Filter { field: "status".into(), op: Op::NotIn, value: json!(DONE) }],
+        filters: vec![Filter::eq("assigned_to.user", user.email.to_lowercase()), Filter { field: "status_category".into(), op: Op::NotIn, value: json!(DONE) }],
         sort: Some("exp_end_date asc".into()),
         limit: Some(50),
         with_titles: true,
