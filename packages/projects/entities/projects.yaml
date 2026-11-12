@@ -148,9 +148,11 @@
     - {name: activity_type, type: link, to: ActivityType, required: true, link_filters: {disabled: false}, in_list: true}
     - {name: project, type: link, to: Project, in_list: true, description: Defaults to the task's or the timesheet's project}
     - {name: task, type: link, to: Task, in_list: true}
-    - {name: from_time, type: datetime, required: true, in_list: true}
+    - {name: day, type: date, in_list: true, description: "The day of this time: from its start time when it has one, else given with the hours"}
+    - {name: from_time, type: datetime, in_list: true, description: "Optional: a day and its hours are enough"}
     - {name: to_time, type: datetime, in_list: true, description: Leave empty to derive it from the hours}
-    - {name: hours, type: decimal, min: "0", in_list: true, description: Derived from the time span}
+    - {name: hours, type: decimal, min: "0", in_list: true, description: Derived from the time span when it has one}
+    - {name: timer_started, type: datetime, no_copy: true, description: "A running timer: Stop Timer adds the time since then to the hours"}
     - {name: is_billable, type: check, default: true, in_list: true, label: Billable, description: Only time on Time and Materials projects is billable}
     - {name: billing_hours, type: decimal, min: "0", description: Follows the hours unless changed}
     - {name: billing_rate, type: currency, min: "0", description: Defaults to the user's activity cost or the activity type rate}
@@ -173,6 +175,7 @@
     - {name: company, type: link, to: Company, required: true, default_expr: "user.default_company", in_filter: true}
     - {name: user, type: email, required: true, default_expr: "user.email", in_list: true, in_filter: true}
     - {name: project, type: link, to: Project, in_filter: true, description: Default project for the time logs}
+    - {name: week_start, type: date, label: Week Of, in_filter: true, description: "The first day of the week this timesheet is for: its time must fall within those seven days"}
     - {name: start_date, type: date, read_only: true, in_list: true}
     - {name: end_date, type: date, read_only: true}
     - {name: time_logs, type: table, of: TimesheetDetail, required: true}
@@ -185,6 +188,36 @@
     - {name: per_billed, type: percent, read_only: true, no_copy: true}
     - {name: status, type: select, options: [Draft, Submitted, Partly Billed, Billed, Cancelled], default: Draft, read_only: true, no_copy: true, in_list: true, in_filter: true}
     - {name: note, type: text}
+    - {name: approvers, type: json, read_only: true, no_copy: true, description: "Who approves it where the workspace asks for approval before submitting: the managers of its projects, or the person's manager (Projects Settings)"}
   indexes: [[user]]
   actions:
-  list: {columns: [number, user, start_date, total_hours, status], sort: start_date desc}
+    - {name: start_timer, label: Start Timer, docstatus: [0], permission: write,
+       params: [{name: activity_type, type: link, to: ActivityType, label: Activity Type, required: true}, {name: project, type: link, to: Project, label: Project},
+                {name: task, type: link, to: Task, label: Task}, {name: description, type: text, label: Description}]}
+    - {name: stop_timer, label: Stop Timer, docstatus: [0], permission: write}
+  list: {columns: [number, user, week_start, start_date, total_hours, status], sort: start_date desc}
+
+- name: ProjectPerson
+  label: Person
+  kind: master
+  module: projects
+  title_field: user
+  description: "What Projects knows of a person who records time: their manager (who approves their time where the workspace says so) and the hours they are expected to record a week (who is reminded)."
+  fields:
+    - {name: user, type: email, required: true, unique: true, in_list: true}
+    - {name: manager, type: email, in_list: true, description: Approves the person's timesheets when Projects Settings says the person's manager does}
+    - {name: weekly_hours, type: decimal, min: "0", max: "168", in_list: true, label: Hours a Week, description: "Reminded when a week's recorded time falls short of these; empty or 0: never"}
+    - {name: reminded_week, type: date, read_only: true, no_copy: true, description: The last week they were reminded of}
+  list: {columns: [user, manager, weekly_hours], sort: user asc}
+
+- name: ProjectsSettings
+  label: Projects Settings
+  kind: settings
+  module: projects
+  description: "Who approves timesheets (where the workspace asks for approval before a timesheet is submitted), and when people short of their week's hours are reminded."
+  fields:
+    - {name: timesheet_approver, type: select, options: [Project Manager, Person's Manager], default: Project Manager, label: Timesheets Are Approved By,
+       description: "Project Manager: each project's manager on it (else its team's managers), all of them; Person's Manager: the manager on the person's Person record"}
+    - {name: week_starts_on, type: int, default: 1, min: 1, max: 7, label: Weeks Start On, description: "1 Monday ... 7 Sunday"}
+    - {name: reminder_weekday, type: int, default: 0, min: 0, max: 7, label: Remind On,
+       description: "The day of the week (1 Monday ... 7 Sunday) from which people whose time that week is short of their hours are told, once a week; 0: never"}

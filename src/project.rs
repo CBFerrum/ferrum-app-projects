@@ -4,7 +4,7 @@
 use crate::logic::{CANCELLED, CLOSED_PROJECT, DONE, STARTED, dependency_cycle, weighted_progress};
 use crate::{lock, unknown_users};
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{NaiveDate, Utc};
 use ferrum_domain::util::{b, d, elevated, get, id, money, rows, s, set, sys};
 use ferrum_kernel::{Ctx, Doc, DocHook, Error, FieldError, HookCtx, Kernel, Result, Tx};
 use rust_decimal::Decimal;
@@ -163,10 +163,11 @@ async fn complete(hc: &mut HookCtx<'_>, doc: &Doc, params: &Value) -> Result<Val
 /// Figures derived from submitted time logs, billed milestones and (unless % complete is manual)
 /// task progress, recomputed from their sources every time so they cannot drift.
 pub(crate) async fn project_derived(tx: &mut Tx, tenant: Uuid, project: Uuid, doc: &Doc, without_task: Option<Uuid>) -> Result<Doc> {
-    let (hours, cost, billable, billed, first, last): (Decimal, Decimal, Decimal, Decimal, Option<DateTime<Utc>>, Option<DateTime<Utc>>) = sqlx::query_as(
+    // A log's days: its clock time's (in UTC, as always), else the day it was given with its hours.
+    let (hours, cost, billable, billed, first, last): (Decimal, Decimal, Decimal, Decimal, Option<NaiveDate>, Option<NaiveDate>) = sqlx::query_as(
         "select coalesce(sum(l.hours), 0), coalesce(sum(l.costing_amount), 0), \
          coalesce(sum(l.billing_amount) filter (where l.is_billable), 0), coalesce(sum(l.billing_amount) filter (where l.billed), 0), \
-         min(l.from_time), max(l.to_time) \
+         min(coalesce((l.from_time at time zone 'UTC')::date, l.day)), max(coalesce((l.to_time at time zone 'UTC')::date, l.day)) \
          from e_timesheet__time_logs l join e_timesheet t on t.tenant_id = l.tenant_id and t.id = l.parent_id \
          where l.tenant_id = $1 and l.project = $2 and t.docstatus = 1",
     )
@@ -187,7 +188,7 @@ pub(crate) async fn project_derived(tx: &mut Tx, tenant: Uuid, project: Uuid, do
     .fetch_all(&mut **tx)
     .await?;
     let milestones: Decimal = tasks.iter().filter(|t| t.3.is_some()).map(|t| t.4.unwrap_or_default()).sum();
-    let date = |t: Option<DateTime<Utc>>| t.map(|t| json!(t.date_naive().to_string())).unwrap_or(Value::Null);
+    let date = |t: Option<NaiveDate>| t.map(|t| json!(t.to_string())).unwrap_or(Value::Null);
     let mut v = Doc::new();
     v.insert("proj_actual_hours".into(), money(hours));
     v.insert("proj_costing_amount".into(), money(cost));

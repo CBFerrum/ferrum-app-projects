@@ -92,11 +92,12 @@ async fn invoice_time(hc: &mut HookCtx<'_>, project: &Doc, timesheet: Option<Uui
     let (mut input, _) = invoice_header(hc, project).await?;
     let pending = pending_logs(hc, project_id).await?;
     let found: Vec<(Uuid, Option<Uuid>, Option<Decimal>, Option<Decimal>, Option<DateTime<Utc>>, Option<DateTime<Utc>>)> = sqlx::query_as(
-        "select l.id, l.activity_type, l.billing_hours, l.billing_rate, l.from_time, l.to_time \
+        "select l.id, l.activity_type, l.billing_hours, l.billing_rate, \
+         coalesce(l.from_time, l.day::timestamp at time zone 'UTC'), coalesce(l.to_time, l.day::timestamp at time zone 'UTC') \
          from e_timesheet__time_logs l join e_timesheet t on t.tenant_id = l.tenant_id and t.id = l.parent_id \
          where l.tenant_id = $1 and l.project = $2 and t.docstatus = 1 and l.is_billable and not l.billed and l.billing_amount > 0 \
-         and ($3::uuid is null or t.id = $3) and ($4::date is null or l.to_time < ($4::date + 1)::timestamptz) and l.id <> all($5) \
-         order by l.from_time, l.id",
+         and ($3::uuid is null or t.id = $3) and ($4::date is null or coalesce(l.to_time < ($4::date + 1)::timestamptz, l.day <= $4::date)) and l.id <> all($5) \
+         order by coalesce(l.from_time, l.day::timestamp at time zone 'UTC'), l.id",
     )
     .bind(hc.ctx.tenant)
     .bind(project_id)

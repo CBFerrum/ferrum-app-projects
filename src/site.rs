@@ -123,8 +123,8 @@ async fn time(k: &Kernel, user: &Ctx, query: &Map<String, Value>) -> Result<Valu
     let ids: Vec<Uuid> = sheets.keys().copied().collect();
     let mut tx = k.db.tenant_tx(user.tenant).await?;
     let lines: Vec<(Uuid, Option<chrono::DateTime<chrono::Utc>>, Option<String>, Option<String>)> = sqlx::query_as(
-        "select parent_id, from_time, hours::text, description from e_timesheet__time_logs \
-         where tenant_id = $1 and parent_id = any($2) and task = $3 order by from_time desc nulls last, idx limit 200",
+        "select parent_id, coalesce(from_time, day::timestamp at time zone 'UTC'), hours::text, description from e_timesheet__time_logs \
+         where tenant_id = $1 and parent_id = any($2) and task = $3 order by 2 desc nulls last, idx limit 200",
     )
     .bind(user.tenant)
     .bind(&ids)
