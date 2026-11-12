@@ -98,10 +98,23 @@ async fn precision(hc: &mut HookCtx<'_>, company: Option<Uuid>) -> Result<u32> {
     }
 }
 
-/// `(billing, costing)` hourly rates of `user` for an activity: the user's activity cost where it
-/// sets one, else the activity type's default.
-async fn rates_for(hc: &mut HookCtx<'_>, cache: &mut HashMap<Uuid, (Decimal, Decimal)>, user: &str, activity: Uuid) -> Result<(Decimal, Decimal)> {
-    if let Some(r) = cache.get(&activity) {
+type RateKey = (Uuid, Option<Uuid>, NaiveDate);
+
+/// `(billing, costing)` hourly rates of `user` for an activity on a project and day (PJ-46): the
+/// most specific rate card that matches and is in force that day (one naming the project, then the
+/// customer, the person's role on the project's team, the person, the activity; among equals the
+/// latest start), each rate on its own; else the user's activity cost where it sets one; else the
+/// activity type's default.
+async fn rates_for(
+    hc: &mut HookCtx<'_>,
+    cache: &mut HashMap<RateKey, (Decimal, Decimal)>,
+    user: &str,
+    activity: Uuid,
+    project: Option<&Doc>,
+    day: NaiveDate,
+) -> Result<(Decimal, Decimal)> {
+    let key = (activity, project.and_then(|p| id(p, "id")), day);
+    if let Some(r) = cache.get(&key) {
         return Ok(*r);
     }
     let Some(at) = try_get(hc.kernel, hc.ctx, hc.tx, "ActivityType", activity).await? else { return Ok((Decimal::ZERO, Decimal::ZERO)) };
@@ -111,8 +124,30 @@ async fn rates_for(hc: &mut HookCtx<'_>, cache: &mut HashMap<Uuid, (Decimal, Dec
         find(hc.kernel, hc.ctx, hc.tx, "ActivityCost", vec![Filter::eq("user", user), Filter::eq("activity_type", activity.to_string())], None, 1).await?
     };
     let pick = |f: &str| cost.first().map(|c| d(c, f)).filter(|v| *v > Decimal::ZERO).unwrap_or_else(|| d(&at, f));
-    let r = (pick("billing_rate"), pick("costing_rate"));
-    cache.insert(activity, r);
+    let cards: Vec<(Option<Decimal>, Option<Decimal>)> = if hc.ctx.schema.entity("RateCard").is_some() {
+        let role = project.and_then(|p| rows(p, "proj_members").into_iter().find(|m| s(m, "person").is_some_and(|e| e.trim().eq_ignore_ascii_case(user))));
+        sqlx::query_as(
+            "select billing_rate, costing_rate from e_rate_card where tenant_id = $1 \
+             and (project is null or project = $2) and (customer is null or customer = $3) and (project_role is null or project_role = $4) \
+             and (\"user\" is null or lower(trim(\"user\")) = $5) and (activity_type is null or activity_type = $6) \
+             and (valid_from is null or valid_from <= $7) and (valid_to is null or valid_to >= $7) \
+             order by project is not null desc, customer is not null desc, project_role is not null desc, \"user\" is not null desc, \
+             activity_type is not null desc, valid_from desc nulls last, id",
+        )
+        .bind(hc.ctx.tenant)
+        .bind(key.1)
+        .bind(project.and_then(|p| id(p, "customer")))
+        .bind(role.as_ref().and_then(|m| s(m, "project_role")))
+        .bind(user)
+        .bind(activity)
+        .bind(day)
+        .fetch_all(&mut **hc.tx)
+        .await?
+    } else {
+        vec![]
+    };
+    let r = (cards.iter().find_map(|c| c.0).unwrap_or_else(|| pick("billing_rate")), cards.iter().find_map(|c| c.1).unwrap_or_else(|| pick("costing_rate")));
+    cache.insert(key, r);
     Ok(r)
 }
 
@@ -165,14 +200,16 @@ async fn derive(hc: &mut HookCtx<'_>, doc: &mut Doc) -> Result<()> {
             _ => d(r, "hours"),
         };
         set(r, "hours", money(hours));
+        let project = match id(r, "project") {
+            Some(p) => cached(hc, &mut projects, "Project", p).await?,
+            None => None,
+        };
+        let on = date(r, "day").unwrap_or_else(|| hc.ctx.today());
         let (default_billing, costing_rate) = match id(r, "activity_type") {
-            Some(a) => rates_for(hc, &mut rates, &user, a).await?,
+            Some(a) => rates_for(hc, &mut rates, &user, a, project.as_ref(), on).await?,
             None => (Decimal::ZERO, Decimal::ZERO),
         };
-        let time_and_materials = match id(r, "project") {
-            Some(p) => cached(hc, &mut projects, "Project", p).await?.is_some_and(|p| s(&p, "proj_billing_method") == Some("Time and Materials")),
-            None => false,
-        };
+        let time_and_materials = project.is_some_and(|p| s(&p, "proj_billing_method") == Some("Time and Materials"));
         let billable = b(r, "is_billable") && time_and_materials;
         set(r, "is_billable", billable);
         if billable {

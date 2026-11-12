@@ -25,6 +25,27 @@
   unique: [[user, activity_type]]
   list: {columns: [user, activity_type, billing_rate, costing_rate], sort: user asc}
 
+- name: RateCard
+  label: Rate Card
+  kind: master
+  module: projects
+  title_field: label
+  description: "Hourly billing and costing rates for some time: what a rule names (project, customer, role on the project, person, activity) must match, and the day must fall within its dates. The rule naming a project wins, then one naming a customer, a role, a person, an activity, in that order; among equals the latest start. A rate left empty falls to the next rule, then to the person's activity cost, then to the activity type."
+  fields:
+    - {name: label, type: data, required: true, in_list: true}
+    - {name: project, type: link, to: Project, in_list: true, in_filter: true}
+    - {name: customer, type: link, to: Customer, in_list: true, in_filter: true}
+    - {name: project_role, type: select, label: Role on the Project, options: [Manager, Member, Viewer], in_list: true}
+    - {name: user, type: email, label: Person, in_list: true, in_filter: true}
+    - {name: activity_type, type: link, to: ActivityType, in_list: true, in_filter: true}
+    - {name: billing_rate, type: currency, min: "0", in_list: true, label: Billing Rate (per hour)}
+    - {name: costing_rate, type: currency, min: "0", perm_group: costing, label: Costing Rate (per hour)}
+    - {name: valid_from, type: date, in_list: true}
+    - {name: valid_to, type: date, in_list: true}
+  rules:
+    - {name: valid_to, check: "doc.valid_to == null || doc.valid_from == null || doc.valid_to >= doc.valid_from", message: "A rate cannot end before it starts"}
+  list: {columns: [label, project, customer, project_role, user, activity_type, billing_rate, valid_from], sort: label asc}
+
 - name: TaskStatus
   label: Task Status
   kind: master
@@ -159,7 +180,7 @@
     - {name: timer_started, type: datetime, no_copy: true, description: "A running timer: Stop Timer adds the time since then to the hours"}
     - {name: is_billable, type: check, default: true, in_list: true, label: Billable, description: Only time on Time and Materials projects is billable}
     - {name: billing_hours, type: decimal, min: "0", description: Follows the hours unless changed}
-    - {name: billing_rate, type: currency, min: "0", description: Defaults to the user's activity cost or the activity type rate}
+    - {name: billing_rate, type: currency, min: "0", description: "Defaults to the rate cards' rate for the time, else the person's activity cost, else the activity type's"}
     - {name: billing_amount, type: currency, read_only: true, in_list: true}
     - {name: costing_rate, type: currency, read_only: true, perm_group: costing}
     - {name: costing_amount, type: currency, read_only: true, perm_group: costing}
