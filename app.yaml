@@ -1,6 +1,6 @@
 id: projects
 name: Projects
-version: 0.7.2
+version: 0.8.0
 publisher: cbferrum
 summary: Projects, task trees with dependencies, timesheets, time and milestone billing, profitability
 description: README.md
@@ -43,8 +43,9 @@ contributes:
     - id: projects
       title: "Projects"
       instructions: >-
-        A project's tasks (Open, Working, Pending Review, Overdue, Completed, Cancelled) form a tree with
-        dependencies. A submitted Timesheet records time against tasks and is billed by the project's billing method.
+        A project's tasks form a tree with dependencies. A task's status comes from its project's workflow (by default
+        Open, Working, Pending Review, Overdue, Completed, Cancelled), and each status has a category (To Do, In Progress,
+        Done, Cancelled) that says what it means. A submitted Timesheet records time against tasks and is billed by the project's billing method.
         A ChangeRequest changes the scope once approved. Risks (ProjectRisk) and issues (ProjectIssue) are kept for
         each project. Profitability compares what was billed with the costs of timesheets and purchases.
       suggestions:

@@ -143,8 +143,8 @@ async fn portfolio_overview(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Para
     let rows: Vec<(String, Option<String>, i64, i64, i64, i64, i64)> = sqlx::query_as(
         "select a.project_name, a.status, \
          (select count(*) from e_task t where t.tenant_id = a.tenant_id and t.project = a.id), \
-         (select count(*) from e_task t where t.tenant_id = a.tenant_id and t.project = a.id and t.status = 'Completed'), \
-         (select count(*) from e_task t where t.tenant_id = a.tenant_id and t.project = a.id and t.status = 'Overdue'), \
+         (select count(*) from e_task t where t.tenant_id = a.tenant_id and t.project = a.id and t.status_category = 'Done'), \
+         (select count(*) from e_task t where t.tenant_id = a.tenant_id and t.project = a.id and t.status_category in ('To Do', 'In Progress') and t.exp_end_date < current_date), \
          (select count(*) from e_project_risk r where r.tenant_id = a.tenant_id and r.project = a.id and r.status in ('Open', 'Mitigating')), \
          (select count(*) from e_project_issue i where i.tenant_id = a.tenant_id and i.project = a.id and i.status in ('Open', 'In Progress')) \
          from e_project a where a.tenant_id = $1 and a.company = $2 \
@@ -232,7 +232,8 @@ async fn profitability(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Params<'_
         "select l.project, coalesce(sum(l.costing_amount), 0), coalesce(sum(l.billing_amount) filter (where l.is_billable and not l.billed), 0) \
          from e_timesheet__time_logs l join e_timesheet t on t.tenant_id = l.tenant_id and t.id = l.parent_id \
          where l.tenant_id = $1 and t.docstatus = 1 and l.project = any($2) \
-         and ($3::date is null or l.from_time >= $3::date) and ($4::date is null or l.from_time < $4::date + 1) group by l.project",
+         and ($3::date is null or coalesce(l.from_time >= $3::date, l.day >= $3::date)) \
+         and ($4::date is null or coalesce(l.from_time < $4::date + 1, l.day <= $4::date)) group by l.project",
     )
     .bind(ctx.tenant)
     .bind(&ids)
@@ -315,7 +316,7 @@ async fn timesheet_summary(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Param
          from e_timesheet__time_logs l join e_timesheet t on t.tenant_id = l.tenant_id and t.id = l.parent_id \
          left join e_project p on p.tenant_id = l.tenant_id and p.id = l.project \
          left join e_activity_type a on a.tenant_id = l.tenant_id and a.id = l.activity_type \
-         where l.tenant_id = $1 and t.company = $2 and t.docstatus = 1 and l.from_time >= $3::date and l.from_time < $4::date + 1 \
+         where l.tenant_id = $1 and t.company = $2 and t.docstatus = 1 and coalesce(l.from_time >= $3::date and l.from_time < $4::date + 1, l.day between $3::date and $4::date) \
          and ($5::text is null or t.\"user\" = $5) and ($6::uuid is null or l.project = $6) and ($7::uuid is null or l.activity_type = $7) \
          and ($8::uuid is null or t.created_by = $8 or lower(t.\"user\") = $9) \
          group by t.\"user\", l.project, p.number, p.project_name, a.activity_type \
@@ -397,10 +398,10 @@ async fn task_overview(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Params<'_
     #[allow(clippy::type_complexity)]
     let data: Vec<(Uuid, Option<String>, Option<String>, Option<String>, Option<String>, Option<NaiveDate>, Option<Decimal>, Option<Decimal>)> =
         sqlx::query_as(
-            "select t.id, p.number, p.project_name, a.\"user\", t.status, t.exp_end_date, t.expected_hours, t.actual_hours \
+            "select t.id, p.number, p.project_name, a.\"user\", t.status_category, t.exp_end_date, t.expected_hours, t.actual_hours \
          from e_task t join e_project p on p.tenant_id = t.tenant_id and p.id = t.project \
          left join e_task__assigned_to a on a.tenant_id = t.tenant_id and a.parent_id = t.id \
-         where t.tenant_id = $1 and p.company = $2 and t.status <> 'Cancelled' and ($3::uuid is null or t.project = $3) \
+         where t.tenant_id = $1 and p.company = $2 and t.status_category is distinct from 'Cancelled' and ($3::uuid is null or t.project = $3) \
          and ($4::text is null or a.\"user\" = $4) \
          and ($5::uuid is null or t.created_by = $5 or exists (select 1 from e_task__assigned_to o \
               where o.tenant_id = t.tenant_id and o.parent_id = t.id and lower(o.\"user\") = $6)) \
@@ -421,7 +422,7 @@ async fn task_overview(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Params<'_
     let mut total = TaskAgg::default();
     let mut seen = HashSet::new();
     for (task, number, name, assignee, status, end, planned, actual) in data.into_iter().take(MAX_ROWS as usize) {
-        let bucket = task_bucket(status.as_deref().unwrap_or("Open"), end, today);
+        let bucket = task_bucket(status.as_deref().unwrap_or(crate::logic::TO_DO), end, today);
         let (planned, actual) = (planned.unwrap_or_default(), actual.unwrap_or_default());
         let key = (project_label(number, name), assignee.unwrap_or_else(|| "(unassigned)".into()));
         groups.entry(key).or_default().add(bucket, planned, actual);

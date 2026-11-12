@@ -8,10 +8,15 @@ use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
 use uuid::Uuid;
 
-/// Task statuses that mean work has started (blocked while a dependency is not completed).
-pub const STARTED: &[&str] = &["Working", "Pending Review", "Completed"];
-/// Task statuses that close a task.
-pub const CLOSED: &[&str] = &["Completed", "Cancelled"];
+/// Status categories (a task status record's `category`): what the app reads of a status, never its name.
+pub const TO_DO: &str = "To Do";
+pub const IN_PROGRESS: &str = "In Progress";
+pub const DONE: &str = "Done";
+pub const CANCELLED: &str = "Cancelled";
+/// Categories that mean work has started (blocked while a dependency is not done).
+pub const STARTED: &[&str] = &[IN_PROGRESS, DONE];
+/// Categories that close a task.
+pub const CLOSED: &[&str] = &[DONE, CANCELLED];
 /// Project statuses that freeze its tasks and refuse new time.
 pub const CLOSED_PROJECT: &[&str] = &["Completed", "Cancelled"];
 
@@ -90,15 +95,16 @@ pub fn dependency_cycle(task: Uuid, deps: &[Uuid], edges: &HashMap<Uuid, Vec<Uui
     None
 }
 
-/// Project % complete from its tasks' `(status, progress, expected hours)`: cancelled tasks are
-/// left out, completed ones count as done, and each task weighs its expected hours (all weigh
-/// the same when none has any).
-pub fn weighted_progress(tasks: &[(String, Decimal, Decimal)]) -> Decimal {
+/// Project % complete from its tasks' `(category, progress, expected hours, has sub-tasks)`: only
+/// tasks without live sub-tasks count (a parent is its sub-tasks, so nothing counts twice);
+/// cancelled tasks are left out, done ones count as 100 %, and each task weighs its expected hours
+/// (all weigh the same when none has any).
+pub fn weighted_progress(tasks: &[(String, Decimal, Decimal, bool)]) -> Decimal {
     let hundred = Decimal::ONE_HUNDRED;
     let live: Vec<(Decimal, Decimal)> = tasks
         .iter()
-        .filter(|(status, _, _)| status != "Cancelled")
-        .map(|(status, p, h)| (if status == "Completed" { hundred } else { (*p).clamp(Decimal::ZERO, hundred) }, (*h).max(Decimal::ZERO)))
+        .filter(|(category, _, _, parent)| category != CANCELLED && !parent)
+        .map(|(category, p, h, _)| (if category == DONE { hundred } else { (*p).clamp(Decimal::ZERO, hundred) }, (*h).max(Decimal::ZERO)))
         .collect();
     if live.is_empty() {
         return Decimal::ZERO;
@@ -127,12 +133,12 @@ pub fn timesheet_status(docstatus: i16, billable: Decimal, billed: Decimal) -> &
     }
 }
 
-/// `(open, overdue, completed)` for a task on `today`. Overdue tasks are open ones past their
-/// expected end, whether or not the periodic job has marked them yet.
-pub fn task_bucket(status: &str, exp_end: Option<NaiveDate>, today: NaiveDate) -> (bool, bool, bool) {
-    let open = !CLOSED.contains(&status);
-    let overdue = open && (status == "Overdue" || exp_end.is_some_and(|e| e < today));
-    (open, overdue, status == "Completed")
+/// `(open, overdue, done)` for a task of status category `category` on `today`. Overdue tasks are
+/// open ones past their expected end.
+pub fn task_bucket(category: &str, exp_end: Option<NaiveDate>, today: NaiveDate) -> (bool, bool, bool) {
+    let open = !CLOSED.contains(&category);
+    let overdue = open && exp_end.is_some_and(|e| e < today);
+    (open, overdue, category == DONE)
 }
 
 #[derive(Debug, Clone)]
@@ -231,13 +237,17 @@ mod tests {
 
     #[test]
     fn progress_is_weighted_by_expected_hours() {
-        let task = |s: &str, p: &str, h: &str| (s.to_string(), n(p), n(h));
+        let task = |s: &str, p: &str, h: &str| (s.to_string(), n(p), n(h), false);
         assert_eq!(weighted_progress(&[]), Decimal::ZERO);
-        assert_eq!(weighted_progress(&[task("Open", "50", "10"), task("Working", "0", "30")]), n("12.5"));
-        assert_eq!(weighted_progress(&[task("Completed", "0", "10"), task("Open", "0", "30")]), n("25"), "completed counts as 100 %");
-        assert_eq!(weighted_progress(&[task("Open", "40", "0"), task("Open", "80", "0")]), n("60"), "no hours: plain average");
-        assert_eq!(weighted_progress(&[task("Cancelled", "0", "100"), task("Completed", "0", "1")]), n("100"), "cancelled tasks do not count");
-        assert_eq!(weighted_progress(&[task("Open", "33.333", "1"), task("Open", "0", "2")]), n("11.11"));
+        assert_eq!(weighted_progress(&[task(TO_DO, "50", "10"), task(IN_PROGRESS, "0", "30")]), n("12.5"));
+        assert_eq!(weighted_progress(&[task(DONE, "0", "10"), task(TO_DO, "0", "30")]), n("25"), "done counts as 100 %");
+        assert_eq!(weighted_progress(&[task(TO_DO, "40", "0"), task(TO_DO, "80", "0")]), n("60"), "no hours: plain average");
+        assert_eq!(weighted_progress(&[task(CANCELLED, "0", "100"), task(DONE, "0", "1")]), n("100"), "cancelled tasks do not count");
+        assert_eq!(weighted_progress(&[task(TO_DO, "33.333", "1"), task(TO_DO, "0", "2")]), n("11.11"));
+        // A parent of 10 hours done at 0 % with two sub-tasks of 10 hours, one done: the parent is its
+        // sub-tasks, so it is 50 %, not (0 × 10 + 100 × 10 + 0 × 10) / 30.
+        let parent = (TO_DO.to_string(), n("0"), n("10"), true);
+        assert_eq!(weighted_progress(&[parent, task(DONE, "0", "10"), task(TO_DO, "0", "10")]), n("50"), "leaves only");
     }
 
     #[test]
@@ -250,10 +260,10 @@ mod tests {
         assert_eq!(timesheet_status(2, n("10"), n("10")), "Cancelled");
         let day = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
         let today = day("2026-10-28");
-        assert_eq!(task_bucket("Open", Some(day("2026-10-27")), today), (true, true, false));
-        assert_eq!(task_bucket("Working", Some(day("2026-10-28")), today), (true, false, false));
-        assert_eq!(task_bucket("Overdue", None, today), (true, true, false));
-        assert_eq!(task_bucket("Completed", Some(day("2026-01-01")), today), (false, false, true));
+        assert_eq!(task_bucket(TO_DO, Some(day("2026-10-27")), today), (true, true, false));
+        assert_eq!(task_bucket(IN_PROGRESS, Some(day("2026-10-28")), today), (true, false, false));
+        assert_eq!(task_bucket(TO_DO, None, today), (true, false, false));
+        assert_eq!(task_bucket(DONE, Some(day("2026-01-01")), today), (false, false, true));
         assert_eq!(percent(n("1"), n("3")), n("33.33"));
         assert_eq!(percent(n("1"), Decimal::ZERO), Decimal::ZERO);
     }

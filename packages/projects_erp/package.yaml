@@ -1,5 +1,5 @@
 package: projects_erp
-version: 0.1.1
+version: 0.2.0
 label: Projects and ERP
 description: Invoicing projects' time and milestones through ERP, with the service items and cost centers it uses.
 depends: [projects, selling]
@@ -9,6 +9,7 @@ overlays:
   - entity: Project
     ops:
       - {op: add_field, after: proj_contract_value, field: {name: proj_billing_item, type: link, to: Item, label: Milestone Billing Item, link_filters: {is_stock_item: false, disabled: false}, visible_if: "doc.proj_billing_method == 'Fixed Price'", description: Service item used on milestone invoices}}
+      - {op: add_field, after: proj_billing_method, field: {name: proj_invoice_currency, type: link, to: Currency, label: Invoice Currency, description: "Invoice it in this currency, at the exchange rate of the day (rates and the contract value stay in the company's); empty: the company's"}}
       - {op: add_field, after: proj_billing_item, field: {name: proj_cost_center, type: link, to: CostCenter, label: Cost Center, link_filters: {is_group: false}, description: Used on this project's invoices}}
       - {op: add_action, action: {name: make_sales_invoice, label: Create Sales Invoice, permission: read, condition: "doc.proj_billing_method == 'Time and Materials'", confirm: "Invoice the project's unbilled time (optionally only up to a date)?",
                                   params: [{name: to_date, type: date, label: Up To, description: "Time ending on or before this day; all unbilled time when empty"}]}}
