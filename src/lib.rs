@@ -14,6 +14,7 @@ mod logic;
 mod planning;
 mod project;
 mod reports;
+mod schedule;
 mod site;
 mod status;
 mod template;

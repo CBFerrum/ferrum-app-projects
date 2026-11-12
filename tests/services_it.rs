@@ -184,6 +184,7 @@ async fn scenario() {
     weekly_time(&w).await;
     templates(&w).await;
     rates(&w).await;
+    dependencies(&w).await;
     // Last: it rewinds the workspace to before this release.
     upgrade(&w).await;
 }
@@ -624,4 +625,52 @@ async fn rates(w: &World) {
     assert_eq!((inv["currency"].clone(), dec(&inv["conversion_rate"])), (usd["id"].clone(), n("80")));
     assert_eq!(dec(&inv["items"][0]["price_list_rate"]), n("1.875"), "150 rupees an hour at 80 to the dollar");
     assert_eq!(dec(&pm.get("Project", rated).await["proj_billable_amount"]), n("300"), "in the company's currency");
+}
+
+/// The four kinds of dependency with lags, cycles refused by name, and dates that follow.
+async fn dependencies(w: &World) {
+    let (admin, pm) = (&w.admin, &w.users["pm"]);
+    let settings = admin.find_one("ProjectsSettings", json!({})).await;
+    admin.update("ProjectsSettings", uid(&settings), json!({"move_with_dependencies": true, "schedule_calendar": "office"})).await;
+    let p = uid(&pm.insert("Project", json!({"project_name": "Sched", "company": w.cid, "proj_billing_method": "Non-billable"})).await).to_string();
+    let task = |subject: &'static str, start: &'static str, end: &'static str, deps: Value| {
+        let p = p.clone();
+        async move {
+            pm.insert("Task", json!({"subject": subject, "project": p, "exp_start_date": start, "exp_end_date": end, "depends_on": deps})).await["id"].clone()
+        }
+    };
+    let a = task("Pour", "2027-03-01", "2027-03-03", json!([])).await;
+    let b = task("Cure", "2027-03-01", "2027-03-02", json!([{"task": a, "kind": "Finish to Start", "lag_days": 1}])).await;
+    let c = task("Inspect", "2027-03-01", "2027-03-01", json!([{"task": b, "kind": "Start to Start"}])).await;
+    let d = task("Clean up", "2027-03-01", "2027-03-01", json!([{"task": a, "kind": "Finish to Finish"}])).await;
+    let id = |t: &Value| t.as_str().unwrap().parse::<Uuid>().unwrap();
+    let r = pm.try_update("Task", id(&a), json!({"depends_on": [{"task": c}]})).await;
+    assert!(field_error(&r, "depends_on", "Pour → TASK-") && field_error(&r, "depends_on", "Inspect"), "named: {r:?}");
+
+    // Pour ends a day later (Thursday): Cure starts the working day after plus a day's lag (Monday),
+    // its two days kept; Inspect starts with it; Clean up ends with Pour.
+    pm.update("Task", id(&a), json!({"exp_end_date": "2027-03-04"})).await;
+    let at = |t: &Value| {
+        let t = t.clone();
+        async move {
+            let doc = pm.get("Task", t.as_str().unwrap().parse().unwrap()).await;
+            (doc["exp_start_date"].as_str().unwrap().to_string(), doc["exp_end_date"].as_str().unwrap().to_string())
+        }
+    };
+    assert_eq!(at(&b).await, ("2027-03-08".to_string(), "2027-03-09".to_string()));
+    assert_eq!(at(&c).await, ("2027-03-08".to_string(), "2027-03-08".to_string()), "and the task after it in turn");
+    assert_eq!(at(&d).await, ("2027-03-04".to_string(), "2027-03-04".to_string()));
+
+    // What each kind holds back.
+    let r = pm.try_update("Task", id(&c), json!({"status": "Working"})).await;
+    assert!(field_error(&r, "status", "until these tasks have started"), "start to start: {r:?}");
+    let r = pm.try_update("Task", id(&b), json!({"status": "Working"})).await;
+    assert!(field_error(&r, "status", "until these tasks are completed"), "finish to start: {r:?}");
+    pm.update("Task", id(&d), json!({"status": "Working"})).await;
+    let r = pm.try_update("Task", id(&d), json!({"status": "Completed"})).await;
+    assert!(field_error(&r, "status", "until these tasks are completed"), "finish to finish: {r:?}");
+    pm.update("Task", id(&a), json!({"status": "Completed"})).await;
+    pm.update("Task", id(&b), json!({"status": "Working"})).await;
+    pm.update("Task", id(&c), json!({"status": "Working"})).await;
+    pm.update("Task", id(&d), json!({"status": "Completed"})).await;
 }

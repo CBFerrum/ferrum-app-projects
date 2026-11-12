@@ -115,6 +115,9 @@
   fields:
     - {name: task, type: link, to: Task, required: true, in_list: true, label: Depends On}
     - {name: subject, type: data, fetch_from: task.subject, read_only: true, in_list: true}
+    - {name: kind, type: select, options: [Finish to Start, Start to Start, Finish to Finish, Start to Finish], default: Finish to Start, in_list: true,
+       description: "Finish to Start: this starts once that is done; Start to Start: this starts once that has started; Finish to Finish: this is done once that is; Start to Finish: this is done once that has started"}
+    - {name: lag_days, type: int, label: Lag (Days), in_list: true, description: "Days after that task's start or end (working days on Projects Settings' calendar); negative: a lead"}
 
 - name: Task
   label: Task
@@ -146,7 +149,7 @@
     - {name: completed_on, type: date, no_copy: true}
     - {name: rank, type: decimal, hidden: true, no_copy: true, description: "Place on the board among tasks of the same status; set by moving the card (empty: after the ranked ones, in the order made)"}
     - {name: assigned_to, type: table, of: TaskAssignee}
-    - {name: depends_on, type: table, of: TaskDependency, description: Tasks that must be completed before this one starts}
+    - {name: depends_on, type: table, of: TaskDependency, description: "Tasks this one waits for, and how"}
     - {name: repeat, type: select, options: [Daily, Weekly, Monthly], description: "Makes a new task when this one is due, with the same people; empty: once"}
     - {name: repeat_until, type: date, visible_if: "doc.repeat != null"}
     - {name: repeated_from, type: link, to: Task, read_only: true, no_copy: true}
@@ -243,6 +246,8 @@
   fields:
     - {name: timesheet_approver, type: select, options: [Project Manager, Person's Manager], default: Project Manager, label: Timesheets Are Approved By,
        description: "Project Manager: each project's manager on it (else its team's managers), all of them; Person's Manager: the manager on the person's Person record"}
+    - {name: move_with_dependencies, type: check, label: Dates Follow Dependencies, description: "A task's dates move (its length kept) when a task it depends on moves, to the earliest its dependencies allow"}
+    - {name: schedule_calendar, type: data, label: Business Calendar, description: "Whose working days dependency lags and moves count; empty: calendar days"}
     - {name: week_starts_on, type: int, default: 1, min: 1, max: 7, label: Weeks Start On, description: "1 Monday ... 7 Sunday"}
     - {name: reminder_weekday, type: int, default: 0, min: 0, max: 7, label: Remind On,
        description: "The day of the week (1 Monday ... 7 Sunday) from which people whose time that week is short of their hours are told, once a week; 0: never"}
