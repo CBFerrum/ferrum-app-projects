@@ -205,8 +205,24 @@ policy off or replaces it (Studio, Customize).
 **Project Client** is a portal role an administrator gives to a customer's people, who are listed on the customer
 (Client People). They read, and change nothing: the customer's projects marked *Shared with the Client*, the tasks and
 milestones on them marked *Visible to the Client*, the approved timesheets whose time is all on a shared project, and,
-with ERP, the project's submitted invoices. Not shared: comments, files and anything internal (risks, issues, rates and
-costs); the platform does not give portal people a record's comments or files yet.
+with ERP, the project's submitted invoices.
+
+*Shared:* a project's name, status, dates, customer, priority, billing method, contract value, percent complete,
+hours and its billable and billed amounts; a task's subject, status, dates, hours, progress and description; a
+timesheet's hours, days, billable and billed amounts, and each time log's day, hours, billing amount and description.
+
+*Not shared* (hidden by the Project Client rules themselves, so left out of the record, lists, filters and sorting
+(refused), search, reports, history and Projects' own task and time routes): a project's notes, budget, team
+(`proj_members`, staff addresses), project manager, estimated cost, timesheet cost and baseline cost and budget; a
+task's assignees; a timesheet's person, approvers and note; and a time log's billing rate (costing rates were already
+staff-only). The budget is the internal cost plan, not the contract value the client is billed on, so it is hidden.
+Also not shared: comments and files (the platform does not give portal people a record's comments or files yet), and
+risks, issues, change requests and allocations (no rule reaches them).
+
+Other roles are unchanged. The platform follows the package's rules on an update, except a rule an administrator
+edited in Roles and permissions, which stays as they left it: an administrator who changed the Project Client rule on
+Project, Task or Timesheet keeps their rule and its `hide`, and adds what they want hidden there. A timesheet is
+titled by its number, since the platform does not hide a record's title field.
 
 <details>
 <summary><b>Reports (3)</b></summary>
@@ -292,6 +308,7 @@ CHANGELOG.md  what changed in each version
 
 | Version | Highlights |
 |---|---|
+| **0.9.1** | A customer's portal people no longer read a shared project's notes, budget, team, manager and costs, a task's assignees, or a timesheet's person, note and rates. Needs platform 0.3.4. |
 | **0.9.0** | Teams and private projects work without setup, timesheet approval is a package default, team members' personal data is declared for erasure, and customers' people read their shared projects on the portal. |
 | **0.8.0** | Project teams and private projects (rules a workspace adds), statuses with categories and workflows, weekly timesheets with a timer and approval, templates, rate cards, invoices in another currency, four kinds of dependency. |
 | **0.7.2** | Rebuilt on the tuned design system: better menu icons, a lighter first page, a visible scroll cue, cleaner print. |

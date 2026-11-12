@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.1
+
+Package `projects` 0.4.1; needs the platform's App API 0.3.4 (`platform: ">=0.3.4, <0.4"`). A fault found by a walk of a live server: the portal role Project Client read a shared project's internal `notes` and its team table `proj_members` (staff addresses).
+
+- **Project Client's rules hide what is internal** (`hide` on a rule, platform BD-40): on Project `notes`, `budget`, `proj_members`, `proj_project_manager`, `proj_estimated_cost`, `proj_costing_amount`, `proj_baseline_cost`, `proj_baseline_budget`; on Task `assigned_to`; on Timesheet `user`, `note`, `approvers`; on time logs `billing_rate` (a new rule for TimesheetDetail that grants nothing and only hides). Left out of the record and lists, refused in filters and sorting, left out of search, reports and history. `budget` is hidden as the internal cost plan (the README's shared list never named it; the contract value stays shared).
+- **No other role changes.** No field group, no migration: staff roles, workspace-made roles and other apps' roles read and write what they did, on a fresh install and after an update.
+- **Projects' own routes** `tasks` read assignees with SQL of their own; they now ask the platform, record by record, whether the caller may read `assigned_to` (`time` reads the person through a list, which already leaves it out).
+- **Updating**: the platform rewrites the package's rule rows on update, so the corrected rule reaches workspaces that had 0.9.0 (rows from before take `hide` while theirs is empty). **A rule an administrator edited in Roles and permissions is theirs and is never rewritten:** a workspace that edited the Project Client rule on Project, Task or Timesheet keeps their edit, and keeps reading what it does not hide until they add the fields to its `hide`. Tested.
+- **A timesheet has no title field any more** (it was `user`, and the platform will not hide a record's title): it is named by its number in pickers and links.
+- Erasure of a team member still empties `proj_members`.
+
 ## 0.9.0
 
 Package `projects` 0.4.0, connector `projects_erp` 0.3.0. Ships what 0.8.0 asked every workspace to add, and the client portal 0.8.0 could not build.

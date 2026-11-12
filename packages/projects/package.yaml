@@ -1,5 +1,5 @@
 package: projects
-version: 0.4.0
+version: 0.4.1
 label: Projects
 description: Projects with task trees, dependencies and milestones, timesheets with costing and billing, activity rates, milestone and time-and-materials invoicing, and project profitability.
 # Projects and customers are shared records; invoicing through ERP comes with the projects_erp
@@ -121,9 +121,14 @@ roles:
     description: "For a customer's people, given to them by an administrator: read the projects of their customer that are shared with it, the tasks and milestones marked visible to the client, and the project's approved timesheets and invoices. Comments and files are not shared with portal people yet."
     portal: true
     permissions:
-      - {entity: Project, read: true, via: customer.proj_portal_people.email, where: {proj_shared: true}}
-      - {entity: Task, read: true, via: project.customer.proj_portal_people.email, where: {client_visible: true, project_shared: true}}
-      - {entity: Timesheet, read: true, via: portal_project.customer.proj_portal_people.email, where: {portal_shared: true, status: [Submitted, Partly Billed, Billed]}}
+      # What staff write for staff is hidden (platform BD-40): per record on reads, refused in filters and sorts.
+      - {entity: Project, read: true, via: customer.proj_portal_people.email, where: {proj_shared: true},
+         hide: [notes, budget, proj_members, proj_project_manager, proj_estimated_cost, proj_costing_amount, proj_baseline_cost, proj_baseline_budget]}
+      - {entity: Task, read: true, via: project.customer.proj_portal_people.email, where: {client_visible: true, project_shared: true}, hide: [assigned_to]}
+      - {entity: Timesheet, read: true, via: portal_project.customer.proj_portal_people.email, where: {portal_shared: true, status: [Submitted, Partly Billed, Billed]},
+         hide: [user, note, approvers]}
+      # A table's columns are hidden through the rows' own entity (a rule that grants nothing, only hides).
+      - {entity: TimesheetDetail, hide: [billing_rate]}
   - name: Accounts Manager
     permissions:
       - {entity: Timesheet, read: true, export: true, read_groups: [costing]}
