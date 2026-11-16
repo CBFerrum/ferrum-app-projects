@@ -43,7 +43,7 @@ async fn boot(old: bool, reset: bool) -> Arc<Kernel> {
     }
     let mut hooks = HookRegistry::default();
     ferrum_domain::register(&mut hooks);
-    ferrum_app_erp::register(&mut hooks);
+    hooks.app("erp", &[], ferrum_app_erp::register);
     ferrum_app_projects::register(&mut hooks);
     let k = Kernel::boot(db, Catalog::from_packages(packages).expect("catalog"), hooks, KernelSettings::default(), None).await.expect("boot");
     ferrum_domain::maintenance(&k).await.expect("domain maintenance");
