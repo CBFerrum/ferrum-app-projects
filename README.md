@@ -500,7 +500,7 @@ With a development server started with `FERRUM_DEV_UI=1`, `ferrum-app dev --ui` 
 ```text
 app.yaml                      the manifest: id, version, requirements, what it adds to Ferrum
 connectors/erp/app.yaml       the connector with ERP (invoicing)
-packages/projects/            entities, roles, approvals, seeded statuses; sql/ upgrades older workspaces
+packages/projects/            entities, roles, approvals, seeded statuses
 packages/projects_erp/        invoicing fields, actions and permissions
 src/                          project, task, timesheet, billing, planning, templates, schedule, status, reports, endpoints
 ui/src/                       home, project (board, timeline, time), task, my work, planning; words in Arabic and Hindi

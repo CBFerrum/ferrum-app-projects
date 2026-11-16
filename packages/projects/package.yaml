@@ -156,8 +156,7 @@ approvals:
 handover:
   - {entity: Task, field: assigned_to.user, where: {status_category: [To Do, In Progress]}}
 
-# The statuses every workspace starts with (sql/001_task_statuses.sql gives a workspace already there
-# the same, and its tasks their status records).
+# The statuses every workspace starts with, and the Standard workflow holding them.
 seed:
   - entity: TaskStatus
     key: [status_name]

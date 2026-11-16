@@ -17,7 +17,6 @@ const OLD_PACKAGE: &str = include_str!("fixtures/v0_9_0/package.yaml");
 const OLD_PROJECTS: &str = include_str!("fixtures/v0_9_0/entities/projects.yaml");
 const OLD_PLANNING: &str = include_str!("fixtures/v0_9_0/entities/planning.yaml");
 const OLD_ERP: &str = include_str!("fixtures/v0_9_0/projects_erp.yaml");
-const SQL1: &str = include_str!("../packages/projects/sql/001_task_statuses.sql");
 
 async fn boot(old: bool, reset: bool) -> Arc<Kernel> {
     let url = std::env::var("FERRUM_PROJECTS5_TEST_DATABASE_URL").unwrap_or_else(|_| "postgres://ferrum:ferrum@localhost:5432/ferrum_projects5_test".into());
@@ -28,15 +27,11 @@ async fn boot(old: bool, reset: bool) -> Arc<Kernel> {
     let mut packages = ferrum_domain::packages().expect("platform packages");
     packages.extend(ferrum_app_erp::packages().expect("ERP's packages"));
     if old {
-        let files: BTreeMap<String, String> = [
-            ("package.yaml", OLD_PACKAGE),
-            ("entities/projects.yaml", OLD_PROJECTS),
-            ("entities/planning.yaml", OLD_PLANNING),
-            ("sql/001_task_statuses.sql", SQL1),
-        ]
-        .into_iter()
-        .map(|(k, v)| (k.to_string(), v.to_string()))
-        .collect();
+        let files: BTreeMap<String, String> =
+            [("package.yaml", OLD_PACKAGE), ("entities/projects.yaml", OLD_PROJECTS), ("entities/planning.yaml", OLD_PLANNING)]
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
         packages.push(ferrum_meta::catalog::load_package_files(&files).expect("Projects as it was"));
         let erp: BTreeMap<String, String> = [("package.yaml".to_string(), OLD_ERP.to_string())].into();
         packages.push(ferrum_meta::catalog::load_package_files(&erp).expect("Projects and ERP as it was"));
