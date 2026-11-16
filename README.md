@@ -7,7 +7,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.10.0-b45309?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.10.1-b45309?style=flat-square)](CHANGELOG.md)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Ferrum platform](https://img.shields.io/badge/runs%20on-Ferrum-2f5bea?style=flat-square)](https://github.com/CBFerrum/Ferrum)
 ![Rust](https://img.shields.io/badge/Rust-server-b7410e?style=flat-square&logo=rust)
@@ -401,6 +401,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 
 ### ✅ Recently shipped
 
+- [x] **0.10.1** Rebuilt on Ferrum-Frontend 06bd1a2: its start through `mountApp`, and no routes to the screens apps no longer have.
 - [x] **0.10.0** No upgrade history in the package: the SQL that gave older workspaces their task statuses is gone; the seed gives every new one.
 - [x] **0.9.1** The client portal no longer reads a shared project's notes, budget, team, manager and costs, a task's assignees, or a timesheet's person, note and rates. Needs platform 0.3.4.
 - [x] **0.9.0** Teams and private projects work without setup, timesheet approval is a package default, team members' personal data is declared for erasure, and a customer's people read their shared projects on the portal.
