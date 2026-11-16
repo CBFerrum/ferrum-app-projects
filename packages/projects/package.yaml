@@ -1,5 +1,5 @@
 package: projects
-version: 0.4.1
+version: 0.5.0
 label: Projects
 description: Projects with task trees, dependencies and milestones, timesheets with costing and billing, activity rates, milestone and time-and-materials invoicing, and project profitability.
 # Projects and customers are shared records; invoicing through ERP comes with the projects_erp
@@ -156,8 +156,7 @@ approvals:
 handover:
   - {entity: Task, field: assigned_to.user, where: {status_category: [To Do, In Progress]}}
 
-# The statuses every workspace starts with (sql/001_task_statuses.sql gives a workspace already there
-# the same, and its tasks their status records).
+# The statuses every workspace starts with, and the Standard workflow holding them.
 seed:
   - entity: TaskStatus
     key: [status_name]

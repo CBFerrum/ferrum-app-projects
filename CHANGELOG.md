@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.10.0
+
+Package `projects` 0.5.0. Needs the same platform as 0.9.1. No interface change. The `projects` package has no SQL of
+its own any more, and a database is made afresh.
+
+- **No upgrade history in the package.** `001_task_statuses.sql` gave a workspace from before 0.8.0 the six statuses,
+  the Standard workflow and each task its status record; a new workspace gets the same from the package's seed, and
+  every task the app makes takes its status record and category. No such workspace exists, so the file is gone.
+
+Tests: services_it no longer empties the statuses to run that file; upgrade_it and hide_it load 0.8.0's and 0.9.0's
+package without it (it changed nothing on the empty cluster they boot).
+
 ## 0.9.1
 
 Package `projects` 0.4.1; needs the platform's App API 0.3.4 (`platform: ">=0.3.4, <0.4"`). A fault found by a walk of a live server: the portal role Project Client read a shared project's internal `notes` and its team table `proj_members` (staff addresses).

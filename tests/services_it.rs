@@ -186,8 +186,6 @@ async fn scenario() {
     rates(&w).await;
     dependencies(&w).await;
     client_portal(&w).await;
-    // Last: it rewinds the workspace to before this release.
-    upgrade(&w).await;
 }
 
 /// PJ-02, PJ-03: a project's members read it and all its tasks and write by their role on it; a
@@ -313,37 +311,6 @@ async fn statuses(w: &World) {
     pm.action("Project", app, "complete", json!({"force": "Yes"})).await;
     let code = pm.get("Task", code).await;
     assert_eq!((code["status"].clone(), code["status_category"].clone()), (json!("Dropped"), json!("Cancelled")));
-}
-
-/// A workspace from before statuses were records: the release's SQL gives it the six it had, the
-/// Standard workflow, and each task its status record and category.
-async fn upgrade(w: &World) {
-    let k = &w.admin.k;
-    let mut tx = k.db.system_tx().await.unwrap();
-    sqlx::raw_sql(
-        "select set_config('ferrum.system', 'on', true); \
-         update e_task set task_status = null, status_category = null; \
-         delete from e_task_workflow__statuses; delete from e_project_type; delete from e_task_workflow; \
-         update e_task_status set late_status = null; delete from e_task_status;",
-    )
-    .execute(&mut *tx)
-    .await
-    .unwrap();
-    sqlx::raw_sql(include_str!("../packages/projects/sql/001_task_statuses.sql")).execute(&mut *tx).await.unwrap();
-    sqlx::raw_sql(include_str!("../packages/projects/sql/001_task_statuses.sql")).execute(&mut *tx).await.expect("twice changes nothing");
-    tx.commit().await.unwrap();
-    let pm = &w.users["pm"];
-    let names: Vec<String> = pm.list("TaskStatus", json!({})).await.iter().map(|s| s["status_name"].as_str().unwrap().to_string()).collect();
-    assert_eq!(names.len(), 6, "{names:?}");
-    let standard = pm.find_one("TaskWorkflow", json!({"is_default": true})).await;
-    assert_eq!(pm.get("TaskWorkflow", uid(&standard)).await["statuses"].as_array().unwrap().len(), 6);
-    let late = pm.find_one("Task", json!({"subject": "Late"})).await;
-    let overdue = pm.find_one("TaskStatus", json!({"status_name": "Overdue"})).await;
-    assert_eq!((late["task_status"].clone(), late["status_category"].clone()), (overdue["id"].clone(), json!("To Do")));
-    let first = pm.find_one("Task", json!({"subject": "First"})).await;
-    assert_eq!(first["status_category"], json!("To Do"));
-    let moved = pm.update("Task", uid(&late), json!({"exp_end_date": (Utc::now().date_naive() + Duration::days(2)).to_string()})).await;
-    assert_eq!(moved["status"], json!("Open"), "Open's late status, found again");
 }
 
 /// PJ-42, PJ-43: a week of days and hours (clock times still work beside them), a timer, approval
