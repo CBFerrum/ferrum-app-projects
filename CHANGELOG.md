@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.2
+
+Needs the same platform as 0.10.0. No database change.
+
+- **A time log's day is the workspace's.** A line logged by the clock took the UTC date of its start as its day, so in a workspace ahead of UTC a morning's work landed on the day before (behind it, an evening's on the day after): on the wrong day of the timesheet's week, refused as outside the week when that day fell outside it, at the rates of the wrong day, in the wrong period of the reports. Its day is now its start's date where the workspace is (its `timezone` setting), and the timesheet's end date its end's. The reports, the project's actual start and the weekly reminder read the day; the project's actual end, invoicing up to a date and an invoice line's dates take the end's date in the workspace's zone.
+- **The task's time list sends the day as a day.** `GET /api/app/projects/time?task=` gives each line `day` (a date, `YYYY-MM-DD`, where the workspace is) and `at` (its start, a moment, only for time logged by the clock; null otherwise), where `at` was either the start or the day at UTC midnight. The page still reads `at`; it should show `day`.
+
 ## 0.10.1
 
 Needs the same platform as 0.10.0. No database change. Interface only, `ui/dist` rebuilt with Ferrum-Frontend `06bd1a2`.
