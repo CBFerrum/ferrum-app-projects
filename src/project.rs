@@ -88,7 +88,7 @@ impl DocHook for ProjectHook {
                 return Err(Error::field("status", open_tasks_message(&open)));
             }
         }
-        let derived = project_derived(hc.tx, hc.ctx.tenant, pid, doc, None).await?;
+        let derived = project_derived(hc.tx, hc.ctx, pid, doc, None).await?;
         doc.extend(derived);
         Ok(())
     }
@@ -184,17 +184,19 @@ async fn complete(hc: &mut HookCtx<'_>, doc: &Doc, params: &Value) -> Result<Val
 
 /// Figures derived from submitted time logs, billed milestones and (unless % complete is manual)
 /// task progress, recomputed from their sources every time so they cannot drift.
-pub(crate) async fn project_derived(tx: &mut Tx, tenant: Uuid, project: Uuid, doc: &Doc, without_task: Option<Uuid>) -> Result<Doc> {
-    // A log's days: its clock time's (in UTC, as always), else the day it was given with its hours.
+pub(crate) async fn project_derived(tx: &mut Tx, ctx: &Ctx, project: Uuid, doc: &Doc, without_task: Option<Uuid>) -> Result<Doc> {
+    let tenant = ctx.tenant;
+    // A log's days, where the workspace is: the day it is on (its start's), and its end's day.
     let (hours, cost, billable, billed, first, last): (Decimal, Decimal, Decimal, Decimal, Option<NaiveDate>, Option<NaiveDate>) = sqlx::query_as(
         "select coalesce(sum(l.hours), 0), coalesce(sum(l.costing_amount), 0), \
          coalesce(sum(l.billing_amount) filter (where l.is_billable), 0), coalesce(sum(l.billing_amount) filter (where l.billed), 0), \
-         min(coalesce((l.from_time at time zone 'UTC')::date, l.day)), max(coalesce((l.to_time at time zone 'UTC')::date, l.day)) \
+         min(l.day), max(coalesce((l.to_time at time zone $3)::date, l.day)) \
          from e_timesheet__time_logs l join e_timesheet t on t.tenant_id = l.tenant_id and t.id = l.parent_id \
          where l.tenant_id = $1 and l.project = $2 and t.docstatus = 1",
     )
     .bind(tenant)
     .bind(project)
+    .bind(crate::zone(ctx).name())
     .fetch_one(&mut **tx)
     .await?;
     // With each task, whether it has sub-tasks that are not cancelled (then it is those sub-tasks).
@@ -231,7 +233,7 @@ pub(crate) async fn project_derived(tx: &mut Tx, tenant: Uuid, project: Uuid, do
 pub(crate) async fn refresh_project(k: &Kernel, ctx: &Ctx, tx: &mut Tx, project: Uuid, without_task: Option<Uuid>) -> Result<()> {
     let sctx = sys(ctx);
     let doc = k.get_tx(&sctx, tx, "Project", project, true).await?;
-    let v = project_derived(tx, ctx.tenant, project, &doc, without_task).await?;
+    let v = project_derived(tx, ctx, project, &doc, without_task).await?;
     k.set_values_tx(&sctx, tx, "Project", project, v).await
 }
 

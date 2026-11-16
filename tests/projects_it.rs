@@ -879,6 +879,74 @@ async fn scenario() {
     assert_eq!(k.list(&pm.ctx, "Task", &q).await.unwrap().rows.len(), 3, "the next from the latest, once");
 
     projects_alone(&k).await;
+    far_from_utc(&k).await;
+}
+
+/// A workspace five and a half hours ahead of UTC (Kolkata): time started at 03:00 on a Monday there is that Monday's, not
+/// the Sunday it still is in UTC: the line's day, the timesheet's week and dates, the project's actual dates, and the
+/// day the task's time list gives.
+async fn far_from_utc(k: &Arc<Kernel>) {
+    let tenant = k
+        .create_tenant(NewTenant {
+            slug: "east".into(),
+            name: "East Projects".into(),
+            admin_email: "admin@east.test".into(),
+            admin_password: "Correct-Horse-9".into(),
+            admin_name: None,
+            packages: vec!["projects".into()],
+            settings: Some(json!({"timezone": "Asia/Kolkata"})),
+        })
+        .await
+        .expect("tenant");
+    let session = k.login("east", "admin@east.test", "Correct-Horse-9").await.expect("login");
+    let ctx = k.load_ctx(tenant, session.user, Some(session.token_version), "it".into()).await.expect("ctx");
+    let off: ferrum_kernel::customize::NewCustomization =
+        serde_json::from_value(json!({"entity": "Timesheet", "op": {"op": "set_approval", "on": "submit", "approval": null}})).unwrap();
+    k.batch_customizations(&ctx, vec![off], false).await.map_err(|(_, e)| e).expect("approval off");
+    let inr = k
+        .list(&ctx, "Currency", &ListQuery { filters: ferrum_kernel::query::parse_filters(&json!({"code": "INR"})).unwrap(), ..Default::default() })
+        .await
+        .unwrap()
+        .rows;
+    let company =
+        k.insert(&ctx, "Company", obj(json!({"company_name": "East Projects", "abbr": "EP", "default_currency": inr[0]["id"]}))).await.expect("company");
+    let customer = k.insert(&ctx, "Customer", obj(json!({"customer_name": "Night Client"}))).await.expect("customer");
+    let project =
+        k.insert(&ctx, "Project", obj(json!({"project_name": "Cutover", "company": company["id"], "customer": customer["id"]}))).await.expect("project");
+    let task = k.insert(&ctx, "Task", obj(json!({"subject": "Switch over", "project": project["id"]}))).await.expect("task");
+    let activity = k.insert(&ctx, "ActivityType", obj(json!({"activity_type": "Night work", "costing_rate": "50"}))).await.expect("activity");
+    // Monday 9 November, 03:00 to 05:00 in Kolkata: Sunday evening in UTC.
+    let sheet = k
+        .insert(
+            &ctx,
+            "Timesheet",
+            obj(json!({"company": company["id"], "week_start": "2026-11-09", "time_logs": [
+                {"activity_type": activity["id"], "task": task["id"], "from_time": "2026-11-08T21:30:00Z", "to_time": "2026-11-08T23:30:00Z"}]})),
+        )
+        .await
+        .expect("Monday's time, in Monday's week");
+    assert_eq!(
+        (sheet["time_logs"][0]["day"].clone(), sheet["start_date"].clone(), sheet["end_date"].clone()),
+        (json!("2026-11-09"), json!("2026-11-09"), json!("2026-11-09")),
+        "the workspace's day, not UTC's"
+    );
+    k.submit(&ctx, "Timesheet", uid(&sheet), None).await.expect("submitted");
+    let worked = k.get(&ctx, "Project", uid(&project), false).await.unwrap();
+    assert_eq!((worked["proj_actual_start_date"].clone(), worked["proj_actual_end_date"].clone()), (json!("2026-11-09"), json!("2026-11-09")));
+    // The task's time as its page reads it: the day as a day, the start as a moment.
+    let site = k.hooks.site("projects").expect("projects' endpoints").clone();
+    let req = ferrum_kernel::SiteRequest {
+        tenant,
+        user: Some(ctx.clone()),
+        method: "GET".into(),
+        path: "/time".into(),
+        query: json!({"task": task["id"]}).as_object().cloned().unwrap(),
+        headers: Default::default(),
+        body: vec![],
+        client_ip: "203.0.113.9".into(),
+    };
+    let time: Value = serde_json::from_slice(&site.handle(k, req).await.expect("the task's time").body).unwrap();
+    assert_eq!((time["logs"][0]["day"].clone(), time["logs"][0]["at"].clone()), (json!("2026-11-09"), json!("2026-11-08T21:30:00+00:00")), "{time}");
 }
 
 fn crate_week(day: chrono::NaiveDate) -> chrono::NaiveDate {

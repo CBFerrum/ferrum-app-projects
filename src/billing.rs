@@ -8,7 +8,7 @@ use crate::logic::{BillableLog, CANCELLED, group_time};
 use crate::project::{invoice_number, label, refresh_project, try_get};
 use crate::timesheet::refresh_timesheet;
 use async_trait::async_trait;
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::NaiveDate;
 use ferrum_domain::flow::created;
 use ferrum_domain::util::{Company, b, company, d, elevated, get, id, money, round, rows, s};
 use ferrum_kernel::{Action, Doc, DocHook, Error, FieldError, HookCtx, Result};
@@ -79,8 +79,7 @@ fn param<'a>(params: &'a Value, key: &str) -> Option<&'a str> {
     params.get(key).and_then(Value::as_str).map(str::trim).filter(|v| !v.is_empty())
 }
 
-fn span_text(from: DateTime<Utc>, to: DateTime<Utc>) -> String {
-    let (a, z) = (from.date_naive(), to.date_naive());
+fn span_text(a: NaiveDate, z: NaiveDate) -> String {
     if a == z { a.to_string() } else { format!("{a} to {z}") }
 }
 
@@ -125,19 +124,20 @@ async fn invoice_time(hc: &mut HookCtx<'_>, project: &Doc, timesheet: Option<Uui
     }
     let (mut input, _, convert) = invoice_header(hc, project).await?;
     let pending = pending_logs(hc, project_id).await?;
-    let found: Vec<(Uuid, Option<Uuid>, Option<Decimal>, Option<Decimal>, Option<DateTime<Utc>>, Option<DateTime<Utc>>)> = sqlx::query_as(
-        "select l.id, l.activity_type, l.billing_hours, l.billing_rate, \
-         coalesce(l.from_time, l.day::timestamp at time zone 'UTC'), coalesce(l.to_time, l.day::timestamp at time zone 'UTC') \
+    // A log's days where the workspace is: the day it is on, and its end's day (the day it ends, for "up to").
+    let found: Vec<(Uuid, Option<Uuid>, Option<Decimal>, Option<Decimal>, Option<NaiveDate>, Option<NaiveDate>)> = sqlx::query_as(
+        "select l.id, l.activity_type, l.billing_hours, l.billing_rate, l.day, coalesce((l.to_time at time zone $6)::date, l.day) \
          from e_timesheet__time_logs l join e_timesheet t on t.tenant_id = l.tenant_id and t.id = l.parent_id \
          where l.tenant_id = $1 and l.project = $2 and t.docstatus = 1 and l.is_billable and not l.billed and l.billing_amount > 0 \
-         and ($3::uuid is null or t.id = $3) and ($4::date is null or coalesce(l.to_time < ($4::date + 1)::timestamptz, l.day <= $4::date)) and l.id <> all($5) \
-         order by coalesce(l.from_time, l.day::timestamp at time zone 'UTC'), l.id",
+         and ($3::uuid is null or t.id = $3) and ($4::date is null or coalesce((l.to_time at time zone $6)::date, l.day) <= $4::date) and l.id <> all($5) \
+         order by l.day, l.from_time nulls first, l.id",
     )
     .bind(hc.ctx.tenant)
     .bind(project_id)
     .bind(timesheet)
     .bind(to_date)
     .bind(&pending)
+    .bind(crate::zone(hc.ctx).name())
     .fetch_all(&mut **hc.tx)
     .await?;
     let logs: Vec<BillableLog> = found

@@ -112,6 +112,16 @@ pub(crate) fn is_manager(ctx: &Ctx) -> bool {
     ctx.is_system || ctx.has_role("Projects Manager")
 }
 
+/// The workspace's time zone, as `Ctx::today` reads it: its `timezone` setting, UTC when unset or not a zone.
+pub(crate) fn zone(ctx: &Ctx) -> chrono_tz::Tz {
+    ctx.schema.timezone.parse().unwrap_or(chrono_tz::Tz::UTC)
+}
+
+/// The workspace's date of a moment: the day it is where the workspace is, as `Ctx::today` is today.
+pub(crate) fn day_of(ctx: &Ctx, at: chrono::DateTime<chrono::Utc>) -> chrono::NaiveDate {
+    at.with_timezone(&zone(ctx)).date_naive()
+}
+
 /// Row locks taken in id order, so transactions touching the same rows queue instead of deadlocking.
 pub(crate) async fn lock(tx: &mut Tx, table: &str, tenant: Uuid, ids: &[Uuid]) -> Result<()> {
     sqlx::query(sqlx::AssertSqlSafe(format!("select 1 from {table} where tenant_id = $1 and id = any($2) order by id for update")))
