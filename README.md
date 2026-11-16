@@ -7,7 +7,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.9.1-b45309?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.10.0-b45309?style=flat-square)](CHANGELOG.md)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Ferrum platform](https://img.shields.io/badge/runs%20on-Ferrum-2f5bea?style=flat-square)](https://github.com/CBFerrum/Ferrum)
 ![Rust](https://img.shields.io/badge/Rust-server-b7410e?style=flat-square&logo=rust)
@@ -37,7 +37,7 @@ Projects gives a team a board, a timeline, task trees with dependencies, weekly 
 
 | | |
 |---|---|
-| **Version** | 0.9.1 (package `projects` 0.4.1; connector `projects-erp` 0.3.0) |
+| **Version** | 0.10.0 (package `projects` 0.5.0; connector `projects-erp` 0.3.0) |
 | **Kind** | Its own interface at `/projects/` (home, project, task, my work, planning) with Ferrum's records screens for everything else |
 | **What it adds** | 22 entities (15 records, 7 small tables) and extra fields on the shared Project and Customer records, 4 roles, 1 module with 5 reports, 3 project tabs, 1 notification kind and 1 message, 3 upkeep jobs, 3 own endpoints; the ERP connector adds invoicing fields and actions. No print formats. |
 | **Depends on** | Ferrum platform `>=0.3.4, <0.4`; the platform's `core`, `parties` and `project_records` packages |
@@ -401,6 +401,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 
 ### ✅ Recently shipped
 
+- [x] **0.10.0** No upgrade history in the package: the SQL that gave older workspaces their task statuses is gone; the seed gives every new one.
 - [x] **0.9.1** The client portal no longer reads a shared project's notes, budget, team, manager and costs, a task's assignees, or a timesheet's person, note and rates. Needs platform 0.3.4.
 - [x] **0.9.0** Teams and private projects work without setup, timesheet approval is a package default, team members' personal data is declared for erasure, and a customer's people read their shared projects on the portal.
 - [x] **0.8.0** Project teams and private projects, statuses with categories and workflows, weekly timesheets with a timer and approval, templates, rate cards, invoices in another currency, four kinds of dependency.
