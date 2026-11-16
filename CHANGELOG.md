@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.3
+
+Needs the same platform as 0.10.0. No database change. Interface only, `ui/dist` rebuilt with Ferrum-Frontend `06bd1a2`.
+
+- **The task page shows a time line's day.** Since 0.10.2 the time list gives each line its `day` and gives `at` only for time logged by the clock, but the page still read `at`: a line logged by the day showed no date and fell to the end of the task's story. The list now shows each line's day, and the story places a line logged by the day on its day.
+
 ## 0.10.2
 
 Needs the same platform as 0.10.0. No database change.

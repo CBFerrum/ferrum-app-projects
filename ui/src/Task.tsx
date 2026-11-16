@@ -214,7 +214,7 @@ function TimeLogged({ task, doc }: { task: Task; doc: Record<string, unknown> })
               {l.what && <span className="faint"> · {isolate(l.what)}</span>}
             </span>
             {!l.counted && <Badge tone="amber">{t("Not submitted")}</Badge>}
-            <span className="faint">{l.at ? formatDate(l.at.slice(0, 10)) : ""}</span>
+            <span className="faint">{l.day ? formatDate(l.day) : ""}</span>
           </li>
         ))}
       </ul>
@@ -286,7 +286,7 @@ function Story({ id, changed }: { id: string; changed: () => void }) {
               <div className="pj-event-body">
                 <div className="pj-event-line">
                   <strong>{isolate(i.title)}</strong>
-                  <time className="faint">{isolate(when(i.at))}</time>
+                  <time className="faint">{isolate(i.day ? formatDate(i.day) : when(i.at))}</time>
                 </div>
                 {i.detail && <p className="pj-event-detail">{isolate(i.detail)}</p>}
                 {i.who && <div className="faint pj-event-who">{isolate(names(i.who))}</div>}

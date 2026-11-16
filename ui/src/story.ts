@@ -26,6 +26,9 @@ export interface TimeRow {
   user?: string | null;
   /** Of the timesheet: 1 is submitted, which is when the hours count toward the task's. */
   docstatus: number;
+  /** The line's day where the workspace is (`YYYY-MM-DD`). */
+  day?: string | null;
+  /** Its start, a moment: only for time logged by the clock. */
   at?: string | null;
   hours?: string | number | null;
   what?: string | null;
@@ -34,6 +37,8 @@ export interface TimeRow {
 /** Time logged on a task. */
 export interface Log {
   key: string;
+  day: string;
+  /** Empty for time logged by the day. */
   at: string;
   hours: number;
   user: string;
@@ -44,7 +49,9 @@ export interface Log {
 
 export interface Item {
   key: string;
+  /** A moment, or a day for time logged by the day (then `day` is set, and shown as a day). */
   at: string;
+  day?: string;
   kind: "created" | "status" | "change" | "comment" | "time";
   title: string;
   detail?: string | null;
@@ -55,8 +62,8 @@ export interface Item {
 export function logsOf(rows: TimeRow[]): Log[] {
   return rows
     .filter((r) => r.docstatus !== 2)
-    .map((r, i): Log => ({ key: `t-${r.timesheet}-${i}`, at: r.at ?? "", hours: Number(r.hours ?? 0) || 0, user: r.user ?? "", what: r.what ?? "", counted: r.docstatus === 1 }))
-    .sort((a, b) => b.at.localeCompare(a.at));
+    .map((r, i): Log => ({ key: `t-${r.timesheet}-${i}`, day: r.day ?? "", at: r.at ?? "", hours: Number(r.hours ?? 0) || 0, user: r.user ?? "", what: r.what ?? "", counted: r.docstatus === 1 }))
+    .sort((a, b) => (b.at || b.day).localeCompare(a.at || a.day));
 }
 
 /** Hours that count toward the task's, to the hundredth (a sum of tenths is not 0.30000000000000004). */
@@ -117,6 +124,6 @@ export function story(events: AuditEvent[], comments: Comment[], logs: Log[], na
     if (told.length) items.push({ key: `e-${e.id ?? e.at}`, at: e.at, kind: told.some((t) => t.startsWith("Status:")) ? "status" : "change", title: told.join(" · "), who });
   }
   for (const c of comments) items.push({ key: `c-${c.id}`, at: c.created_at, kind: "comment", title: tr("Commented"), detail: c.body, who: c.author ?? "Someone" });
-  for (const l of logs) items.push({ key: l.key, at: l.at, kind: "time", title: tr("{hours} h logged{value}", { hours: l.hours, value: l.counted ? "" : tr(" (timesheet not submitted)") }), detail: l.what || null, who: l.user });
+  for (const l of logs) items.push({ key: l.key, at: l.at || l.day, day: l.at ? undefined : l.day, kind: "time", title: tr("{hours} h logged{value}", { hours: l.hours, value: l.counted ? "" : tr(" (timesheet not submitted)") }), detail: l.what || null, who: l.user });
   return items.sort((a, b) => b.at.localeCompare(a.at));
 }

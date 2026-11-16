@@ -13,6 +13,21 @@ describe("a task's story", () => {
     expect(changes({ ...e, diff: { rank: ["1", "2"] } }, name)).toEqual([]);
   });
 
+  it("places time logged by the day, which has no moment, on its day", () => {
+    const logs = logsOf([
+      { timesheet: "ts1", docstatus: 1, day: "2026-11-02", at: "2026-11-02T09:00:00Z", hours: 1 },
+      { timesheet: "ts2", docstatus: 1, day: "2026-11-04", at: null, hours: 3 },
+    ]);
+    expect(logs.map((l) => [l.day, l.hours])).toEqual([
+      ["2026-11-04", 3],
+      ["2026-11-02", 1],
+    ]);
+    expect(story([], [], logs, name).map((i) => [i.at, i.day])).toEqual([
+      ["2026-11-04", "2026-11-04"],
+      ["2026-11-02T09:00:00Z", undefined],
+    ]);
+  });
+
   it("puts changes, comments and time in one list, newest first", () => {
     const logs = logsOf([
       { timesheet: "ts1", user: "asha@acme.test", docstatus: 1, at: "2026-11-02T09:00:00Z", hours: "2.500000000", what: "Wired it up" },
