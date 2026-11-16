@@ -147,8 +147,9 @@ pub struct BillableLog {
     pub activity_type: Uuid,
     pub hours: Decimal,
     pub rate: Decimal,
-    pub from: DateTime<Utc>,
-    pub to: DateTime<Utc>,
+    /// The day it is on and the day it ends, where the workspace is.
+    pub from: NaiveDate,
+    pub to: NaiveDate,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -157,8 +158,8 @@ pub struct TimeLine {
     pub rate: Decimal,
     pub hours: Decimal,
     pub logs: Vec<Uuid>,
-    pub from: DateTime<Utc>,
-    pub to: DateTime<Utc>,
+    pub from: NaiveDate,
+    pub to: NaiveDate,
 }
 
 /// One invoice line per activity type and billing rate, in order of first appearance: time of
@@ -271,24 +272,25 @@ mod tests {
     #[test]
     fn time_is_grouped_by_activity_and_rate() {
         let (dev, consult) = (Uuid::now_v7(), Uuid::now_v7());
+        let day = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
         let log = |a: Uuid, h: &str, r: &str, from: &str, to: &str| BillableLog {
             id: Uuid::now_v7(),
             activity_type: a,
             hours: n(h),
             rate: n(r),
-            from: t(from),
-            to: t(to),
+            from: day(from),
+            to: day(to),
         };
         let logs = [
-            log(dev, "3", "120", "2026-10-26T09:00:00Z", "2026-10-26T12:00:00Z"),
-            log(consult, "2.5", "150", "2026-10-26T13:00:00Z", "2026-10-26T15:30:00Z"),
-            log(dev, "2", "120.00", "2026-10-25T09:00:00Z", "2026-10-25T11:00:00Z"),
-            log(dev, "1", "100", "2026-10-27T09:00:00Z", "2026-10-27T10:00:00Z"),
+            log(dev, "3", "120", "2026-10-26", "2026-10-26"),
+            log(consult, "2.5", "150", "2026-10-26", "2026-10-26"),
+            log(dev, "2", "120.00", "2026-10-25", "2026-10-25"),
+            log(dev, "1", "100", "2026-10-27", "2026-10-27"),
         ];
         let lines = group_time(&logs);
         assert_eq!(lines.len(), 3, "same activity at another rate gets its own line");
         assert_eq!((lines[0].activity_type, lines[0].hours, lines[0].logs.len()), (dev, n("5"), 2));
-        assert_eq!((lines[0].from, lines[0].to), (t("2026-10-25T09:00:00Z"), t("2026-10-26T12:00:00Z")));
+        assert_eq!((lines[0].from, lines[0].to), (day("2026-10-25"), day("2026-10-26")));
         assert_eq!((lines[1].activity_type, lines[1].rate), (consult, n("150")));
         assert_eq!((lines[2].rate, lines[2].hours), (n("100"), n("1")));
     }

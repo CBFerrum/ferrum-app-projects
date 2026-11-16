@@ -192,8 +192,9 @@ async fn derive(hc: &mut HookCtx<'_>, doc: &mut Doc) -> Result<()> {
                 set(r, "to_time", t.to_rfc3339_opts(SecondsFormat::Millis, true));
             }
         }
+        // The day it is on is the workspace's, not UTC's: a morning's work is that morning's day wherever the workspace is.
         if let Some(f) = from {
-            set(r, "day", f.date_naive().to_string());
+            set(r, "day", crate::day_of(hc.ctx, f).to_string());
         }
         let hours = match (from, to) {
             (Some(f), Some(t)) => hours_between(f, t),
@@ -256,7 +257,7 @@ async fn derive(hc: &mut HookCtx<'_>, doc: &mut Doc) -> Result<()> {
     set(doc, "per_billed", money(percent(totals[4], totals[3])));
     let day = |t: Option<NaiveDate>| t.map(|t| json!(t.to_string())).unwrap_or(Value::Null);
     set(doc, "start_date", day(logs.iter().filter_map(|r| date(r, "day")).min()));
-    set(doc, "end_date", day(logs.iter().filter_map(|r| time(r, "to_time").map(|t| t.date_naive()).or_else(|| date(r, "day"))).max()));
+    set(doc, "end_date", day(logs.iter().filter_map(|r| time(r, "to_time").map(|t| crate::day_of(hc.ctx, t)).or_else(|| date(r, "day"))).max()));
     if d(doc, "docstatus").is_zero() {
         set(doc, "status", "Draft");
         let approvers = approvers(hc, &user, &logs, &mut projects).await?;
@@ -552,7 +553,7 @@ pub(crate) async fn remind_missing_time(k: &Kernel, tenant: Uuid) -> Result<usiz
         "select p.id, lower(p.\"user\"), p.weekly_hours, coalesce((select sum(l.hours) from e_timesheet t \
            join e_timesheet__time_logs l on l.tenant_id = t.tenant_id and l.parent_id = t.id \
            where t.tenant_id = p.tenant_id and lower(t.\"user\") = lower(p.\"user\") and t.docstatus < 2 \
-             and coalesce(l.day, (l.from_time at time zone 'UTC')::date) between $2 and $2 + 6), 0) \
+             and l.day between $2 and $2 + 6), 0) \
          from e_project_person p join app_user u on u.tenant_id = p.tenant_id and lower(u.email) = lower(p.\"user\") and u.is_active \
          where p.tenant_id = $1 and p.weekly_hours > 0 and p.reminded_week is distinct from $2",
     )

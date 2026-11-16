@@ -112,8 +112,8 @@ async fn tasks(k: &Kernel, user: &Ctx, query: &Map<String, Value>) -> Result<Val
     Ok(json!({"rows": page.rows, "total": page.total}))
 }
 
-/// `GET time?task=<id>`: the time logged on a task, line by line, newest first: whose, when, how long
-/// and what for. The lines are child rows of timesheets, which a list leaves out. Read with the
+/// `GET time?task=<id>`: the time logged on a task, line by line, newest first: whose, the day it is on (`day`, a date
+/// where the workspace is), when it started (`at`, a moment, when it was logged by the clock), how long and what for. The lines are child rows of timesheets, which a list leaves out. Read with the
 /// caller's own rights (someone who may read only their own timesheets gets only the lines in
 /// those) and without costs; `docstatus` says whether the timesheet is submitted, which is when
 /// the hours count toward the task's.
@@ -133,9 +133,9 @@ async fn time(k: &Kernel, user: &Ctx, query: &Map<String, Value>) -> Result<Valu
         .collect();
     let ids: Vec<Uuid> = sheets.keys().copied().collect();
     let mut tx = k.db.tenant_tx(user.tenant).await?;
-    let lines: Vec<(Uuid, Option<chrono::DateTime<chrono::Utc>>, Option<String>, Option<String>)> = sqlx::query_as(
-        "select parent_id, coalesce(from_time, day::timestamp at time zone 'UTC'), hours::text, description from e_timesheet__time_logs \
-         where tenant_id = $1 and parent_id = any($2) and task = $3 order by 2 desc nulls last, idx limit 200",
+    let lines: Vec<(Uuid, Option<chrono::NaiveDate>, Option<chrono::DateTime<chrono::Utc>>, Option<String>, Option<String>)> = sqlx::query_as(
+        "select parent_id, day, from_time, hours::text, description from e_timesheet__time_logs \
+         where tenant_id = $1 and parent_id = any($2) and task = $3 order by day desc nulls last, from_time desc nulls last, idx limit 200",
     )
     .bind(user.tenant)
     .bind(&ids)
@@ -145,9 +145,9 @@ async fn time(k: &Kernel, user: &Ctx, query: &Map<String, Value>) -> Result<Valu
     tx.commit().await?;
     let logs: Vec<Value> = lines
         .into_iter()
-        .filter_map(|(sheet, at, hours, what)| {
+        .filter_map(|(sheet, day, at, hours, what)| {
             let (who, docstatus) = sheets.get(&sheet)?;
-            Some(json!({"timesheet": sheet, "user": who, "docstatus": docstatus, "at": at.map(|t| t.to_rfc3339()), "hours": hours, "what": what}))
+            Some(json!({"timesheet": sheet, "user": who, "docstatus": docstatus, "day": day.map(|d| d.to_string()), "at": at.map(|t| t.to_rfc3339()), "hours": hours, "what": what}))
         })
         .collect();
     Ok(json!({"logs": logs}))
