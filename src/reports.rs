@@ -3,7 +3,7 @@
 
 use crate::logic::{percent, task_bucket};
 use async_trait::async_trait;
-use chrono::{NaiveDate, Utc};
+use chrono::NaiveDate;
 use ferrum_domain::reports::{Params, ReportCompany, ReportSource, col, param_def, period, read_tx, resolve_company};
 use ferrum_domain::util::money;
 use ferrum_kernel::{Access, Action, Ctx, Error, Kernel, Result, Tx};
@@ -144,7 +144,7 @@ async fn portfolio_overview(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Para
         "select a.project_name, a.status, \
          (select count(*) from e_task t where t.tenant_id = a.tenant_id and t.project = a.id), \
          (select count(*) from e_task t where t.tenant_id = a.tenant_id and t.project = a.id and t.status_category = 'Done'), \
-         (select count(*) from e_task t where t.tenant_id = a.tenant_id and t.project = a.id and t.status_category in ('To Do', 'In Progress') and t.exp_end_date < current_date), \
+         (select count(*) from e_task t where t.tenant_id = a.tenant_id and t.project = a.id and t.status_category in ('To Do', 'In Progress') and t.exp_end_date < $5), \
          (select count(*) from e_project_risk r where r.tenant_id = a.tenant_id and r.project = a.id and r.status in ('Open', 'Mitigating')), \
          (select count(*) from e_project_issue i where i.tenant_id = a.tenant_id and i.project = a.id and i.status in ('Open', 'In Progress')) \
          from e_project a where a.tenant_id = $1 and a.company = $2 \
@@ -155,6 +155,7 @@ async fn portfolio_overview(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Para
     .bind(co.id)
     .bind(portfolio)
     .bind(MAX_ROWS)
+    .bind(ctx.today())
     .fetch_all(&mut **tx)
     .await?;
     let rows: Vec<Value> = rows
@@ -393,7 +394,7 @@ impl TaskAgg {
 }
 
 async fn task_overview(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Params<'_>) -> Result<Value> {
-    let today = Utc::now().date_naive();
+    let today = ctx.today();
     #[allow(clippy::type_complexity)]
     let data: Vec<(Uuid, Option<String>, Option<String>, Option<String>, Option<String>, Option<NaiveDate>, Option<Decimal>, Option<Decimal>)> =
         sqlx::query_as(
