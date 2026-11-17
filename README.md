@@ -13,7 +13,7 @@
 ![Rust](https://img.shields.io/badge/Rust-server-b7410e?style=flat-square&logo=rust)
 ![TypeScript](https://img.shields.io/badge/React-TypeScript-3178c6?style=flat-square&logo=typescript&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-data-336791?style=flat-square&logo=postgresql&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-16%20Rust%20%C2%B7%20105%20UI-16a34a?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-16%20Rust%20%C2%B7%20106%20UI-16a34a?style=flat-square)
 
 ### Plan the work, log the time, and bill the client from one project record that also feeds your books.
 
@@ -43,7 +43,7 @@ Projects gives a team a board, a timeline, task trees with dependencies, weekly 
 | **Depends on** | Ferrum platform `>=0.3.4, <0.4`; the platform's `core`, `parties` and `project_records` packages |
 | **Works with** | ERP (invoicing, accounts), Helpdesk, Field Service, CRM (they link to projects), Objectives (key results name projects) |
 | **Languages** | English, Arabic and Hindi (307 interface words and 235 names in each), right-to-left |
-| **Tests** | 16 Rust tests (against a real PostgreSQL, including upgrades), 105 interface tests |
+| **Tests** | 16 Rust tests (against a real PostgreSQL, including package updates), 106 interface tests |
 | **Licence** | AGPL-3.0-only |
 
 ## 📸 Screenshots
@@ -187,6 +187,7 @@ For Projects Managers:
 
 - **Timesheet** has a person, a project or several, and lines by **day and hours** (no clock times needed) or **from and to times**. A timesheet may be for a **week** (`week_start`).
 - **Start Timer and Stop Timer** time today's line for a project, task and activity.
+- **A line's day** is the one given; a line logged by the clock takes the workspace's date of its start.
 - **Overlap refused.** A person's time on two lines may not overlap.
 - **Rates.** A line bills at the most specific **Rate Card** in force, then the person's **Activity Cost**, then the **Activity Type's** default. Costing rates (what the time costs you) follow the same order. Time entered on the timesheet's page bills at the activity's rate.
 - **Rate cards** by project, customer, role on the project, person and activity, with dates. The most specific wins: project, then customer, role, person, activity; the latest start among equals. Each rate is chosen on its own.
@@ -233,7 +234,7 @@ For Projects Managers:
 ### 🔌 For other apps and agents
 
 - `GET /api/app/projects/work` feeds Ferrum Home's My work.
-- `GET /api/app/projects/tasks?project=` gives a project's tasks with the people on each and what each waits for. `GET /api/app/projects/time?task=` gives the time logged on a task. Both read with the caller's rights.
+- `GET /api/app/projects/tasks?project=` gives a project's tasks with the people on each and what each waits for. `GET /api/app/projects/time?task=` gives the time logged on a task, each line with its `day` (a date, where the workspace is) and, for time logged by the clock, `at` (its start). Both read with the caller's rights.
 - Every entity has Ferrum's REST and MCP API under each person's permissions, search, an audit trail, exports and live updates.
 - A small assistant note tells Ferrum's assistant what the records mean and suggests "Which tasks on my projects are overdue?", "How many hours were logged this week, by project?", "Which projects are over budget?" and "What time is not billed yet?".
 
@@ -478,6 +479,8 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
+The other test files use `FERRUM_PROJECTS2_TEST_DATABASE_URL`, `FERRUM_PROJECTS3_TEST_DATABASE_URL` and `FERRUM_PROJECTS5_TEST_DATABASE_URL`, each defaulting to `ferrum_projects<N>_test` on the same server and reset before it runs.
+
 The tests also build on [ferrum-app-erp](https://github.com/CBFerrum/ferrum-app-erp), which Cargo takes from GitHub. To work on both together, clone it next to this repository and patch it in `.cargo/config.toml` (git-ignored):
 
 ```toml
@@ -497,7 +500,7 @@ npm test
 
 With a development server started with `FERRUM_DEV_UI=1`, `ferrum-app dev --ui` serves the pages from Vite behind the real bar and session, with hot reload.
 
-`tests/` covers the rules end to end, upgrades from earlier packages (fixtures for 0.8.0 and 0.9.0) and what the portal role cannot read.
+`tests/` covers the rules end to end, loading earlier package versions (fixtures for 0.8.0 and 0.9.0) and what the portal role cannot read.
 
 ## 📂 Project layout
 
@@ -508,7 +511,7 @@ packages/projects/            entities, roles, approvals, seeded statuses
 packages/projects_erp/        invoicing fields, actions and permissions
 src/                          project, task, timesheet, billing, planning, templates, schedule, status, reports, endpoints
 ui/src/                       home, project (board, timeline, time), task, my work, planning; words in Arabic and Hindi
-tests/                        integration tests against a real PostgreSQL, with upgrade fixtures
+tests/                        integration tests against a real PostgreSQL, with fixtures of earlier packages
 ```
 
 ## 📜 Changelog
