@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.4
+
+Server only. Needs the same platform as 0.10.0. No interface or database change.
+
+- **Late and done on the workspace's day.** A task's late status on saving, the day it is completed on, the upkeep job that marks tasks overdue and the overdue counts of the task and portfolio overviews read the UTC day (the clock's, or the database's `current_date`). A workspace ahead of UTC saw yesterday's task still open for the first hours of its day; one behind it saw today's task overdue in its evening and a task finished then completed on tomorrow's date. All read the workspace's day now.
+
 ## 0.10.3
 
 Needs the same platform as 0.10.0. No database change. Interface only, `ui/dist` rebuilt with Ferrum-Frontend `06bd1a2`.
