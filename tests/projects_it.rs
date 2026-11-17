@@ -880,6 +880,58 @@ async fn scenario() {
 
     projects_alone(&k).await;
     far_from_utc(&k).await;
+    workspace_day(&k).await;
+}
+
+/// What Projects calls today is the workspace's day, never UTC's. No clock is set: the workspace sits in a zone whose day
+/// is not UTC's now, whatever the hour (Pago Pago before 10:00 UTC, Kiritimati after, as the platform's own suites do), so
+/// a day taken from UTC is a day out. A task due yesterday there is late and one due today is not: on saving, for the
+/// overdue job and in both reports; a task done is completed on the workspace's day.
+async fn workspace_day(k: &Arc<Kernel>) {
+    use chrono::Timelike;
+    let zone = if chrono::Utc::now().hour() < 10 { "Pacific/Pago_Pago" } else { "Pacific/Kiritimati" };
+    let tenant = k
+        .create_tenant(NewTenant {
+            slug: "faraway".into(),
+            name: "Far Away".into(),
+            admin_email: "admin@faraway.test".into(),
+            admin_password: "Correct-Horse-9".into(),
+            admin_name: None,
+            packages: vec!["projects".into()],
+            settings: Some(json!({"timezone": zone})),
+        })
+        .await
+        .expect("tenant");
+    let session = k.login("faraway", "admin@faraway.test", "Correct-Horse-9").await.expect("login");
+    let ctx = k.load_ctx(tenant, session.user, Some(session.token_version), "it".into()).await.expect("ctx");
+    let today = ctx.today();
+    assert_ne!(today, chrono::Utc::now().date_naive(), "{zone}'s day is not UTC's");
+    let u = U { k: k.clone(), ctx };
+    let usd = u.find_one("Currency", json!({"code": "USD"})).await;
+    let company = u.insert("Company", json!({"company_name": "Far Away", "abbr": "FA", "default_currency": usd["id"]})).await;
+    let project = u.insert("Project", json!({"project_name": "Night Shift", "company": company["id"]})).await;
+    let task = |subject: &str, end: chrono::NaiveDate| json!({"subject": subject, "project": project["id"], "exp_end_date": end.to_string()});
+    let (late, due) = (u.insert("Task", task("Late", today - Duration::days(1))).await, u.insert("Task", task("Due", today)).await);
+    assert_eq!((late["status"].clone(), due["status"].clone()), (json!("Overdue"), json!("Open")), "late on saving, on the workspace's day");
+    let mut tx = k.db.tenant_tx(tenant).await.unwrap();
+    sqlx::query(
+        "update e_task t set task_status = s.id, status = 'Open' from e_task_status s where t.tenant_id = $1 and s.tenant_id = $1 and s.status_name = 'Open'",
+    )
+    .bind(tenant)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    ferrum_app_projects::maintenance(k).await.expect("maintenance");
+    let status = |t: &Doc| u.get("Task", uid(t));
+    assert_eq!((status(&late).await["status"].clone(), status(&due).await["status"].clone()), (json!("Overdue"), json!("Open")), "the overdue job");
+    let co = ("company", company["id"].as_str().unwrap().to_string());
+    let tasks = u.report("task_overview", std::slice::from_ref(&co)).await.expect("task overview");
+    assert_eq!((tasks["totals"]["overdue"].clone(), tasks["meta"]["as_of"].clone()), (json!(1), json!(today.to_string())), "{tasks}");
+    let portfolio = u.report("portfolio_overview", std::slice::from_ref(&co)).await.expect("portfolio overview");
+    assert_eq!(portfolio["rows"][0]["overdue"], json!(1), "{portfolio}");
+    let done = u.update("Task", uid(&due), json!({"status": "Completed"})).await;
+    assert_eq!(done["completed_on"], json!(today.to_string()), "completed on the workspace's day");
 }
 
 /// A workspace five and a half hours ahead of UTC (Kolkata): time started at 03:00 on a Monday there is that Monday's, not

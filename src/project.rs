@@ -4,7 +4,7 @@
 use crate::logic::{CANCELLED, CLOSED_PROJECT, DONE, STARTED, dependency_cycle, weighted_progress};
 use crate::{lock, unknown_users};
 use async_trait::async_trait;
-use chrono::{NaiveDate, Utc};
+use chrono::NaiveDate;
 use ferrum_domain::util::{b, d, elevated, get, id, money, rows, s, set, sys};
 use ferrum_kernel::{Ctx, Doc, DocHook, Error, FieldError, HookCtx, Kernel, Result, Tx};
 use rust_decimal::Decimal;
@@ -260,7 +260,7 @@ pub struct TaskHook;
 #[async_trait]
 impl DocHook for TaskHook {
     async fn before_validate(&self, hc: &mut HookCtx<'_>, doc: &mut Doc) -> Result<()> {
-        let today = Utc::now().date_naive();
+        let today = hc.ctx.today();
         // The status from the project's workflow; a late one follows the dates both ways.
         if let Some(project) = id(doc, "project")
             && let Some(project) = try_get(hc.kernel, hc.ctx, hc.tx, "Project", project).await?

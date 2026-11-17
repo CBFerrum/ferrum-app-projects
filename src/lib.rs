@@ -99,7 +99,7 @@ async fn mark_overdue(k: &Kernel, tenant: Uuid) -> Result<u64> {
          (select 1 from e_project p where p.tenant_id = t.tenant_id and p.id = t.project and p.status in ('Completed', 'Cancelled'))",
     )
     .bind(tenant)
-    .bind(chrono::Utc::now().date_naive())
+    .bind(ctx.today())
     .execute(&mut *tx)
     .await?
     .rows_affected();
