@@ -71,7 +71,6 @@ async fn fresh_kernel() -> Arc<Kernel> {
     }
     let k = Kernel::boot(db, catalog, hooks, KernelSettings::default(), None).await.expect("boot");
     ferrum_domain::maintenance(&k).await.expect("domain maintenance");
-    ferrum_app_erp::maintenance(&k).await.expect("domain maintenance");
     k
 }
 
@@ -661,9 +660,9 @@ async fn scenario() {
     let mut tx = k.db.tenant_tx(tenant).await.unwrap();
     sqlx::query("update e_task set exp_end_date = $3 where tenant_id = $1 and id = $2").bind(tenant).bind(late).bind(d3).execute(&mut *tx).await.unwrap();
     tx.commit().await.unwrap();
-    ferrum_app_projects::maintenance(&k).await.expect("maintenance");
+    ferrum_app_projects::maintenance(&k, tenant).await.expect("maintenance");
     assert_eq!(pm.get("Task", late).await["status"], json!("Overdue"));
-    ferrum_app_projects::maintenance(&k).await.expect("maintenance is idempotent");
+    ferrum_app_projects::maintenance(&k, tenant).await.expect("maintenance is idempotent");
     assert_eq!(pm.get("Task", late).await["status"], json!("Overdue"));
     assert_eq!(pm.get("Task", design).await["status"], json!("Completed"), "closed tasks are left alone");
 
@@ -859,11 +858,11 @@ async fn scenario() {
             "exp_start_date": (today - Duration::days(1)).to_string(), "exp_end_date": today.to_string(), "assigned_to": [{"user": "alice@acme.test"}]}),
         )
         .await;
-    ferrum_app_projects::maintenance(&k).await.expect("maintenance");
+    ferrum_app_projects::maintenance(&k, tenant).await.expect("maintenance");
     let next = pm.find_one("Task", json!({"repeated_from": weekly["id"]})).await;
     assert_eq!((next["subject"].as_str(), next["exp_end_date"].as_str()), (Some("Status report"), Some((today + Duration::days(7)).to_string().as_str())));
     assert_eq!(pm.get("Task", uid(&next)).await["assigned_to"][0]["user"], json!("alice@acme.test"), "the same people");
-    ferrum_app_projects::maintenance(&k).await.expect("a second run");
+    ferrum_app_projects::maintenance(&k, tenant).await.expect("a second run");
     pm.find_one("Task", json!({"repeated_from": weekly["id"]})).await;
     let mut tx = k.db.tenant_tx(tenant).await.unwrap();
     sqlx::query("update e_task set exp_end_date = $2, exp_start_date = $2 where tenant_id = $1 and id = $3")
@@ -874,7 +873,7 @@ async fn scenario() {
         .await
         .unwrap();
     tx.commit().await.unwrap();
-    ferrum_app_projects::maintenance(&k).await.expect("maintenance");
+    ferrum_app_projects::maintenance(&k, tenant).await.expect("maintenance");
     let q = ListQuery { filters: ferrum_kernel::query::parse_filters(&json!({"subject": "Status report"})).unwrap(), ..Default::default() };
     assert_eq!(k.list(&pm.ctx, "Task", &q).await.unwrap().rows.len(), 3, "the next from the latest, once");
 
@@ -922,7 +921,7 @@ async fn workspace_day(k: &Arc<Kernel>) {
     .await
     .unwrap();
     tx.commit().await.unwrap();
-    ferrum_app_projects::maintenance(k).await.expect("maintenance");
+    ferrum_app_projects::maintenance(k, tenant).await.expect("maintenance");
     let status = |t: &Doc| u.get("Task", uid(t));
     assert_eq!((status(&late).await["status"].clone(), status(&due).await["status"].clone()), (json!("Overdue"), json!("Open")), "the overdue job");
     let co = ("company", company["id"].as_str().unwrap().to_string());
