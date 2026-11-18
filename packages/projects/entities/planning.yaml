@@ -62,8 +62,10 @@
     - {name: decided_at, type: datetime, read_only: true, no_copy: true}
     - {name: decision_note, type: text, read_only: true, no_copy: true}
   actions:
-    - {name: approve, label: Approve, permission: submit, condition: "doc.docstatus == 1 && doc.decision == 'Pending'", params: [{name: note, type: text, label: Note}]}
-    - {name: reject, label: Reject, permission: submit, condition: "doc.docstatus == 1 && doc.decision == 'Pending'", params: [{name: note, type: text, label: Note}]}
+    - {name: approve, label: Approve, permission: submit, condition: "doc.docstatus == 1 && doc.decision == 'Pending'", params: [{name: note, type: text, label: Note}],
+       contract: {returns: {type: object, properties: {decision: {type: string}}}, completion: "The change request is Approved and the project's plan moved by its effects, the first plan kept as its baseline"}}
+    - {name: reject, label: Reject, permission: submit, condition: "doc.docstatus == 1 && doc.decision == 'Pending'", params: [{name: note, type: text, label: Note}],
+       contract: {returns: {type: object, properties: {decision: {type: string}}}, completion: "The change request is Rejected; the project is unchanged"}}
   list: {columns: [number, title, project, decision, hours_impact, days_impact], sort: created_at desc}
 
 - name: ResourceAllocation

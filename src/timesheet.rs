@@ -530,8 +530,8 @@ pub(crate) fn week_start(day: NaiveDate, starts_on: u32) -> NaiveDate {
 
 /// Upkeep: from the reminder day of a week on (Projects Settings), each person with hours a week on
 /// their Person record whose time that week (on timesheets not cancelled) is short of them is told,
-/// once a week. The mark and the message are one transaction, and the mark is taken by an update
-/// that only one run can make, so replicas running at once never tell anyone twice. Who has recorded
+/// once a week. The mark and the message are one transaction, and the mark is set under the person's
+/// row lock after reading it again, so replicas running at once never tell anyone twice. Who has recorded
 /// nothing at all is found here, by a query: an automation cannot ask for people with no record.
 pub(crate) async fn remind_missing_time(k: &Kernel, tenant: Uuid) -> Result<usize> {
     let ctx = Ctx::system(tenant, k.registry.schema(tenant).await?);
@@ -555,7 +555,7 @@ pub(crate) async fn remind_missing_time(k: &Kernel, tenant: Uuid) -> Result<usiz
            where t.tenant_id = p.tenant_id and lower(t.\"user\") = lower(p.\"user\") and t.docstatus < 2 \
              and l.day between $2 and $2 + 6), 0) \
          from e_project_person p join app_user u on u.tenant_id = p.tenant_id and lower(u.email) = lower(p.\"user\") and u.is_active \
-         where p.tenant_id = $1 and p.weekly_hours > 0 and p.reminded_week is distinct from $2",
+         where p.tenant_id = $1 and p.weekly_hours > 0 and p.reminded_week is distinct from $2 order by p.id",
     )
     .bind(tenant)
     .bind(week)
@@ -563,16 +563,17 @@ pub(crate) async fn remind_missing_time(k: &Kernel, tenant: Uuid) -> Result<usiz
     .await?;
     let mut told = 0;
     for (person, email, expected, hours) in short.into_iter().filter(|(_, _, expected, hours)| hours < expected) {
-        let marked = sqlx::query("update e_project_person set reminded_week = $3 where tenant_id = $1 and id = $2 and reminded_week is distinct from $3")
+        crate::lock(&mut tx, "e_project_person", tenant, &[person]).await?;
+        let reminded: Option<Option<NaiveDate>> = sqlx::query_scalar("select reminded_week from e_project_person where tenant_id = $1 and id = $2")
             .bind(tenant)
             .bind(person)
-            .bind(week)
-            .execute(&mut *tx)
-            .await?
-            .rows_affected();
-        if marked == 0 {
+            .fetch_optional(&mut *tx)
+            .await?;
+        let Some(reminded) = reminded else { continue };
+        if reminded == Some(week) {
             continue;
         }
+        k.set_values_tx(&ctx, &mut tx, "ProjectPerson", person, Doc::from_iter([("reminded_week".to_string(), json!(week.to_string()))])).await?;
         let mut values = serde_json::Map::new();
         values.insert("week_start".into(), json!(week.to_string()));
         values.insert("hours".into(), json!(hours.normalize().to_string()));

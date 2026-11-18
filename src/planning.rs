@@ -2,8 +2,8 @@
 //!
 //! A change request is decided by someone other than whoever raised it, and once approved moves its
 //! project's plan by its effects, the plan as it was first kept as the project's baseline. A repeating task makes its
-//! next occurrence when it falls due: its key (the task it came from, and the day) keeps replicas
-//! running at once, or a run repeated, from making it twice.
+//! next occurrence when it falls due: the source task's lock, a re-check under it and the unique key on
+//! `repeated_from` keep replicas running at once, or a run repeated, from making it twice.
 
 use async_trait::async_trait;
 use chrono::{Datelike, Months, NaiveDate, Utc};
@@ -159,6 +159,15 @@ pub async fn repeat_tasks(k: &Kernel, ctx: &Ctx, today: NaiveDate) -> Result<usi
 async fn repeat_task(k: &Kernel, ctx: &Ctx, task: Uuid) -> Result<bool> {
     let mut tx = k.db.tenant_tx(ctx.tenant).await?;
     let doc = k.get_tx(ctx, &mut tx, "Task", task, true).await?;
+    // Under the source's lock: another run that made its occurrence meanwhile has committed it.
+    let made: bool = sqlx::query_scalar("select exists (select 1 from e_task where tenant_id = $1 and repeated_from = $2)")
+        .bind(ctx.tenant)
+        .bind(task)
+        .fetch_one(&mut *tx)
+        .await?;
+    if made {
+        return Ok(false);
+    }
     let (Some(repeat), Some(end)) = (s(&doc, "repeat"), s(&doc, "exp_end_date").and_then(|d| parse_date(d).ok())) else { return Ok(false) };
     let Some(next_end) = next_day(end, repeat) else { return Ok(false) };
     if s(&doc, "repeat_until").and_then(|d| parse_date(d).ok()).is_some_and(|until| next_end > until) {

@@ -121,7 +121,7 @@ describe("the timeline", () => {
 import { Route, Routes } from "react-router";
 import { ProjectsHome } from "./Home";
 import { MyWork } from "./MyWork";
-import { Planning } from "./Planning";
+import { Drawer, Planning } from "./Planning";
 import { ProjectPage } from "./Project";
 import { TaskRoute } from "./Task";
 import { todayIso } from "@ferrum/client";
@@ -252,6 +252,15 @@ describe("home, a project and a plate", () => {
     qc.setQueryData(["projects", "named"], [{ id: "p1", project_name: "Website", end_date: day(30), proj_project_manager: "asha@acme.test" }]);
     html = page(qc, <Planning />, "/plan?tab=portfolios", "/plan");
     for (const t of ["Client work", "Website", "4/10", "Every project"]) expect(html).toContain(t);
+  });
+
+  it("a person's week says what task estimates add to it", () => {
+    const qc = seeded();
+    const monday = weekStart(todayIso());
+    qc.setQueryData(["projects", "allocations", "asha@acme.test", monday], []);
+    const week = (fromTasks: number) => page(qc, <Drawer person="asha@acme.test" week={monday} name="Asha Rao" fromTasks={fromTasks} onClose={() => {}} onEdit={() => {}} onAdd={() => {}} />, "/plan", "/plan");
+    expect(week(6)).toContain("6 h from task estimates");
+    expect(week(0)).not.toContain("from task estimates");
   });
 
   it("planning says it is for planners when the person cannot read everyone's allocations", () => {

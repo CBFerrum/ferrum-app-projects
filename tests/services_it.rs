@@ -102,6 +102,10 @@ impl U {
         assert_eq!(rows.len(), 1, "{entity} {filters}");
         rows[0].clone()
     }
+    async fn report(&self, name: &str, params: &[(&str, String)]) -> Result<Value> {
+        let p: HashMap<String, String> = params.iter().map(|(k, v)| (k.to_string(), v.clone())).collect();
+        ferrum_domain::reports::run(&self.k, &self.ctx, name, &p).await
+    }
     /// A board's tasks through the app's endpoint, read with the caller's rights.
     async fn board(&self, project: Uuid) -> Vec<String> {
         let site = self.k.hooks.site("projects").expect("projects' endpoints").clone();
@@ -179,6 +183,7 @@ async fn world() -> World {
 async fn scenario() {
     let w = world().await;
     teams(&w).await;
+    reports_keep_to_the_callers_rows(&w).await;
     statuses(&w).await;
     weekly_time(&w).await;
     templates(&w).await;
@@ -255,6 +260,45 @@ async fn teams(w: &World) {
     assert!(denied(&mia.try_get("Project", secret).await));
     // What she made is still hers (she is its creator).
     assert_eq!(mia.get("Task", uid(&mine)).await["subject"], json!("Invite the press"));
+}
+
+/// A report shows only rows the caller may read: a private project's team sees it in the portfolio, nobody
+/// else does; a Projects User sees their own planned hours, not everyone's; someone without a Projects role
+/// runs none of the three.
+async fn reports_keep_to_the_callers_rows(w: &World) {
+    let (pm, nora, vic) = (&w.users["pm"], &reload(&w.users["nora"]).await, &reload(&w.users["vic"]).await);
+    let co = ("company", w.cid.clone());
+    let projects = |r: &Value| -> Vec<String> { r["rows"].as_array().unwrap().iter().map(|r| r["project"].as_str().unwrap().to_string()).collect() };
+    let hers = nora.report("portfolio_overview", std::slice::from_ref(&co)).await.expect("Nora's portfolio");
+    assert!(!projects(&hers).iter().any(|p| p == "Secret"), "Nora is on no team: {hers}");
+    assert!(projects(&hers).iter().any(|p| p == "Open House"), "an open project is hers to read: {hers}");
+    let his = vic.report("portfolio_overview", std::slice::from_ref(&co)).await.expect("Vic's portfolio");
+    assert!(projects(&his).iter().any(|p| p == "Secret"), "Vic is on Secret's team: {his}");
+
+    // Mia planned onto an open project for a week: hers to see, not Nora's.
+    let open = uid(&pm.insert("Project", json!({"project_name": "Allocated", "company": w.cid})).await);
+    let monday = chrono::NaiveDate::from_ymd_opt(2027, 3, 1).unwrap();
+    pm.insert(
+        "ResourceAllocation",
+        json!({"person": "mia@acme.test", "project": open.to_string(), "from_date": monday.to_string(),
+               "to_date": (monday + Duration::days(4)).to_string(), "hours_per_day": "8"}),
+    )
+    .await;
+    let week = [co.clone(), ("from_date", monday.to_string()), ("to_date", (monday + Duration::days(6)).to_string())];
+    let people = |r: &Value| -> Vec<String> { r["rows"].as_array().unwrap().iter().map(|r| r["person"].as_str().unwrap().to_string()).collect() };
+    let load = nora.report("workload", &week).await.expect("Nora's workload");
+    assert!(!people(&load).contains(&"mia@acme.test".to_string()), "not Nora's to read: {load}");
+    let mia = &reload(&w.users["mia"]).await;
+    let load = mia.report("workload", &week).await.expect("Mia's workload");
+    assert_eq!(people(&load), ["mia@acme.test"], "{load}");
+
+    // Without a Projects role, none of the three.
+    let guest = w.admin.k.create_user(&w.admin.ctx, "guest@acme.test", "guest", Some("Correct-Horse-9"), &[], false).await.expect("guest");
+    let guest = U { k: w.admin.k.clone(), ctx: w.admin.k.load_ctx(w.admin.ctx.tenant, guest, None, "it".into()).await.expect("guest ctx") };
+    for name in ["portfolio_overview", "workload", "project_profitability"] {
+        let r = guest.report(name, &week).await;
+        assert!(matches!(r, Err(Error::Forbidden(_))), "{name}: {r:?}");
+    }
 }
 
 /// PJ-04: statuses are records with a category, chosen from the project's workflow (its own, else
@@ -414,6 +458,12 @@ async fn weekly_time(w: &World) {
     assert_eq!(told().await, ["mia@acme.test", "vic@acme.test"], "Mia has 10.5 of 40, Vic nothing of 8; Nora has her hour");
     ferrum_app_projects::maintenance(&admin.k, admin.ctx.tenant).await.expect("upkeep again");
     assert_eq!(told().await.len(), 2, "once a week");
+    // Two upkeeps at the same moment (two replicas) tell a person newly short of their hours once.
+    pm.insert("ProjectPerson", json!({"user": "lead@acme.test", "weekly_hours": "5"})).await;
+    let (a, b) = tokio::join!(ferrum_app_projects::maintenance(&admin.k, admin.ctx.tenant), ferrum_app_projects::maintenance(&admin.k, admin.ctx.tenant));
+    a.expect("upkeep");
+    b.expect("upkeep at once");
+    assert_eq!(told().await, ["lead@acme.test", "mia@acme.test", "vic@acme.test"], "once, however many run");
 }
 
 /// PJ-01: a project saved as a template keeps its tree, dependencies, estimates and team, dates as

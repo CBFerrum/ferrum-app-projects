@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.11.3
+
+Package `projects` 0.5.3, connector `projects-erp` 0.3.1 (each action's contract). Needs the same platform as 0.11.0.
+No interface or database change.
+
+- **Every action says what it returns and what done means.** Complete Project, Save as Template, Create Project,
+  Create Milestone Invoice, Start Timer, Stop Timer, Approve, Reject and the two Create Sales Invoice actions are in
+  the catalog with the shape of their answer and a sentence saying what is true when they report done. Nothing
+  else changes: who may run them, what they ask for and what they do are as before. Run through the gate with one
+  key twice, an action is answered the second time, not run again.
+
+## 0.11.2
+
+Package `projects` 0.5.2 (a field's description). Needs the same platform as 0.11.0. `ui/dist` rebuilt with Ferrum-Frontend `5e2661f`.
+
+- **Reports show only what you may read.** The portfolio overview and project profitability list only projects you
+  may open: someone who is not on a private project's team no longer sees its name, task counts, risks and issues
+  there. The workload shows a Projects User their own planned hours, not everyone's; a planner still sees everyone.
+  Someone without a Projects role runs none of the three.
+- **Capacity is each person's own week.** The workload weighs a person against the hours a week on their Person
+  record, spread over the working days of the week on the calendar (a holiday lowers it); someone without one, or
+  with 0, against the report's hours a day (8 unless asked), as before. `meta.capacity` says `person`.
+- **Task estimates count.** A task's estimate is spread over the working days from its start to its end and shared
+  by its people; it adds to their planned hours (`task_hours`, the new column "From Task Estimates"). A person whose
+  allocation names the task has it planned there instead, not twice. Cancelled tasks and tasks without both dates
+  add nothing. A person's week on the capacity tab says how much comes from task estimates.
+- **Profitability without ERP.** With Projects alone the report no longer reads invoices or the ledger: billed
+  revenue and expenses are 0, and `meta.ledger` is `false`.
+
+## 0.11.1
+
+Package `projects` 0.5.1 (a unique key on `Task.repeated_from`). Needs the same platform as 0.11.0. No interface change.
+
+- **A task upkeep marks late is in its history.** Upkeep moves a task to its late status by saving it as the system, as a
+  person's save would: the task gets a new version, a line in its history (shown as "Ferrum") and a `Task.updated`
+  event, so webhooks and automations on that event hear of it and a form opened before the move is refused as stale.
+  It moves each task once however many replicas run upkeep, and never over a status a person set meanwhile.
+- **A late status outside the project's workflow no longer applies from upkeep.** Upkeep used to move a task to its
+  status's late status even when the project's workflow does not hold it, which no save ever did. It now follows the
+  save's rule: such a task stays where it is.
+- **What an invoice bills says so on the record it billed.** Submitting an invoice adds a line `billed` to each
+  timesheet whose time it bills (with the invoice and the time logs) and `milestone_billed` to each milestone (with the
+  invoice and the amount); cancelling it adds `unbilled` and `milestone_unbilled`. The line's author is whoever submitted
+  or cancelled the invoice. A completed project's last milestone is still invoiced as before.
+- **A repeating task makes one next occurrence.** Two upkeeps at the same moment could each make it. The second now
+  finds the first's under the task's lock, and the database refuses a second occurrence of one task. A workspace that
+  already holds two (only possible after such a race) fails the package update with "rows already repeat a value"; find
+  them with `select repeated_from, count(*) from e_task where repeated_from is not null group by 1 having count(*) > 1`
+  and delete the extra one first.
+- The weekly reminder of missing time takes its once-a-week mark under the person's row lock; nothing changes for a person.
+
 ## 0.11.0
 
 No database or interface change. Needs Ferrum 0.4.0 (apps' upkeep runs one workspace at a time, on whichever replica is free).

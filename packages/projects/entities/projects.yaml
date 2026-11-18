@@ -134,6 +134,8 @@
   company_scoped: true
   numbering: {template: "TASK-{seq:5}"}
   owner_fields: [assigned_to.user]
+  # One next occurrence per repeating task, whoever makes it (tasks that repeat nothing are not compared).
+  unique: [[repeated_from]]
   fields:
     - {name: subject, type: data, required: true, in_list: true}
     - {name: project, type: link, to: Project, required: true, in_list: true, in_filter: true}
@@ -175,7 +177,8 @@
   rules:
     - {name: expected_dates, check: "doc.exp_end_date == null || doc.exp_start_date == null || doc.exp_end_date >= doc.exp_start_date", message: "Expected end date is before the expected start date"}
   actions:
-    - {name: make_milestone_invoice, label: Create Milestone Invoice, permission: read, condition: "doc.is_milestone && doc.billing_percent > 0.0", confirm: "Create a draft sales invoice for this milestone's share of the contract value?"}
+    - {name: make_milestone_invoice, label: Create Milestone Invoice, permission: read, condition: "doc.is_milestone && doc.billing_percent > 0.0", confirm: "Create a draft sales invoice for this milestone's share of the contract value?",
+       contract: {returns: {type: object, properties: {entity: {type: string}, id: {type: string, format: uuid}, number: {type: [string, "null"]}}}, completion: "A draft sales invoice bills the milestone's share of the contract value; the milestone is marked billed only when that invoice is submitted"}}
   list: {columns: [number, subject, project, status, exp_end_date, progress], sort: created_at desc}
 
 - name: TimesheetDetail
@@ -232,8 +235,10 @@
   actions:
     - {name: start_timer, label: Start Timer, docstatus: [0], permission: write,
        params: [{name: activity_type, type: link, to: ActivityType, label: Activity Type, required: true}, {name: project, type: link, to: Project, label: Project},
-                {name: task, type: link, to: Task, label: Task}, {name: description, type: text, label: Description}]}
-    - {name: stop_timer, label: Stop Timer, docstatus: [0], permission: write}
+                {name: task, type: link, to: Task, label: Task}, {name: description, type: text, label: Description}],
+       contract: {returns: {type: object, properties: {running: {type: boolean}, hours_added: {type: string}}}, completion: "A timer runs on today's line for the activity, project and task; a timer that was running is stopped and its time added"}}
+    - {name: stop_timer, label: Stop Timer, docstatus: [0], permission: write,
+       contract: {returns: {type: object, properties: {running: {type: boolean}, hours_added: {type: string}}}, completion: "No timer runs on the timesheet; the time since it started is added to its line"}}
   list: {columns: [number, user, week_start, start_date, total_hours, status], sort: start_date desc}
 
 - name: ProjectPerson
@@ -245,7 +250,7 @@
   fields:
     - {name: user, type: email, required: true, unique: true, in_list: true}
     - {name: manager, type: email, in_list: true, description: Approves the person's timesheets when Projects Settings says the person's manager does}
-    - {name: weekly_hours, type: decimal, min: "0", max: "168", in_list: true, label: Hours a Week, description: "Reminded when a week's recorded time falls short of these; empty or 0: never"}
+    - {name: weekly_hours, type: decimal, min: "0", max: "168", in_list: true, label: Hours a Week, description: "The hours they work a week: their capacity in the workload, and what a week's recorded time is checked against for the reminder; empty or 0: the workload takes the report's hours a day, and they are never reminded"}
     - {name: reminded_week, type: date, read_only: true, no_copy: true, description: The last week they were reminded of}
   list: {columns: [user, manager, weekly_hours], sort: user asc}
 
