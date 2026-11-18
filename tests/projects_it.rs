@@ -910,12 +910,68 @@ async fn scenario() {
     let h = pm.get("Task", handover).await;
     assert_eq!((h["sales_invoice"].clone(), dec(&h["billed_amount"])), (json!(last_si.to_string()), n("1000")));
 
+    actions_keep_their_promises(&k, pm, alice, erp, web).await;
+
     projects_alone(&k).await;
     far_from_utc(&k).await;
     workspace_day(&k).await;
     overdue_upkeep_is_on_the_record(&k).await;
     two_upkeeps_at_once(&k).await;
     capacity_is_each_persons_own(&k).await;
+}
+
+/// Each of Projects' actions is in the catalog with what it returns and what done means, and an agent's repeat with
+/// the same key is answered, not run twice.
+async fn actions_keep_their_promises(k: &Arc<Kernel>, pm: &U, alice: &U, erp: Uuid, web: Uuid) {
+    use ferrum_kernel::capability::Invocation;
+    let catalog = k.catalog(&pm.ctx);
+    let record = ["entity", "id", "number"];
+    let timer = ["hours_added", "running"];
+    let decision = ["decision"];
+    let promised: [(&str, &[&str]); 10] = [
+        ("projects.project.complete", &["cancelled_tasks", "status"]),
+        ("projects.project.save_as_template", &["entity", "id", "number", "tasks"]),
+        ("projects.project.create_from_template", &["entity", "id", "number", "tasks"]),
+        ("projects.task.make_milestone_invoice", &record),
+        ("projects.timesheet.start_timer", &timer),
+        ("projects.timesheet.stop_timer", &timer),
+        ("projects.change_request.approve", &decision),
+        ("projects.change_request.reject", &decision),
+        ("projects_erp.project.make_sales_invoice", &["entity", "id", "logs", "number"]),
+        ("projects_erp.timesheet.make_sales_invoice", &["entity", "id", "logs", "number"]),
+    ];
+    for (id, keys) in promised {
+        let c = catalog.iter().find(|c| c.id == id).unwrap_or_else(|| panic!("{id} is in the catalog"));
+        assert_eq!(serde_json::to_value(c.effect).unwrap(), json!("transactional_action"), "{id}");
+        assert!(!c.completion.trim().is_empty(), "{id} says what done means");
+        let mut got: Vec<String> = c.output["properties"].as_object().map(|o| o.keys().cloned().collect()).unwrap_or_default();
+        got.sort();
+        assert_eq!(got, keys, "{id} returns");
+    }
+    let rights = |id: &str| catalog.iter().find(|c| c.id == id).unwrap().permissions.clone();
+    assert_eq!(rights("projects.project.complete"), ["Project:write"]);
+    assert_eq!(rights("projects.change_request.approve"), ["ChangeRequest:submit"]);
+
+    // The way an agent invoices a milestone: one draft, however often it asks with one key.
+    let m = uid(&pm.insert("Task", json!({"subject": "Training", "project": erp.to_string(), "is_milestone": true, "billing_percent": "10"})).await);
+    let drafts = || async {
+        let q = ListQuery { filters: ferrum_kernel::query::parse_filters(&json!({"project": erp.to_string(), "docstatus": 0})).unwrap(), ..Default::default() };
+        k.list(&pm.ctx, "SalesInvoice", &q).await.unwrap().rows.len()
+    };
+    let before = drafts().await;
+    let ask = |task: Uuid| Invocation::new("projects.task.make_milestone_invoice", json!({"id": task.to_string()})).key("ms:1");
+    let first = k.invoke(&pm.ctx, ask(m)).await.expect("invoiced");
+    let again = k.invoke(&pm.ctx, ask(m)).await.expect("answered");
+    assert!(!first.repeated && again.repeated);
+    // The repeat's answer is not compared: the gate re-reads the receipt's record as a Task by the invoice's id
+    // (Ferrum crates/kernel/src/capability.rs:679-686), so it answers null; reported to the platform.
+    assert_eq!(drafts().await, before + 1, "one draft");
+    let hypercare = uid(&pm.find_one("Task", json!({"subject": "Hypercare"})).await);
+    let other = k.invoke(&pm.ctx, ask(hypercare)).await;
+    assert_eq!(other.as_ref().map_err(Error::code).unwrap_err(), "input_changed", "{other:?}");
+    // Alice may not make invoices, through the gate as on the page.
+    let r = k.invoke(&alice.ctx, Invocation::new("projects_erp.project.make_sales_invoice", json!({"id": web.to_string(), "params": {}})).key("alice:1")).await;
+    assert_eq!(r.as_ref().map_err(Error::code).unwrap_err(), "forbidden", "{r:?}");
 }
 
 /// The last line of a record's history.

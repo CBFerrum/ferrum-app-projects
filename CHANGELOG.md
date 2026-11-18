@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.11.3
+
+Package `projects` 0.5.3, connector `projects-erp` 0.3.1 (each action's contract). Needs the same platform as 0.11.0.
+No interface or database change.
+
+- **Every action says what it returns and what done means.** Complete Project, Save as Template, Create Project,
+  Create Milestone Invoice, Start Timer, Stop Timer, Approve, Reject and the two Create Sales Invoice actions are in
+  the catalog with the shape of their answer and a sentence saying what is true when they report done. Nothing
+  else changes: who may run them, what they ask for and what they do are as before. Run through the gate with one
+  key twice, an action is answered the second time, not run again.
+
 ## 0.11.2
 
 Package `projects` 0.5.2 (a field's description). Needs the same platform as 0.11.0. `ui/dist` rebuilt with Ferrum-Frontend `5e2661f`.
