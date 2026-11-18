@@ -1,5 +1,5 @@
 package: projects
-version: 0.5.3
+version: 0.6.0
 label: Projects
 description: Projects with task trees, dependencies and milestones, timesheets with costing and billing, activity rates, milestone and time-and-materials invoicing, and project profitability.
 # Projects and customers are shared records; invoicing through ERP comes with the projects_erp
@@ -44,6 +44,10 @@ overlays:
       - {op: add_action, action: {name: complete, label: Complete Project, permission: write, condition: "doc.status != 'Completed' && doc.status != 'Cancelled'", confirm: "Complete the project? With force, its open tasks are cancelled.",
                                   params: [{name: force, type: select, options: ["No", "Yes"], label: Cancel Its Open Tasks, description: "Yes cancels the open tasks first; No refuses while any is open"}],
                                   contract: {returns: {type: object, properties: {status: {type: string}, cancelled_tasks: {type: integer}}}, completion: "The project is Completed; with force, its open tasks were cancelled first, each by its own save"}}}
+      - {op: add_action, action: {name: set_baseline, label: Set Baseline, permission: write, condition: "!doc.proj_is_template",
+                                  params: [{name: name, type: data, label: Name, required: true, description: "What to call this baseline, once in the project"}],
+                                  contract: {returns: {type: object, properties: {entity: {type: string}, id: {type: string, format: uuid}, number: {type: [string, "null"]}, tasks: {type: integer}}},
+                                             completion: "A new baseline holds the project's plan figures and each task's dates and hours as they are now; the project and its tasks are unchanged"}}}
       - {op: add_action, action: {name: save_as_template, label: Save as Template, permission: write, condition: "!doc.proj_is_template",
                                   params: [{name: template_name, type: data, label: Template Name, required: true},
                                            {name: calendar, type: data, label: Business Calendar, description: "Count the tasks' days in its working days; empty: calendar days"}],
@@ -63,7 +67,7 @@ modules:
     label: Projects
     icon: briefcase
     order: 50
-    items: [Project, Task, Timesheet, ProjectRisk, ProjectIssue, ChangeRequest, ResourceAllocation, Portfolio, ActivityType, ActivityCost, RateCard, TaskStatus, TaskWorkflow, ProjectType, ProjectPerson, ProjectsSettings, report:project_profitability,
+    items: [Project, Task, Timesheet, ProjectRisk, ProjectIssue, ChangeRequest, ProjectBaseline, ResourceAllocation, Portfolio, ActivityType, ActivityCost, RateCard, TaskStatus, TaskWorkflow, ProjectType, ProjectPerson, ProjectsSettings, report:project_profitability,
             report:timesheet_summary, report:task_overview, report:workload, report:portfolio_overview]
 
 roles:
@@ -80,6 +84,8 @@ roles:
       - {entity: ProjectRisk, read: true, write: true, create: true, delete: true, export: true}
       - {entity: ProjectIssue, read: true, write: true, create: true, delete: true, export: true}
       - {entity: ChangeRequest, read: true, write: true, create: true, delete: true, submit: true, cancel: true, export: true, read_groups: [costing], write_groups: [costing]}
+      # A baseline is set by the project's action and never edited: nobody creates or writes one by hand.
+      - {entity: ProjectBaseline, read: true, delete: true, export: true}
       - {entity: ResourceAllocation, read: true, write: true, create: true, delete: true, export: true}
       - {entity: Portfolio, read: true, write: true, create: true, delete: true}
       - {entity: TaskStatus, read: true, write: true, create: true, delete: true}
@@ -103,6 +109,8 @@ roles:
       - {entity: ProjectIssue, read: true, write: true, create: true, via: project.proj_members.person}
       - {entity: ChangeRequest, read: true, write: true, create: true, submit: true, where: {project_private: false}}
       - {entity: ChangeRequest, read: true, write: true, create: true, submit: true, via: project.proj_members.person}
+      - {entity: ProjectBaseline, read: true, where: {project_private: false}}
+      - {entity: ProjectBaseline, read: true, via: project.proj_members.person}
       - {entity: ResourceAllocation, read: true, if_owner: true}
       - {entity: Portfolio, read: true}
       - {entity: Project, read: true, where: {proj_private: false}}
@@ -146,6 +154,7 @@ personal_data:
   - {entity: Timesheet, match: user, retain: "Billing records"}
   - {entity: ActivityCost, match: user, retain: "Costing records"}
   - {entity: ProjectPerson, match: user, retain: "Staffing records"}
+  - {entity: ProjectBaseline, match: taken_by, erase: [taken_by]}
   - {entity: RateCard, match: user, retain: "Costing records"}
 # What a workspace used to add by hand: a timesheet asks the approvers the app names (its projects' managers, or the
 # person's manager, as Projects Settings says; never the person themselves), and goes straight through when it names none.

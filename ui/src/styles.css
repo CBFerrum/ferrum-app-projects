@@ -1046,6 +1046,31 @@ button.pj-fold:hover {
   stroke-dasharray: 3 3;
 }
 
+/* The chosen baseline: a thin bar under each task's own, a hollow diamond under a milestone. */
+.pj-base {
+  position: absolute;
+  z-index: 2;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-strong);
+  pointer-events: none;
+}
+
+.pj-base-diamond {
+  position: absolute;
+  z-index: 2;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 2px;
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+
+.pj-namer .input {
+  width: 14rem;
+}
+
 .pj-ghost {
   position: absolute;
   z-index: 2;

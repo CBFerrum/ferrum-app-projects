@@ -40,12 +40,13 @@ fn task_label(number: Option<String>, subject: Option<String>) -> String {
 pub struct ProjectHook;
 
 /// The tables of the records that follow their project's privacy (`project_private`).
-const PRIVATE_TABLES: [(&str, &str); 5] = [
+const PRIVATE_TABLES: [(&str, &str); 6] = [
     ("Task", "e_task"),
     ("ProjectRisk", "e_project_risk"),
     ("ProjectIssue", "e_project_issue"),
     ("ChangeRequest", "e_change_request"),
     ("ResourceAllocation", "e_resource_allocation"),
+    ("ProjectBaseline", "e_project_baseline"),
 ];
 
 /// The records a customer's portal people reach by their project being shared: `(entity, table, the link to the project,
@@ -97,6 +98,7 @@ impl DocHook for ProjectHook {
         match name {
             "make_sales_invoice" => crate::billing::invoice_project(hc, doc, params).await.map(Some),
             "complete" => complete(hc, doc, params).await.map(Some),
+            "set_baseline" => crate::planning::take_baseline(hc, doc, params.get("name").and_then(Value::as_str).unwrap_or_default()).await.map(Some),
             "save_as_template" => crate::template::copy(hc, doc, true, params).await.map(Some),
             "create_from_template" => crate::template::copy(hc, doc, false, params).await.map(Some),
             _ => Ok(None),

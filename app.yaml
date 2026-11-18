@@ -1,6 +1,6 @@
 id: projects
 name: Projects
-version: 0.11.3
+version: 0.12.0
 publisher: cbferrum
 summary: Projects, task trees with dependencies, timesheets, time and milestone billing, profitability
 description: README.md

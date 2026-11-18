@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { addDays, dayNumber, diffDays, weekdaysIn, weekStart } from "./days";
 import type { Task } from "./plan";
-import { arrow, cascade, critical, dayAt, dayUnder, dragged, firstDates, header, length, links, outline, PX, spanOf, viewOf, weekends, writes } from "./schedule";
+import { arrow, cascade, critical, dayAt, dayUnder, dragged, firstDates, header, length, links, outline, PX, spanOf, variance, viewOf, weekends, writes } from "./schedule";
 
 const t = (id: string, start: string | null, end: string | null, extra: Partial<Task> = {}): Task => ({ id, number: id, status: "Open", exp_start_date: start, exp_end_date: end, ...extra });
 const after = (...ids: string[]) => ids.map((task) => ({ task }));
@@ -23,6 +23,16 @@ describe("days", () => {
     expect(weekdaysIn("2026-11-07", "2026-11-08")).toBe(0);
     expect(weekdaysIn("2026-11-06", "2026-11-09")).toBe(2);
     expect(weekdaysIn("2026-11-02", "2026-11-02")).toBe(1);
+  });
+});
+
+describe("against a baseline", () => {
+  it("counts the days a task ends after its baseline, before it as negative, and nothing without both", () => {
+    expect(variance("2026-11-20", "2026-11-18")).toBe(2);
+    expect(variance("2026-11-15", "2026-11-18")).toBe(-3);
+    expect(variance("2026-11-18", "2026-11-18")).toBe(0);
+    expect(variance(null, "2026-11-18")).toBeNull();
+    expect(variance("2026-11-18", undefined)).toBeNull();
   });
 });
 

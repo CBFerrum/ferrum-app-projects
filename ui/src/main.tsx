@@ -4,65 +4,14 @@
 // its records (timesheets, risks, activity types and costs) as lists and forms in the records frame,
 // with its modules in the sidebar under the platform's bar. Each screen loads when first opened.
 
-import { useEffect } from "react";
-import { Link, useRouteError } from "react-router";
-import { shell, t } from "@ferrum/client";
-import { EmptyState, ErrorState } from "@ferrum/kit";
-import { mountApp, RequireAuth, setFrameMode } from "@ferrum/records/frame";
-import { ProjectsHome } from "./Home";
+import { mountApp, setFrameMode } from "@ferrum/records/frame";
+import { PROJECTS_PACKAGES, routes } from "./routes";
 import "./styles.css";
-
-/** A page of the records frame, loaded when first opened. */
-const page = (name: "FormView" | "ListView" | "ReportView") => () =>
-  import("./records").then((m) => ({ Component: m[name] }));
-
-/** Projects' packages (and the shared projects): the sidebar shows their modules. */
-const PROJECTS_PACKAGES = ["projects", "projects_erp", "project_records"];
-
-function RouteError() {
-  return <ErrorState error={useRouteError()} onRetry={() => window.location.reload()} />;
-}
-
-function NotFound() {
-  return (
-    <EmptyState title={t("Page not found")}>
-      <Link to="/">{t("Go to the projects")}</Link>
-    </EmptyState>
-  );
-}
-
-/** Every page tells the shell it started. */
-function Started() {
-  useEffect(() => shell().ready(), []);
-  return null;
-}
 
 setFrameMode("app", PROJECTS_PACKAGES);
 
 mountApp({
   route: "projects",
   catalogs: { ar: () => import("./locales/ar.json"), hi: () => import("./locales/hi.json") },
-  routes: [
-    {
-      path: "/",
-      element: (
-        <>
-          <Started />
-          <RequireAuth />
-        </>
-      ),
-      errorElement: <RouteError />,
-      children: [
-        { index: true, element: <ProjectsHome /> },
-        { path: "p/:id", lazy: () => import("./Project").then((m) => ({ Component: m.ProjectPage })) },
-        { path: "t/:id", lazy: () => import("./Task").then((m) => ({ Component: m.TaskRoute })) },
-        { path: "my", lazy: () => import("./MyWork").then((m) => ({ Component: m.MyWork })) },
-        { path: "plan", lazy: () => import("./Planning").then((m) => ({ Component: m.Planning })) },
-        { path: "e/:entity", lazy: page("ListView") },
-        { path: "e/:entity/:id", lazy: page("FormView") },
-        { path: "r/:name", lazy: page("ReportView") },
-        { path: "*", element: <NotFound /> },
-      ],
-    },
-  ],
+  routes,
 });

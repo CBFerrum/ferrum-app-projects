@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.12.0
+
+Package `projects` 0.6.0: two new tables (`ProjectBaseline` and its lines, `BaselineTask`) and the action `Set Baseline`
+on Project (`projects.project.set_baseline`). Needs the same platform as 0.11.0. `ui/dist` rebuilt with Ferrum-Frontend `5e2661f`.
+
+- **Baselines on demand.** Someone who may change a project (its team's manager, a Projects Manager, or an agent
+  acting for them) sets a named baseline whenever they want: it keeps the project's dates, estimated hours and cost,
+  budget and contract value, and each task that is not cancelled with its dates, hours, whether it is a milestone and
+  whether it had sub-tasks. A baseline is never edited, and a name is used once in a project. A task deleted later
+  keeps its line. Whoever reads the project reads its baselines; a private project's stay its team's.
+- **The first approved change takes one.** Approving a project's first change request also sets a baseline named by
+  the request's number and title, with the plan as it was; the five baseline figures on the project stay as before.
+- **On the timeline.** The latest baseline (or the one picked in the toolbar, or none) is drawn as a thin bar under
+  each task, a hollow diamond under a milestone, and each task says how many days it ends after or before it.
+  **Set a baseline** is in the toolbar for those who may change the project.
+- A project baselined before this release has no baseline record; nothing is backfilled.
+
 ## 0.11.3
 
 Package `projects` 0.5.3, connector `projects-erp` 0.3.1 (each action's contract). Needs the same platform as 0.11.0.

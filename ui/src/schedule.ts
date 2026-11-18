@@ -110,6 +110,11 @@ export function weekends(v: View): { at: number; span: number }[] {
   return out;
 }
 
+/** How many days a task ends after its baseline's end (before it: negative); null when either is missing. */
+export function variance(end: string | null | undefined, base: string | null | undefined): number | null {
+  return end && base ? diffDays(base, end) : null;
+}
+
 /** Where a day falls in the view, in days from its start. */
 export const dayAt = (v: View, day: string): number => diffDays(v.from, day);
 

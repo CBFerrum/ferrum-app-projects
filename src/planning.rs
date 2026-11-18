@@ -7,7 +7,8 @@
 
 use async_trait::async_trait;
 use chrono::{Datelike, Months, NaiveDate, Utc};
-use ferrum_domain::util::{d, id, money, rows, s, sys};
+use ferrum_domain::flow::created;
+use ferrum_domain::util::{d, elevated, id, money, rows, s, sys};
 use ferrum_kernel::value::parse_date;
 use ferrum_kernel::{Ctx, Doc, DocHook, Error, HookCtx, Kernel, Result};
 use rust_decimal::Decimal;
@@ -80,6 +81,21 @@ async fn apply(hc: &mut HookCtx<'_>, cr: &Doc) -> Result<()> {
     let p = hc.kernel.get_tx(&sctx, hc.tx, "Project", project, true).await?;
     let mut v = Doc::new();
     if s(&p, "proj_baselined_on").is_none() {
+        // The plan as it was, task by task, named after the change; a name a person already used gets the change's id.
+        let label: String = [s(cr, "number"), s(cr, "title")].into_iter().flatten().collect::<Vec<_>>().join(" ").chars().take(140).collect();
+        let taken: bool = sqlx::query_scalar("select exists (select 1 from e_project_baseline where tenant_id = $1 and project = $2 and baseline_name = $3)")
+            .bind(hc.ctx.tenant)
+            .bind(project)
+            .bind(&label)
+            .fetch_one(&mut **hc.tx)
+            .await?;
+        let label = if taken {
+            let id = id(cr, "id").unwrap_or_default().simple().to_string();
+            format!("{} {}", label.chars().take(131).collect::<String>(), &id[..8])
+        } else {
+            label
+        };
+        take_baseline(hc, &p, &label).await?;
         for (baseline, from) in [
             ("proj_baseline_end_date", "end_date"),
             ("proj_baseline_hours", "proj_estimated_hours"),
@@ -118,6 +134,61 @@ async fn apply(hc: &mut HookCtx<'_>, cr: &Doc) -> Result<()> {
     v.insert("proj_approved_changes".into(), json!(approved + 1));
     hc.kernel.update_tx(&sctx, hc.tx, "Project", project, v, None).await?;
     Ok(())
+}
+
+/// The most tasks a baseline holds (a record's lines are capped above it).
+const BASELINE_TASKS: usize = 5000;
+
+/// A new baseline of `project`: its plan figures and each task that is not cancelled, with its dates and hours, as
+/// they stand now. Taken under the project's row lock, which every task save's roll-up takes, so no task moves
+/// between reading and writing; inserted with the engine's rights (nobody may make one by hand), named once in its
+/// project (a unique key).
+pub(crate) async fn take_baseline(hc: &mut HookCtx<'_>, project: &Doc, name: &str) -> Result<Value> {
+    let name = name.trim();
+    if name.is_empty() || name.chars().count() > 140 {
+        return Err(Error::field("name", "give the baseline a name of up to 140 characters"));
+    }
+    let pid = id(project, "id").ok_or_else(|| Error::internal("a project without an id"))?;
+    crate::lock(hc.tx, "e_project", hc.ctx.tenant, &[pid]).await?;
+    let rows: Vec<(Uuid, Option<String>, Option<NaiveDate>, Option<NaiveDate>, Option<Decimal>, bool, bool)> = sqlx::query_as(
+        "select t.id, t.subject, t.exp_start_date, t.exp_end_date, t.expected_hours, coalesce(t.is_milestone, false), \
+         exists (select 1 from e_task c where c.tenant_id = t.tenant_id and c.parent_task = t.id and c.status_category is distinct from 'Cancelled') \
+         from e_task t where t.tenant_id = $1 and t.project = $2 and t.status_category is distinct from 'Cancelled' order by t.number, t.id limit $3",
+    )
+    .bind(hc.ctx.tenant)
+    .bind(pid)
+    .bind(BASELINE_TASKS as i64 + 1)
+    .fetch_all(&mut **hc.tx)
+    .await?;
+    if rows.len() > BASELINE_TASKS {
+        return Err(Error::invalid(format!("a baseline holds at most {BASELINE_TASKS} tasks")));
+    }
+    let date = |d: Option<NaiveDate>| d.map_or(Value::Null, |d| json!(d.to_string()));
+    let tasks: Vec<Value> = rows
+        .iter()
+        .map(|(task, subject, start, end, hours, milestone, kids)| {
+            json!({"task": task.to_string(), "subject": subject, "exp_start_date": date(*start), "exp_end_date": date(*end),
+                   "expected_hours": hours.map_or(Value::Null, money), "is_milestone": milestone, "has_subtasks": kids})
+        })
+        .collect();
+    let field = |f: &str| project.get(f).cloned().unwrap_or(Value::Null);
+    let input = Doc::from_iter([
+        ("baseline_name".to_string(), json!(name)),
+        ("project".to_string(), json!(pid.to_string())),
+        ("taken_on".to_string(), json!(hc.ctx.today().to_string())),
+        ("taken_by".to_string(), json!(hc.ctx.email)),
+        ("start_date".to_string(), field("start_date")),
+        ("end_date".to_string(), field("end_date")),
+        ("estimated_hours".to_string(), field("proj_estimated_hours")),
+        ("estimated_cost".to_string(), field("proj_estimated_cost")),
+        ("budget".to_string(), field("budget")),
+        ("contract_value".to_string(), field("proj_contract_value")),
+        ("tasks".to_string(), Value::Array(tasks)),
+    ]);
+    let made = hc.kernel.insert_tx(&elevated(hc.ctx), hc.tx, "ProjectBaseline", input).await?;
+    let mut out = created("ProjectBaseline", &made);
+    out["tasks"] = json!(rows.len());
+    Ok(out)
 }
 
 /// The day after `from` that a repetition lands on. A month's end stays within its month.

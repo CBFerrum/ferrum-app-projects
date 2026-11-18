@@ -6,18 +6,18 @@
 // has a keyboard way (arrow keys; Shift for a week; Alt for the end) and the task's fields in the
 // side panel.
 
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Diamond, Undo2 } from "lucide-react";
-import { type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type FormEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
-import { todayIso, t as tr, isolate } from "@ferrum/client";
+import { api, errorMessage, newKey, todayIso, t as tr, isolate } from "@ferrum/client";
 import { Alert, Button, EmptyState, toast, placed } from "@ferrum/kit";
 import { can, useMetaIndex } from "@ferrum/records";
 import { Keys } from "./bits";
-import { changeTask, type Project, type TaskSet, useQueryState } from "./data";
+import { changeTask, list, type Project, type TaskSet, useQueryState } from "./data";
 import { diffDays, shortDay } from "./days";
 import { patched, type Task, waitsFor } from "./plan";
-import { arrow, cascade, critical, dayAt, dayUnder, dragged, firstDates, header, length, links, type Mode, outline, PX, type Plan, readZoom, type Row, spanOf, type Span, viewOf, type View, weekends, writes, ZOOMS, type Zoom } from "./schedule";
+import { arrow, cascade, critical, dayAt, dayUnder, dragged, firstDates, header, length, links, type Mode, outline, PX, type Plan, readZoom, type Row, spanOf, type Span, variance, viewOf, type View, weekends, writes, ZOOMS, type Zoom } from "./schedule";
 
 /** The height of a row, in pixels. */
 const ROW = 36;
@@ -45,6 +45,42 @@ type Undo = { id: string; start: string | null; end: string | null }[];
 
 const still = () => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
+/** A project's plan as it stood on a day (`ProjectBaseline`), with each task's dates then. */
+interface Baseline {
+  id: string;
+  baseline_name?: string | null;
+  taken_on?: string | null;
+  tasks?: { task?: string | null; exp_start_date?: string | null; exp_end_date?: string | null }[];
+}
+
+/** How a task's end stands against its baseline's, in words. */
+function against(days: number | null): string {
+  if (days === null) return "";
+  if (days === 0) return tr("on its baseline");
+  if (days === 1) return tr("1 day after its baseline");
+  if (days === -1) return tr("1 day before its baseline");
+  return days > 0 ? tr("{n} days after its baseline", { n: days }) : tr("{n} days before its baseline", { n: -days });
+}
+
+/** Naming a new baseline: one field, Enter sets it, Escape closes. */
+function Namer({ onSet, onClose }: { onSet: (name: string) => Promise<boolean>; onClose: () => void }) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    const name = text.trim();
+    if (!name || busy) return;
+    setBusy(true);
+    if (await onSet(name)) onClose();
+    setBusy(false);
+  };
+  return (
+    <form className="pj-namer" onSubmit={(e) => void submit(e)}>
+      <input autoFocus className="input" aria-label={tr("Name this baseline")} placeholder={tr("Name this baseline")} maxLength={140} value={text} readOnly={busy} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Escape" && onClose()} />
+    </form>
+  );
+}
+
 /** "3 days later", "a week earlier". */
 function describeShift(a: Ask): string {
   const n = Math.abs(a.days);
@@ -62,6 +98,34 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
   const today = todayIso();
   const closed = project.status === "Completed" || project.status === "Cancelled";
   const canWrite = !!meta && can(meta.permissions, "write") && !closed;
+  const projectMeta = useMetaIndex().data?.entities.find((e) => e.name === "Project");
+  const canBaseline = !!projectMeta && can(projectMeta.permissions, "write") && !closed;
+
+  // The baseline drawn under the bars: the one in the address, else the latest; `none` draws none.
+  const baselines = useQuery({
+    queryKey: ["projects", "baselines", project.id],
+    queryFn: ({ signal }) => list<Baseline>("ProjectBaseline", { filters: JSON.stringify([["project", "=", project.id]]), sort: "taken_on desc", fields: "baseline_name,taken_on", limit: 50 }, signal).then((r) => r.rows),
+  });
+  const askedBase = sp.get("baseline");
+  const chosenBase = askedBase === "none" ? null : (askedBase ?? baselines.data?.[0]?.id ?? null);
+  const base = useQuery({
+    queryKey: ["projects", "baseline", chosenBase],
+    queryFn: ({ signal }) => api.get<Baseline>(`/api/v1/ProjectBaseline/${chosenBase}`, {}, signal),
+    enabled: !!chosenBase,
+  });
+  const baseOf = useMemo(() => new Map((chosenBase ? (base.data?.tasks ?? []) : []).filter((l) => l.task && l.exp_end_date).map((l) => [l.task as string, l])), [chosenBase, base.data]);
+  const [naming, setNaming] = useState(false);
+  const setBaseline = async (name: string): Promise<boolean> => {
+    try {
+      const made = await api.post<{ id: string }>(`/api/v1/Project/${project.id}/actions/set_baseline`, { name }, { idempotencyKey: newKey() });
+      await qc.invalidateQueries({ queryKey: ["projects", "baselines", project.id] });
+      setQuery({ baseline: made.id });
+      return true;
+    } catch (e) {
+      toast(errorMessage(e), "error");
+      return false;
+    }
+  };
 
   const [folded, setFolded] = useState<Set<string>>(new Set());
   const [drag, setDrag] = useState<Ask | null>(null);
@@ -341,6 +405,27 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
           <input type="checkbox" checked={path} onChange={(e) => setQuery({ path: e.target.checked ? "1" : null })} />
           {tr("Critical path")}
         </label>
+        {!!baselines.data?.length && (
+          <label className="pj-check">
+            {tr("Baseline")}
+            <select className="input" value={chosenBase ?? "none"} onChange={(e) => setQuery({ baseline: e.target.value === baselines.data?.[0]?.id ? null : e.target.value })}>
+              <option value="none">{tr("None")}</option>
+              {baselines.data.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {`${b.baseline_name ?? ""} · ${b.taken_on ? shortDay(b.taken_on) : ""}`}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {canBaseline &&
+          (naming ? (
+            <Namer onSet={setBaseline} onClose={() => setNaming(false)} />
+          ) : (
+            <Button size="sm" onClick={() => setNaming(true)}>
+              {tr("Set a baseline")}
+            </Button>
+          ))}
         {canWrite && (
           <Button size="sm" variant="ghost" disabled={!past.length} onClick={undo} title={tr("Undo the last change (Ctrl or Cmd+Z)")}>
             <Undo2 size={14} aria-hidden="true" />
@@ -366,6 +451,14 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
       {tasks.total > tasks.rows.length && (
         <Alert tone="warning">
           {placed(tr("The timeline shows the first {length} of {total} tasks. {p1} to see them all."), { length: tasks.rows.length, total: tasks.total, p1: <Link to={`/e/Task?f.project=${project.id}`}>{tr("Open the list")}</Link> })}
+        </Alert>
+      )}
+      {chosenBase && base.error && (
+        <Alert tone="warning">
+          {tr("The baseline cannot be shown")}{" "}
+          <Button size="sm" onClick={() => void base.refetch()}>
+            {tr("Try again")}
+          </Button>
         </Alert>
       )}
       <p className="sr-only" role="status" aria-live="polite">
@@ -515,11 +608,23 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
               return <span key={c.id} className="pj-ghost" style={{ left: dayAt(view, c.before.start) * view.px, width: length(c.before as Span) * view.px, top: i * ROW + 8, height: ROW - 16 }} aria-hidden="true" />;
             })}
 
+            {/* The chosen baseline: a thin bar (or a hollow diamond) under each task it planned. */}
+            {shown.map((r, i) => {
+              const b = baseOf.get(r.task.id);
+              if (!b?.exp_end_date) return null;
+              const end = b.exp_end_date;
+              const start = r.task.is_milestone ? end : (b.exp_start_date ?? end);
+              const said = against(variance(r.task.exp_end_date, end));
+              if (r.task.is_milestone) return <span key={`b${r.task.id}`} className="pj-base-diamond" data-base={r.task.id} title={said} style={{ left: (dayAt(view, end) + 0.5) * view.px - 6, top: i * ROW + ROW - 12 }} aria-hidden="true" />;
+              return <span key={`b${r.task.id}`} className="pj-base" data-base={r.task.id} title={said} style={{ left: dayAt(view, start) * view.px, width: Math.max(1, diffDays(start, end) + 1) * view.px, top: i * ROW + ROW - 7 }} aria-hidden="true" />;
+            })}
+
             {shown.map((r, i) => {
               const t = r.task;
               const s = r.span;
               if (!s) return null;
               const own = !r.summary;
+              const versus = against(variance(t.exp_end_date, baseOf.get(t.id)?.exp_end_date));
               const editable = canWrite && own;
               const late = !!t.exp_end_date && t.exp_end_date < today && t.status !== "Completed";
               const props = {
@@ -532,7 +637,7 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
                 "data-carried": drag?.id === t.id || undefined,
                 role: "button",
                 tabIndex: 0,
-                "aria-label": `${t.number ?? ""} ${t.subject ?? ""}, ${s.start === s.end ? s.end : tr("{start} to {end}", { start: s.start, end: s.end })}${editable ? ". Arrow keys move it; Alt and the arrow keys change its end." : ""}`,
+                "aria-label": `${t.number ?? ""} ${t.subject ?? ""}, ${s.start === s.end ? s.end : tr("{start} to {end}", { start: s.start, end: s.end })}${versus ? `, ${versus}` : ""}${editable ? ". Arrow keys move it; Alt and the arrow keys change its end." : ""}`,
                 onKeyDown: (e: KeyboardEvent<HTMLElement>) => onBarKey(e, r),
                 onPointerDown: editable ? (e: PointerEvent<HTMLDivElement>) => onDown(e, r) : undefined,
                 onPointerMove: editable ? onMove : undefined,
@@ -542,14 +647,14 @@ export function Timeline({ project, set: tasks, open, onOpen }: { project: Proje
               };
               if (t.is_milestone) {
                 return (
-                  <div key={t.id} {...props} className="pj-diamond" style={{ left: leftOf(r), top: i * ROW + ROW / 2 - 8 }} title={`${t.subject}: ${s.end}`}>
+                  <div key={t.id} {...props} className="pj-diamond" style={{ left: leftOf(r), top: i * ROW + ROW / 2 - 8 }} title={`${t.subject}: ${s.end}${versus ? `, ${versus}` : ""}`}>
                     {editable && <span className="pj-dot" data-grip="link" aria-hidden="true" />}
                   </div>
                 );
               }
               const wide = length(s) * view.px;
               return (
-                <div key={t.id} {...props} className={`pj-bar${r.summary ? " pj-bar-summary" : ""}`} style={{ left: leftOf(r), width: wide, top: i * ROW + (r.summary ? 14 : 8), height: r.summary ? 8 : ROW - 16 }} title={`${t.subject}: ${s.start} – ${s.end}`}>
+                <div key={t.id} {...props} className={`pj-bar${r.summary ? " pj-bar-summary" : ""}`} style={{ left: leftOf(r), width: wide, top: i * ROW + (r.summary ? 14 : 8), height: r.summary ? 8 : ROW - 16 }} title={`${t.subject}: ${s.start} – ${s.end}${versus ? `, ${versus}` : ""}`}>
                   {!r.summary && <span className="pj-bar-fill" style={{ width: `${Math.max(0, Math.min(100, Number(t.progress ?? 0)))}%` }} />}
                   {editable && <span className="pj-grip pj-grip-start" data-grip="start" aria-hidden="true" />}
                   {editable && <span className="pj-grip pj-grip-end" data-grip="end" aria-hidden="true" />}

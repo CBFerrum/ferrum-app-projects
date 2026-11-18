@@ -106,3 +106,40 @@
     - {name: projects, type: table, of: PortfolioProject}
     - {name: description, type: text}
   list: {columns: [portfolio_name, owner_email], sort: portfolio_name asc}
+
+- name: BaselineTask
+  label: Baseline Task
+  kind: child
+  fields:
+    - {name: task, type: link, to: Task, in_list: true, on_delete: set_null, description: "The task, while it exists"}
+    - {name: subject, type: data, in_list: true}
+    - {name: exp_start_date, type: date, label: Planned Start, in_list: true}
+    - {name: exp_end_date, type: date, label: Planned End, in_list: true}
+    - {name: expected_hours, type: decimal}
+    - {name: is_milestone, type: check}
+    - {name: has_subtasks, type: check, description: "It had sub-tasks that were not cancelled: its plan is theirs, so it weighs nothing on its own"}
+
+- name: ProjectBaseline
+  label: Baseline
+  kind: master
+  module: projects
+  title_field: baseline_name
+  company_scoped: true
+  description: "A project's plan as it stood on a day: its figures and each task's dates and hours. Set from the project; never edited."
+  fields:
+    - {name: baseline_name, type: data, label: Name, required: true, in_list: true}
+    - {name: project, type: link, to: Project, required: true, in_list: true, in_filter: true}
+    - {name: company, type: link, to: Company, fetch_from: project.company, read_only: true, in_filter: true}
+    - {name: project_private, type: check, fetch_from: project.proj_private, read_only: true, hidden: true, no_copy: true, description: "Its project is its members' alone (kept in step with the project)"}
+    - {name: taken_on, type: date, in_list: true}
+    - {name: taken_by, type: email}
+    - {name: start_date, type: date}
+    - {name: end_date, type: date, in_list: true}
+    - {name: estimated_hours, type: decimal}
+    - {name: estimated_cost, type: currency}
+    - {name: budget, type: currency}
+    - {name: contract_value, type: currency}
+    - {name: tasks, type: table, of: BaselineTask}
+  unique: [[project, baseline_name]]
+  indexes: [[project, taken_on]]
+  list: {columns: [baseline_name, project, taken_on, end_date], sort: taken_on desc}

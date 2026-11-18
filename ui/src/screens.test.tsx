@@ -110,6 +110,25 @@ describe("the timeline", () => {
     expect(line([])).toContain("Nothing to place on a timeline");
   });
 
+  it("draws the chosen baseline under the bars and says how far each task ends from it", () => {
+    const qc = seeded();
+    qc.setQueryData(["projects", "baselines", "p1"], [{ id: "b1", baseline_name: "Kick-off", taken_on: day(1) }]);
+    qc.setQueryData(["projects", "baseline", "b1"], { id: "b1", tasks: [{ task: "2", exp_start_date: day(9), exp_end_date: day(18) }] });
+    const at = (where: string) =>
+      renderToStaticMarkup(
+        <QueryClientProvider client={qc}>
+          <MemoryRouter initialEntries={[where]}>
+            <Timeline project={project} set={{ rows: tasks, total: tasks.length }} open={null} onOpen={() => {}} />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+    const html = at("/");
+    expect(html).toContain('data-base="2"');
+    expect(html).toContain("2 days after its baseline");
+    expect(html).toContain("Kick-off");
+    expect(at("/?baseline=none")).not.toContain("data-base=");
+  });
+
   it("offers the zoom levels, and the one in the address is pressed", () => {
     const html = line(tasks, "/?zoom=month");
     expect(html.match(/aria-pressed="true"[^>]*>Month</)).not.toBeNull();
