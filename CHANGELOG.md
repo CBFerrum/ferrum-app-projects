@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.12.1
+
+Package `projects` 0.6.1 (the report in the module). Needs the same platform as 0.11.0. No interface or database change.
+
+- **Earned value.** A new report, **Earned Value**, shows each project you may read, as of today: the budget at
+  completion (the latest baseline's estimated cost, else its budget; without a baseline the project's own), planned
+  value (that budget times the share of the baseline's tasks due by today, weighed by their hours as % complete is),
+  earned value (times % complete), actual cost (submitted time and expenses on the ledger up to today), the schedule
+  and cost variances, the schedule and cost indices (SPI, CPI) and the estimate at completion. A project without a
+  baseline gets the cost side only; a figure that would divide by nothing is left empty. Templates are left out. Like
+  profitability it is for roles that see costs, and it opens at `/projects/r/earned_value`.
+
 ## 0.12.0
 
 Package `projects` 0.6.0: two new tables (`ProjectBaseline` and its lines, `BaselineTask`) and the action `Set Baseline`

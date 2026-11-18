@@ -7,7 +7,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.12.0-b45309?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.12.1-b45309?style=flat-square)](CHANGELOG.md)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Ferrum platform](https://img.shields.io/badge/runs%20on-Ferrum-2f5bea?style=flat-square)](https://github.com/CBFerrum/Ferrum)
 ![Rust](https://img.shields.io/badge/Rust-server-b7410e?style=flat-square&logo=rust)
@@ -37,7 +37,7 @@ Projects gives a team a board, a timeline, task trees with dependencies, weekly 
 
 | | |
 |---|---|
-| **Version** | 0.12.0 (package `projects` 0.6.0; connector `projects-erp` 0.3.1) |
+| **Version** | 0.12.1 (package `projects` 0.6.1; connector `projects-erp` 0.3.1) |
 | **Kind** | Its own interface at `/projects/` (home, project, task, my work, planning) with Ferrum's records screens for everything else |
 | **What it adds** | 24 entities (16 records, 8 small tables) and extra fields on the shared Project and Customer records, 4 roles, 1 module with 5 reports, 3 project tabs, 1 notification kind and 1 message, 3 upkeep jobs, 3 own endpoints; the ERP connector adds invoicing fields and actions. No print formats. |
 | **Depends on** | Ferrum platform `>=0.4.0, <0.5`; the platform's `core`, `parties` and `project_records` packages |
@@ -230,6 +230,7 @@ For Projects Managers:
 | **Task Overview** | Tasks by project and assignee with their status |
 | **Workload** | Hours planned per person per week (allocations, and their share of task estimates) against their own capacity (hours a week on their Person record, else the hours a day asked), who is over and when; a planner sees everyone, a Projects User their own |
 | **Portfolio Overview** | How each portfolio's projects stand |
+| **Earned Value** | As of today, per project: budget at completion (the latest baseline's estimated cost or budget, else the project's), planned value (the share of the baseline's tasks due by today), earned value (by % complete), actual cost (submitted time and ledger expense), schedule and cost variance, the two indices and the estimate at completion; for roles that see costs |
 
 ### 🔌 For other apps and agents
 
@@ -360,7 +361,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 | Portfolio view | 🟡⁶ | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡¹ |
 | Sprints and backlog | ❌ | 🟡¹ | ✅ | ✅ | 🟡¹ | 🟡¹ | ✅ |
 | Burndown and velocity | ❌ | 🟡¹ | ✅ | ✅ | 🟡¹ | 🟡¹ | ✅ |
-| Earned value | ❌ | 🟡¹ | 🟡¹ | 🟡¹ | ✅ | 🟡¹ | 🟡¹ |
+| Earned value | ✅ | 🟡¹ | 🟡¹ | 🟡¹ | ✅ | 🟡¹ | 🟡¹ |
 | Automation rules | 🟡⁷ | ✅ | ✅ | ✅ | 🟡¹ | ✅ | 🟡¹ |
 | Task approvals | ❌ | ✅ | 🟡¹ | 🟡¹ | ❌ | ✅ | 🟡¹ |
 | Status updates with project health | ❌ | ✅ | 🟡¹ | ✅ | 🟡¹ | ✅ | 🟡¹ |
@@ -392,7 +393,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 - **Agile work:** sprints, backlogs, story points, burndown and velocity.
 - **Integrations:** Slack, Teams, Git, email to task, calendar feeds and migration importers.
 - **Project health:** status updates with a health rating, portfolio roll-ups of money and dates, dashboards.
-- **Scheduling depth:** earned value, effort-driven scheduling, Gantt export.
+- **Scheduling depth:** effort-driven scheduling, Gantt export; earned value over time (a curve), not only as of today.
 - **Mobile apps and offline use.**
 - **Task approvals, proofing and automations owned by a project manager.**
 
@@ -404,6 +405,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 ### ✅ Recently shipped
 
 - [x] **0.10.2** A time log's day is the workspace's date of its start, not UTC's; the task's time list sends it as a day.
+- [x] **0.12.1** Earned value as a report: planned value from the latest baseline, earned value, actual cost, variances, SPI, CPI and the estimate at completion, as of today.
 - [x] **0.12.0** Baselines on demand: Set Baseline keeps the plan and each task's dates; the timeline draws the chosen one and each task's days after or before it.
 - [x] **0.11.3** Every action says what it returns and what done means, for a process or an agent that runs it.
 - [x] **0.11.2** Reports keep to what the reader may read: the portfolio overview, workload and profitability no longer show other teams' private projects or other people's plans. Capacity is each person's own week; task estimates count as planned hours. Profitability works without ERP.
@@ -449,7 +451,6 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 - [ ] **Capacity that knows leave** from HR.
 - [ ] **Utilisation**: billable hours over capacity, against a target.
 - [ ] **Role-based and tentative booking**, and skills on people.
-- [ ] **Earned value** (planned value, earned value, actual cost, CPI, SPI).
 - [ ] **Revenue recognition** of fixed price projects by percent complete.
 - [ ] **Task approvals** with a named approver and history.
 - [ ] **Checklists in a task**, and **typed links between tasks** (related, duplicates).

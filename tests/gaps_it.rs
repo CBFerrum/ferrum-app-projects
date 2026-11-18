@@ -97,6 +97,10 @@ impl U {
         let q = ListQuery { filters: ferrum_kernel::query::parse_filters(&filters).unwrap(), limit: Some(500), ..Default::default() };
         self.k.list(&self.ctx, entity, &q).await.unwrap_or_else(|e| panic!("list {entity}: {e:?}")).rows
     }
+    async fn report(&self, name: &str, params: &[(&str, String)]) -> Result<Value> {
+        let p: HashMap<String, String> = params.iter().map(|(k, v)| (k.to_string(), v.clone())).collect();
+        ferrum_domain::reports::run(&self.k, &self.ctx, name, &p).await
+    }
     async fn find_one(&self, entity: &str, filters: Value) -> Doc {
         let rows = self.list(entity, filters.clone()).await;
         assert_eq!(rows.len(), 1, "{entity} {filters}");
@@ -161,6 +165,7 @@ async fn world() -> World {
 async fn scenario() {
     let w = world().await;
     baselines(&w).await;
+    earned_value(&w).await;
 }
 
 /// A key for one effect, through the gate as an agent asks.
@@ -279,4 +284,100 @@ async fn baselines(w: &World) {
     assert_eq!((p["proj_baseline_end_date"].clone(), p["end_date"].clone()), (json!(day(30)), json!(day(35))), "the five figures as before");
     raise("Fewer rooms").await;
     assert_eq!(pm.list("ProjectBaseline", json!({"project": changed.to_string()})).await.len(), 1, "a second change adds none");
+}
+
+/// PRJ-08: earned value as of today, per project the caller may read, for those who may see costs: planned value from
+/// the latest baseline's tasks, earned value from % complete, actual cost from submitted time and the ledger.
+async fn earned_value(w: &World) {
+    let (admin, pm, mia) = (&w.admin, &w.users["pm"], &reload(&w.users["mia"]).await);
+    let k = &pm.k;
+    let today = Utc::now().date_naive();
+    let day = |n: i64| (today + Duration::days(n)).to_string();
+    let co = ("company", w.cid.clone());
+    let row = |r: &Value, name: &str| r["rows"].as_array().unwrap().iter().find(|x| x["project"].as_str().is_some_and(|p| p.ends_with(name))).cloned();
+    // Time is submitted straight away here.
+    let off: ferrum_kernel::customize::NewCustomization =
+        serde_json::from_value(json!({"entity": "Timesheet", "op": {"op": "set_approval", "on": "submit", "approval": null}})).unwrap();
+    k.batch_customizations(&admin.ctx, vec![off], false).await.map_err(|(_, e)| e).expect("approval off");
+    let survey = pm.insert("ActivityType", json!({"activity_type": "Survey", "costing_rate": "600"})).await["id"].clone();
+
+    // earned_value_adds_up: 10,000 to spend; half the plan due and done; 6,000 spent.
+    let ev = uid(&pm
+        .insert("Project", json!({"project_name": "Earned", "company": w.cid, "proj_estimated_cost": "10000", "start_date": day(-5), "end_date": day(6)}))
+        .await);
+    let first = uid(&pm
+        .insert("Task", json!({"subject": "Dig", "project": ev.to_string(), "expected_hours": "10", "exp_start_date": day(-5), "exp_end_date": day(-1)}))
+        .await);
+    pm.insert("Task", json!({"subject": "Pour", "project": ev.to_string(), "expected_hours": "10", "exp_start_date": day(1), "exp_end_date": day(6)})).await;
+    pm.action("Project", ev, "set_baseline", json!({"name": "Plan"})).await;
+    pm.update("Task", first, json!({"status": "Completed"})).await;
+    let sheet = pm
+        .insert("Timesheet", json!({"company": w.cid, "time_logs": [{"activity_type": survey, "project": ev.to_string(), "day": day(-1), "hours": "10"}]}))
+        .await;
+    pm.k.submit(&pm.ctx, "Timesheet", uid(&sheet), None).await.expect("time submitted");
+    let r = pm.report("earned_value", std::slice::from_ref(&co)).await.expect("earned value");
+    let e = row(&r, "Earned").unwrap_or_else(|| panic!("{r}"));
+    let figures: Vec<Decimal> = [
+        "budget_at_completion",
+        "planned_value",
+        "earned_value",
+        "actual_cost",
+        "schedule_variance",
+        "cost_variance",
+        "schedule_index",
+        "cost_index",
+        "estimate_at_completion",
+    ]
+    .iter()
+    .map(|f| dec(&e[*f]))
+    .collect();
+    assert_eq!(figures, [n("10000"), n("5000"), n("5000"), n("6000"), n("0"), n("-1000"), n("1"), n("0.83"), n("12000")], "{e}");
+    assert_eq!((e["baseline"].clone(), r["meta"]["as_of"].clone()), (json!("Plan"), json!(today.to_string())));
+
+    // without_a_baseline_the_cost_side_is_there
+    let plain = uid(&pm.insert("Project", json!({"project_name": "Unplanned", "company": w.cid, "proj_estimated_cost": "8000"})).await);
+    let done = uid(&pm.insert("Task", json!({"subject": "Half", "project": plain.to_string(), "expected_hours": "5"})).await);
+    pm.insert("Task", json!({"subject": "Other half", "project": plain.to_string(), "expected_hours": "5"})).await;
+    pm.update("Task", done, json!({"status": "Completed"})).await;
+    let r = pm.report("earned_value", std::slice::from_ref(&co)).await.expect("earned value");
+    let u = row(&r, "Unplanned").unwrap_or_else(|| panic!("{r}"));
+    for f in ["baseline", "planned_value", "schedule_variance", "schedule_index"] {
+        assert!(u[f].is_null(), "{f}: {u}");
+    }
+    assert_eq!(
+        (dec(&u["budget_at_completion"]), dec(&u["earned_value"]), dec(&u["actual_cost"]), dec(&u["cost_variance"])),
+        (n("8000"), n("4000"), n("0"), n("4000")),
+        "{u}"
+    );
+
+    // without_cost_or_progress_cells_are_empty
+    pm.insert("Project", json!({"project_name": "Idle", "company": w.cid, "proj_estimated_cost": "3000"})).await;
+    let r = pm.report("earned_value", std::slice::from_ref(&co)).await.expect("earned value");
+    let i = row(&r, "Idle").unwrap_or_else(|| panic!("{r}"));
+    assert!(i["cost_index"].is_null() && i["estimate_at_completion"].is_null(), "{i}");
+    assert!(u["cost_index"].is_null() && u["estimate_at_completion"].is_null(), "nothing spent: {u}");
+
+    // costs_are_gated
+    let r = mia.report("earned_value", std::slice::from_ref(&co)).await;
+    assert!(matches!(r, Err(Error::Forbidden(_))), "{r:?}");
+
+    // only_readable_projects: a role that sees costs and reads open projects only.
+    let rule = |v: Value| serde_json::from_value::<ferrum_meta::PermissionDef>(v).unwrap();
+    for r in [
+        json!({"entity": "Project", "read": true, "where": {"proj_private": false}}),
+        json!({"entity": "TimesheetDetail", "read": true, "read_groups": ["costing"]}),
+        json!({"entity": "Timesheet", "read": true}),
+    ] {
+        k.set_role_permission(&admin.ctx, "Cost Reader", &rule(r)).await.expect("rule");
+    }
+    let reader = k.create_user(&admin.ctx, "costs@acme.test", "costs", Some("Correct-Horse-9"), &["Cost Reader".into()], false).await.expect("user");
+    let reader = U { k: k.clone(), ctx: k.load_ctx(admin.ctx.tenant, reader, None, "it".into()).await.expect("ctx") };
+    pm.update("Project", plain, json!({"proj_private": true})).await;
+    let r = reader.report("earned_value", std::slice::from_ref(&co)).await.expect("the reader's earned value");
+    assert!(row(&r, "Earned").is_some() && row(&r, "Unplanned").is_none(), "only what they may read: {r}");
+
+    // templates_are_left_out
+    pm.action("Project", ev, "save_as_template", json!({"template_name": "Earned Kit"})).await;
+    let r = pm.report("earned_value", std::slice::from_ref(&co)).await.expect("earned value");
+    assert!(row(&r, "Earned Kit").is_none(), "{r}");
 }

@@ -1,5 +1,5 @@
 package: projects
-version: 0.6.0
+version: 0.6.1
 label: Projects
 description: Projects with task trees, dependencies and milestones, timesheets with costing and billing, activity rates, milestone and time-and-materials invoicing, and project profitability.
 # Projects and customers are shared records; invoicing through ERP comes with the projects_erp
@@ -67,7 +67,7 @@ modules:
     label: Projects
     icon: briefcase
     order: 50
-    items: [Project, Task, Timesheet, ProjectRisk, ProjectIssue, ChangeRequest, ProjectBaseline, ResourceAllocation, Portfolio, ActivityType, ActivityCost, RateCard, TaskStatus, TaskWorkflow, ProjectType, ProjectPerson, ProjectsSettings, report:project_profitability,
+    items: [Project, Task, Timesheet, ProjectRisk, ProjectIssue, ChangeRequest, ProjectBaseline, ResourceAllocation, Portfolio, ActivityType, ActivityCost, RateCard, TaskStatus, TaskWorkflow, ProjectType, ProjectPerson, ProjectsSettings, report:project_profitability, report:earned_value,
             report:timesheet_summary, report:task_overview, report:workload, report:portfolio_overview]
 
 roles:
