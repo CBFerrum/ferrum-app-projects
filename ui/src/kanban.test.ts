@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boardModel, dropAllowed, dropPlan, filterParams, findCard, focusMove, keyMove, matches, NO_FILTERS, NOBODY, readFilters, readLanes, readOrder, type BoardModel, type Filters } from "./kanban";
+import { boardModel, dropAllowed, dropPlan, filterParams, filtersOn, findCard, focusMove, keyMove, matches, NO_FILTERS, NOBODY, readFilters, readLanes, readOrder, type BoardModel, type Filters } from "./kanban";
 import { assignees, blockers, late, mark, subtaskCounts, type Task } from "./plan";
 
 const today = "2026-11-10";
@@ -67,12 +67,23 @@ describe("filters", () => {
   });
 
   it("lives in the address and survives the trip", () => {
-    const f: Filters = { q: "spec", who: "me", priority: "High", due: "late", parent: "top" };
+    const f: Filters = { q: "spec", who: "me", priority: "High", due: "late", parent: "top", sprint: "active" };
     const sp = new URLSearchParams(Object.entries(filterParams(f)).filter((e): e is [string, string] => e[1] !== null));
     expect(readFilters(sp)).toEqual(f);
-    expect(filterParams(NO_FILTERS)).toEqual({ q: null, who: null, prio: null, due: null, parent: null });
+    expect(filterParams(NO_FILTERS)).toEqual({ q: null, who: null, prio: null, due: null, parent: null, sprint: null });
     expect(readFilters(new URLSearchParams("prio=Huge&due=never"))).toEqual(NO_FILTERS);
     expect([readLanes(new URLSearchParams("lanes=priority")), readLanes(new URLSearchParams("lanes=x")), readOrder(new URLSearchParams("order=due")), readOrder(new URLSearchParams())]).toEqual(["priority", "none", "due", "manual"]);
+  });
+});
+
+describe("the sprint filter", () => {
+  it("the sprint filter keeps the active sprint's tasks, or those without one, and counts as one filter", () => {
+    const ts = [t("a", { sprint: "s1" }), t("b", { sprint: "s2" }), t("c")];
+    const pick = (sprint: string) => ts.filter((x) => matches(x, { ...NO_FILTERS, sprint }, ctx.me, today, "s1")).map((x) => x.id);
+    expect([pick("active"), pick("none"), pick("s2"), pick("")]).toEqual([["a"], ["c"], ["b"], ["a", "b", "c"]]);
+    expect(filtersOn({ ...NO_FILTERS, sprint: "none" })).toBe(1);
+    expect(readFilters(new URLSearchParams("sprint=active")).sprint).toBe("active");
+    expect(boardModel(ts, { ...NO_FILTERS, sprint: "active" }, "none", "manual", { ...ctx, activeSprint: "s1" }).shown).toBe(1);
   });
 });
 

@@ -17,9 +17,11 @@ import { TaskPanel } from "./TaskPanel";
 
 const Board = lazy(() => import("./Board").then((m) => ({ default: m.Board })));
 const Timeline = lazy(() => import("./Timeline").then((m) => ({ default: m.Timeline })));
+const Backlog = lazy(() => import("./Backlog").then((m) => ({ default: m.Backlog })));
 
 const TABS = [
   { id: "board", get label() { return tr("Board"); } },
+  { id: "backlog", get label() { return tr("Backlog"); } },
   { id: "timeline", get label() { return tr("Timeline"); } },
   { id: "time", get label() { return tr("Time"); } },
 ];
@@ -295,7 +297,13 @@ function ProjectView({ id }: { id: string }) {
               <ListSkeleton rows={8} />
             ) : (
               <Suspense fallback={<ListSkeleton rows={8} />}>
-                {tab === "board" ? <Board project={p} set={tasks.data} open={task} onOpen={open} /> : <Timeline project={p} set={tasks.data} open={task} onOpen={open} />}
+                {tab === "board" ? (
+                  <Board project={p} set={tasks.data} open={task} onOpen={open} />
+                ) : tab === "backlog" ? (
+                  <Backlog project={p} set={tasks.data} open={task} onOpen={open} />
+                ) : (
+                  <Timeline project={p} set={tasks.data} open={task} onOpen={open} />
+                )}
               </Suspense>
             )}
           </TabPanel>

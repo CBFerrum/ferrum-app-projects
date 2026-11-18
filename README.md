@@ -7,7 +7,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.14.0-b45309?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.15.0-b45309?style=flat-square)](CHANGELOG.md)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Ferrum platform](https://img.shields.io/badge/runs%20on-Ferrum-2f5bea?style=flat-square)](https://github.com/CBFerrum/Ferrum)
 ![Rust](https://img.shields.io/badge/Rust-server-b7410e?style=flat-square&logo=rust)
@@ -37,7 +37,7 @@ Projects gives a team a board, a timeline, task trees with dependencies, weekly 
 
 | | |
 |---|---|
-| **Version** | 0.14.0 (package `projects` 0.8.0; connector `projects-erp` 0.3.1) |
+| **Version** | 0.15.0 (package `projects` 0.8.0; connector `projects-erp` 0.3.1) |
 | **Kind** | Its own interface at `/projects/` (home, project, task, my work, planning) with Ferrum's records screens for everything else |
 | **What it adds** | 26 entities (18 records, 8 small tables) and extra fields on the shared Project and Customer records, 4 roles, 1 module with 5 reports, 3 project tabs, 1 notification kind and 1 message, 3 upkeep jobs, 3 own endpoints; the ERP connector adds invoicing fields and actions. No print formats. |
 | **Depends on** | Ferrum platform `>=0.4.0, <0.5`; the platform's `core`, `parties` and `project_records` packages |
@@ -135,7 +135,7 @@ Projects gives a team a board, a timeline, task trees with dependencies, weekly 
 ### 🔐 Teams, private projects and the client portal
 
 - **Team.** A project lists people and their role on it: **Manager** (changes the project and its tasks), **Member** (changes its tasks), **Viewer** (reads).
-- **Sprints and backlog** (through the records and the API until the backlog screen lands). A project's managers plan **sprints** (a name, two dates, a goal), put tasks in them and estimate tasks in **points**; the **backlog** is the project's open tasks with no sprint, in its own order. **Start Sprint** makes one Active (one a project) and records the points and tasks committed; **Close Sprint** records the points and tasks done and moves every task not done to the planned sprint named, or back to the backlog. A closed sprint is kept as it closed.
+- **Sprints and backlog.** A project's managers plan **sprints** (a name, two dates, a goal), put tasks in them and estimate tasks in **points**; the **backlog** is the project's open tasks with no sprint, in its own order. **Start Sprint** makes one Active (one a project) and records the points and tasks committed; **Close Sprint** records the points and tasks done and moves every task not done to the planned sprint named, or back to the backlog. A closed sprint is kept as it closed. A project's **Backlog** tab shows the active sprint, the planned ones and the backlog, each with its tasks, points and people: a row's menu moves a task to another sprint or to the backlog and orders the backlog (to the top, up, down), its points are typed in the row, and each sprint's head starts it or closes it, choosing where its open tasks go. The board filters by sprint (any, the active one, none, or one by name).
 - **Status updates.** A project's managers (its team's and the one named on it) post a **status update**: a day, a health rating (On Track, At Risk, Off Track) and a summary. The project shows the rating and day of its latest update in its head, with a tile linking to the updates; it is worked out again whenever one is saved or deleted. A summary is about the work: keep people's private details out of it.
 - **Private projects.** Tick Private and only the team (and Projects Managers) read the project, its tasks, risks, issues, change requests and allocations. Open projects are read by every Projects User. Erasing a person removes them from every team.
 - **Client portal.** **Project Client** is a portal role an administrator gives to a customer's people, listed on the customer (Client People). They read, and change nothing: the customer's projects marked **Shared with the Client**, the tasks and milestones on them marked **Visible to the Client**, the approved timesheets whose time is all on a shared project, and, with ERP, the project's submitted invoices.
@@ -363,7 +363,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 | Invoice in the client's currency | ✅ | ➖ | ➖ | ➖ | ➖ | ➖ | ➖ |
 | Risks, issues and change requests with approval | ✅ | ❌ | 🟡¹ | 🟡¹ | 🟡¹ | 🟡¹ | 🟡¹ |
 | Portfolio view | 🟡⁶ | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡¹ |
-| Sprints and backlog | ❌ | 🟡¹ | ✅ | ✅ | 🟡¹ | 🟡¹ | ✅ |
+| Sprints and backlog | ✅ | 🟡¹ | ✅ | ✅ | 🟡¹ | 🟡¹ | ✅ |
 | Burndown and velocity | ❌ | 🟡¹ | ✅ | ✅ | 🟡¹ | 🟡¹ | ✅ |
 | Earned value | ✅ | 🟡¹ | 🟡¹ | 🟡¹ | ✅ | 🟡¹ | 🟡¹ |
 | Automation rules | 🟡⁷ | ✅ | ✅ | ✅ | 🟡¹ | ✅ | 🟡¹ |
@@ -409,6 +409,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 ### ✅ Recently shipped
 
 - [x] **0.10.2** A time log's day is the workspace's date of its start, not UTC's; the task's time list sends it as a day.
+- [x] **0.15.0** The Backlog tab: sprints and the backlog with moves, points, start and close; the board filters by sprint.
 - [x] **0.14.0** Sprints and a backlog on the server: plan, start (one active a project), close with carry-over; points on tasks.
 - [x] **0.13.0** Status updates with a health rating: the project shows its latest.
 - [x] **0.12.1** Earned value as a report: planned value from the latest baseline, earned value, actual cost, variances, SPI, CPI and the estimate at completion, as of today.
@@ -431,7 +432,6 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 ### 🔜 Next up
 
 **Agile and delivery**
-- [ ] **The backlog screen** and sprints on the board (sprints themselves are in 0.14.0).
 - [ ] **Estimates in points** and a remaining estimate, with **burndown and velocity**.
 - [ ] **Work-in-progress limits** on board columns.
 

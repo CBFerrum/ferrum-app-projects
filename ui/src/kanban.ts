@@ -18,9 +18,11 @@ export interface Filters {
   due: "" | "late" | "week" | "none";
   /** "" every task; "top" those that are not sub-tasks; or a task's id for its sub-tasks. */
   parent: string;
+  /** "" any; "active" the project's active sprint; "none" no sprint; or a sprint's id. */
+  sprint: string;
 }
 
-export const NO_FILTERS: Filters = { q: "", who: "", priority: "", due: "", parent: "" };
+export const NO_FILTERS: Filters = { q: "", who: "", priority: "", due: "", parent: "", sprint: "" };
 
 /** The lane of the tasks nobody is on. No address can be this. */
 export const NOBODY = "(nobody)";
@@ -37,21 +39,23 @@ export function readFilters(p: URLSearchParams): Filters {
     priority: PRIORITIES.includes(priority) ? priority : "",
     due: DUE.includes(due) ? (due as Filters["due"]) : "",
     parent: p.get("parent") ?? "",
+    sprint: p.get("sprint") ?? "",
   };
 }
 
 /** The same, as changes to the address (null removes one). */
 export function filterParams(f: Filters): Record<string, string | null> {
-  return { q: f.q || null, who: f.who || null, prio: f.priority || null, due: f.due || null, parent: f.parent || null };
+  return { q: f.q || null, who: f.who || null, prio: f.priority || null, due: f.due || null, parent: f.parent || null, sprint: f.sprint || null };
 }
 
 export const readLanes = (p: URLSearchParams): Lanes => (p.get("lanes") === "assignee" || p.get("lanes") === "priority" ? (p.get("lanes") as Lanes) : "none");
 export const readOrder = (p: URLSearchParams): Order => (p.get("order") === "due" || p.get("order") === "priority" ? (p.get("order") as Order) : "manual");
 
 /** How many of the filters are on (the search box is not counted: it shows its own text). */
-export const filtersOn = (f: Filters): number => [f.who, f.priority, f.due, f.parent].filter(Boolean).length;
+export const filtersOn = (f: Filters): number => [f.who, f.priority, f.due, f.parent, f.sprint].filter(Boolean).length;
 
-export function matches(t: Task, f: Filters, me: string, today: string): boolean {
+/** Whether a task passes the filters; `activeSprint` is the id the "active" sprint filter stands for. */
+export function matches(t: Task, f: Filters, me: string, today: string, activeSprint?: string): boolean {
   const q = f.q.trim().toLowerCase();
   if (q && ![t.subject, t.number].some((v) => v?.toLowerCase().includes(q))) return false;
   const who = assignees(t).map((a) => a.toLowerCase());
@@ -64,6 +68,9 @@ export function matches(t: Task, f: Filters, me: string, today: string): boolean
   if (f.due === "none" && t.exp_end_date) return false;
   if (f.parent === "top" && t.parent_task) return false;
   if (f.parent && f.parent !== "top" && t.parent_task !== f.parent) return false;
+  if (f.sprint === "none" && t.sprint) return false;
+  if (f.sprint === "active" && (!activeSprint || t.sprint !== activeSprint)) return false;
+  if (f.sprint && f.sprint !== "none" && f.sprint !== "active" && t.sprint !== f.sprint) return false;
   return true;
 }
 
@@ -118,10 +125,10 @@ function inLane(t: Task, lane: string, lanes: Lanes): boolean {
   return true;
 }
 
-export function boardModel(tasks: Task[], f: Filters, lanes: Lanes, order: Order, ctx: { me: string; today: string }): BoardModel {
+export function boardModel(tasks: Task[], f: Filters, lanes: Lanes, order: Order, ctx: { me: string; today: string; activeSprint?: string }): BoardModel {
   const live = tasks.filter((t) => t.status !== "Cancelled");
   const statuses = COLUMNS.filter((s) => s !== "Overdue" || live.some((t) => statusOf(t) === "Overdue"));
-  const shown = live.filter((t) => matches(t, f, ctx.me, ctx.today));
+  const shown = live.filter((t) => matches(t, f, ctx.me, ctx.today, ctx.activeSprint));
   const cmp = comparer(order);
   // With nothing to group, one lane still holds the columns.
   const keys = laneKeys(shown, lanes);

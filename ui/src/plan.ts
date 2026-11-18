@@ -19,6 +19,10 @@ export interface Task {
   parent_task?: string | null;
   /** Manual order within a status (a decimal, so a card can land between two others). */
   rank?: string | number | null;
+  /** The sprint it is planned in (empty: the backlog), its size in points, and its place in the backlog. */
+  sprint?: string | null;
+  story_points?: string | number | null;
+  backlog_rank?: string | number | null;
   assigned_to?: { id?: string; user?: string | null }[] | null;
   depends_on?: { id?: string; task?: string | null }[] | null;
   _titles?: Record<string, string>;

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.15.0
+
+Interface only, `ui/dist` rebuilt with Ferrum-Frontend `5e2661f`. Needs the same platform as 0.11.0 and package `projects` 0.8.0.
+
+- **The Backlog tab.** A project's page has a Backlog tab: the active sprint, the planned sprints by start, and the
+  backlog (its open tasks in no sprint, in the backlog's own order), each with its tasks, points, people and how much is
+  still open. A row's menu moves the task to another sprint or to the backlog, and in the backlog puts it at the top, one
+  up or one down; its points are typed in the row. A sprint's head starts it (when none is active) or closes it, asking
+  where the open tasks go; **Plan a sprint** opens the sprint form. Every change is the server's own: a task's save or a
+  sprint's action, sent once however often it is pressed.
+- **The board filters by sprint**: any, the active one, none, or one by name.
+
 ## 0.14.0
 
 Package `projects` 0.8.0: a new record `Sprint` with the actions Start Sprint (`projects.sprint.start`) and Close Sprint

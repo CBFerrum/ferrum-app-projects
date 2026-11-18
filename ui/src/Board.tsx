@@ -53,7 +53,8 @@ import {
   type Way,
 } from "./kanban";
 import { CardMenu, type CardActions, CardView, SortableCard } from "./Card";
-import { changeTask, createTask, type Project, TASK_LIMIT, type TaskSet, useNames, useQueryState } from "./data";
+import type { Sprint } from "./sprints";
+import { changeTask, createTask, type Project, TASK_LIMIT, type TaskSet, useNames, useQueryState, useSprints } from "./data";
 import { assignees, blockers, PRIORITIES, subtaskCounts, TASK_TONES, type Task } from "./plan";
 
 /** Where each card and each column stands in a layout: a card to the column that holds it, a column to itself. */
@@ -70,8 +71,9 @@ const reduced = () => typeof window !== "undefined" && window.matchMedia?.("(pre
 
 // ── the bar above the board ──
 
-function Bar({ filters, lanes, order, people, parents, names, set, shown, total }: {
+function Bar({ filters, lanes, order, people, parents, sprints, names, set, shown, total }: {
   filters: Filters;
+  sprints: Sprint[];
   lanes: Lanes;
   order: Order;
   people: string[];
@@ -123,6 +125,18 @@ function Bar({ filters, lanes, order, people, parents, names, set, shown, total 
           </option>
         ))}
       </select>
+      {sprints.length > 0 && (
+        <select className="select pj-select" aria-label={tr("Sprint")} value={filters.sprint} onChange={(e) => change({ sprint: e.target.value })}>
+          <option value="">{tr("Any sprint")}</option>
+          <option value="active">{tr("Active sprint")}</option>
+          <option value="none">{tr("No sprint")}</option>
+          {sprints.map((s) => (
+            <option key={s.id} value={s.id}>
+              {isolate(s.sprint_name)}
+            </option>
+          ))}
+        </select>
+      )}
       <span className="pj-tools-gap" />
       <label className="pj-tools-pick">
         <span className="faint">{tr("Swimlanes")}</span>
@@ -252,7 +266,9 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
   const canWrite = !!meta && can(meta.permissions, "write") && !closed;
   const canCreate = !!meta && can(meta.permissions, "create") && !closed;
 
-  const model = useMemo(() => boardModel(tasks.rows, filters, lanes, order, { me, today }), [tasks.rows, sp.toString(), me, today]);
+  const sprints = useSprints(project.id).data ?? [];
+  const activeSprint = sprints.find((s) => s.state === "Active")?.id;
+  const model = useMemo(() => boardModel(tasks.rows, filters, lanes, order, { me, today, activeSprint }), [tasks.rows, sp.toString(), me, today, activeSprint]);
   const byId = useMemo(() => new Map(tasks.rows.map((t) => [t.id, t])), [tasks.rows]);
   const counts = useMemo(() => subtaskCounts(tasks.rows), [tasks.rows]);
   const cards = useMemo(() => new Map(model.lanes.flatMap((l) => l.cells.flatMap((c) => c.cards)).map((c) => [c.key, c])), [model]);
@@ -472,7 +488,7 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
 
   return (
     <div className="pj-board-wrap">
-      <Bar filters={filters} lanes={lanes} order={order} people={people} parents={parents} names={names} set={setQuery} shown={model.shown} total={model.total} />
+      <Bar filters={filters} lanes={lanes} order={order} people={people} parents={parents} sprints={sprints} names={names} set={setQuery} shown={model.shown} total={model.total} />
       {closed && <Alert tone="info">{placed(tr("This project is {p1}. Its tasks cannot be changed until it is reopened."), { p1: isolate(project.status?.toLowerCase() ?? "") })}</Alert>}
       {tasks.total > tasks.rows.length && (
         <Alert tone="warning">

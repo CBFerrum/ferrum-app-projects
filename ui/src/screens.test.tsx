@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
+import { Backlog } from "./Backlog";
 import { Board } from "./Board";
 import type { Project } from "./data";
 import type { Task } from "./plan";
@@ -77,6 +78,75 @@ describe("the board", () => {
 
   it("says when the first tasks are all it shows", () => {
     expect(draw(<Board project={project} set={{ rows: tasks, total: 900 }} open={null} onOpen={() => {}} />)).toContain("first 500 of 900 tasks");
+  });
+});
+
+describe("the board's sprint filter", () => {
+  it("shows the Sprint select when the project has sprints, and filters to tasks without one", () => {
+    const qc = seeded();
+    qc.setQueryData(["projects", "sprints", "p1"], [{ id: "s1", sprint_name: "Sprint 7", start_date: day(2), end_date: day(15), state: "Active" }]);
+    const rows = tasks.map((x, i) => (i === 0 ? { ...x, sprint: "s1" } : x));
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={["/?sprint=none"]}>
+          <Board project={project} set={{ rows, total: rows.length }} open={null} onOpen={() => {}} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(html).toContain('aria-label="Sprint"');
+    expect(html).toContain("4 of 5 tasks");
+  });
+});
+
+describe("the backlog", () => {
+  const sprints = [
+    { id: "s1", sprint_name: "Sprint 7", start_date: day(2), end_date: day(15), state: "Active", goal: "Ship the checkout" },
+    { id: "s2", sprint_name: "Sprint 8", start_date: day(16), end_date: day(29), state: "Planned" },
+  ];
+  const rows: Task[] = [
+    task("10", { subject: "Pay by card", sprint: "s1", story_points: "5" }),
+    task("11", { subject: "Refunds", sprint: "s2" }),
+    task("12", { subject: "Invoice PDF" }),
+    task("13", { subject: "Receipts by mail" }),
+  ];
+  const view = (sprintRights: Record<string, string> = all, p: Project = project) => {
+    const qc = seeded();
+    qc.setQueryData(["meta"], {
+      version: 1,
+      packages: [],
+      modules: [],
+      warnings: [],
+      entities: [
+        { name: "Task", label: "Task", label_plural: "Tasks", kind: "master", submittable: false, permissions: all },
+        { name: "Sprint", label: "Sprint", label_plural: "Sprints", kind: "master", submittable: false, permissions: sprintRights },
+      ],
+    });
+    qc.setQueryData(["projects", "sprints", "p1"], sprints);
+    return renderToStaticMarkup(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter>
+          <Backlog project={p} set={{ rows, total: rows.length }} open={null} onOpen={() => {}} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  };
+
+  it("shows the active sprint, the planned ones and the backlog, with what can be done", () => {
+    const html = view();
+    for (const t of ["Sprint 7", "Sprint 8", "Backlog", "Close sprint…", "Plan a sprint", "Pay by card", "Refunds", "Invoice PDF", "Receipts by mail", "Ship the checkout"]) expect(html).toContain(t);
+    expect(html).not.toContain("Start sprint");
+    expect(html).toContain('aria-label="Move TASK-10"');
+  });
+
+  it("offers no button and no menu to someone who may only read sprints", () => {
+    const html = view({ ...all, write: "none", create: "none", delete: "none" });
+    for (const t of ["Close sprint…", "Start sprint", "Plan a sprint", 'aria-label="Move ']) expect(html).not.toContain(t);
+    expect(html).toContain("Pay by card");
+  });
+
+  it("is read-only on a completed project", () => {
+    const html = view(all, { ...project, status: "Completed" });
+    for (const t of ["Close sprint…", "Plan a sprint", 'aria-label="Move ']) expect(html).not.toContain(t);
   });
 });
 
