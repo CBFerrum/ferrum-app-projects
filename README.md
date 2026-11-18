@@ -7,7 +7,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.12.1-b45309?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.13.0-b45309?style=flat-square)](CHANGELOG.md)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Ferrum platform](https://img.shields.io/badge/runs%20on-Ferrum-2f5bea?style=flat-square)](https://github.com/CBFerrum/Ferrum)
 ![Rust](https://img.shields.io/badge/Rust-server-b7410e?style=flat-square&logo=rust)
@@ -37,9 +37,9 @@ Projects gives a team a board, a timeline, task trees with dependencies, weekly 
 
 | | |
 |---|---|
-| **Version** | 0.12.1 (package `projects` 0.6.1; connector `projects-erp` 0.3.1) |
+| **Version** | 0.13.0 (package `projects` 0.7.0; connector `projects-erp` 0.3.1) |
 | **Kind** | Its own interface at `/projects/` (home, project, task, my work, planning) with Ferrum's records screens for everything else |
-| **What it adds** | 24 entities (16 records, 8 small tables) and extra fields on the shared Project and Customer records, 4 roles, 1 module with 5 reports, 3 project tabs, 1 notification kind and 1 message, 3 upkeep jobs, 3 own endpoints; the ERP connector adds invoicing fields and actions. No print formats. |
+| **What it adds** | 25 entities (17 records, 8 small tables) and extra fields on the shared Project and Customer records, 4 roles, 1 module with 5 reports, 3 project tabs, 1 notification kind and 1 message, 3 upkeep jobs, 3 own endpoints; the ERP connector adds invoicing fields and actions. No print formats. |
 | **Depends on** | Ferrum platform `>=0.4.0, <0.5`; the platform's `core`, `parties` and `project_records` packages |
 | **Works with** | ERP (invoicing, accounts), Helpdesk, Field Service, CRM (they link to projects), Objectives (key results name projects) |
 | **Languages** | English, Arabic and Hindi (307 interface words and 235 names in each), right-to-left |
@@ -135,9 +135,10 @@ Projects gives a team a board, a timeline, task trees with dependencies, weekly 
 ### 🔐 Teams, private projects and the client portal
 
 - **Team.** A project lists people and their role on it: **Manager** (changes the project and its tasks), **Member** (changes its tasks), **Viewer** (reads).
+- **Status updates.** A project's managers (its team's and the one named on it) post a **status update**: a day, a health rating (On Track, At Risk, Off Track) and a summary. The project shows the rating and day of its latest update in its head, with a tile linking to the updates; it is worked out again whenever one is saved or deleted. A summary is about the work: keep people's private details out of it.
 - **Private projects.** Tick Private and only the team (and Projects Managers) read the project, its tasks, risks, issues, change requests and allocations. Open projects are read by every Projects User. Erasing a person removes them from every team.
 - **Client portal.** **Project Client** is a portal role an administrator gives to a customer's people, listed on the customer (Client People). They read, and change nothing: the customer's projects marked **Shared with the Client**, the tasks and milestones on them marked **Visible to the Client**, the approved timesheets whose time is all on a shared project, and, with ERP, the project's submitted invoices.
-- **What the portal hides.** A project's notes, budget, team, manager, estimated cost, timesheet cost and baseline figures; a task's assignees; a timesheet's person, approvers and note; a time log's billing rate. These are hidden by the role's own rules, so they are left out of the record, lists, filters, sorting, search, reports, history and the app's own routes. Comments and files are not shared with portal people yet.
+- **What the portal hides.** A project's notes, budget, team, manager, estimated cost, timesheet cost, baseline figures and health; a task's assignees; a timesheet's person, approvers and note; a time log's billing rate. These are hidden by the role's own rules, so they are left out of the record, lists, filters, sorting, search, reports, history and the app's own routes. Comments and files are not shared with portal people yet.
 
 ### ✅ Tasks
 
@@ -295,6 +296,7 @@ Projects extends the platform's Project record with its own fields, so other app
 | **Project Person** | Manager and weekly hours of a person who records time | manager, weekly hours |
 | **Projects Settings** | Approval, scheduling and reminders | approver, calendar, week start, reminder day |
 | **Risk** / **Issue** | A project's risks and issues | probability, impact, exposure; severity, status |
+| **Status Update** | How a project is going on a day | day, health, summary, author |
 | **Change Request** | A submitted request to change the scope | effects, decision, decided by |
 | **Baseline** (with lines) | A project's plan as it stood on a day, set by Set Baseline, never edited | name, day, who, figures, each task's dates and hours |
 | **Resource Allocation** | Who is planned when, for how many hours a day | person, project, dates, hours per day |
@@ -364,7 +366,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 | Earned value | ✅ | 🟡¹ | 🟡¹ | 🟡¹ | ✅ | 🟡¹ | 🟡¹ |
 | Automation rules | 🟡⁷ | ✅ | ✅ | ✅ | 🟡¹ | ✅ | 🟡¹ |
 | Task approvals | ❌ | ✅ | 🟡¹ | 🟡¹ | ❌ | ✅ | 🟡¹ |
-| Status updates with project health | ❌ | ✅ | 🟡¹ | ✅ | 🟡¹ | ✅ | 🟡¹ |
+| Status updates with project health | ✅ | ✅ | 🟡¹ | ✅ | 🟡¹ | ✅ | 🟡¹ |
 | Email to task | ❌ | ✅ | ✅ | ✅ | 🟡¹ | 🟡¹ | ✅ |
 | Slack, Teams and Git integrations | ❌ | ✅ | ✅ | ✅ | 🟡¹ | ✅ | 🟡¹ |
 | Calendar feeds (iCalendar) | ❌ | ✅ | 🟡¹ | ✅ | 🟡¹ | ✅ | ✅ |
@@ -392,7 +394,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 
 - **Agile work:** sprints, backlogs, story points, burndown and velocity.
 - **Integrations:** Slack, Teams, Git, email to task, calendar feeds and migration importers.
-- **Project health:** status updates with a health rating, portfolio roll-ups of money and dates, dashboards.
+- **Project health:** portfolio roll-ups of money, dates and health, dashboards.
 - **Scheduling depth:** effort-driven scheduling, Gantt export; earned value over time (a curve), not only as of today.
 - **Mobile apps and offline use.**
 - **Task approvals, proofing and automations owned by a project manager.**
@@ -405,6 +407,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 ### ✅ Recently shipped
 
 - [x] **0.10.2** A time log's day is the workspace's date of its start, not UTC's; the task's time list sends it as a day.
+- [x] **0.13.0** Status updates with a health rating: the project shows its latest.
 - [x] **0.12.1** Earned value as a report: planned value from the latest baseline, earned value, actual cost, variances, SPI, CPI and the estimate at completion, as of today.
 - [x] **0.12.0** Baselines on demand: Set Baseline keeps the plan and each task's dates; the timeline draws the chosen one and each task's days after or before it.
 - [x] **0.11.3** Every action says what it returns and what done means, for a process or an agent that runs it.
@@ -430,7 +433,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 - [ ] **Work-in-progress limits** on board columns.
 
 **Project health**
-- [ ] **Status updates with a health rating** and a posted note, with a weekly reminder.
+- [ ] **A weekly reminder** to post a status update.
 - [ ] **Budget alerts** at a threshold, and a burn rate.
 - [ ] **A portfolio roll-up of money, dates and health**, not only task counts.
 

@@ -14,8 +14,8 @@ const all = { read: "all", write: "all", create: "all", delete: "all", submit: "
 const entity = (name: string) => ({ name, label: name, label_plural: `${name}s`, kind: "master", submittable: false, permissions: all });
 const answers: Record<string, unknown> = {
   "/api/auth/me": { tenant: "t", user: { id: "u1", email: "asha@acme.test", full_name: "Asha Rao", is_admin: false, roles: [] }, scopes: {}, packages: ["projects"], fiscal_year_start_month: 4, default_company: null },
-  "/api/meta": { version: 1, packages: [], modules: [], warnings: [], entities: [entity("Project"), entity("Task"), entity("ProjectBaseline")] },
-  "/api/v1/Project/p1": { id: "p1", version: 1, project_name: "Website", status: "Open", start_date: "2026-11-02", end_date: "2026-12-20" },
+  "/api/meta": { version: 1, packages: [], modules: [], warnings: [], entities: [entity("Project"), entity("Task"), entity("ProjectBaseline"), entity("ProjectUpdate")] },
+  "/api/v1/Project/p1": { id: "p1", version: 1, project_name: "Website", status: "Open", start_date: "2026-11-02", end_date: "2026-12-20", proj_health: "At Risk", proj_health_on: "2026-11-13" },
   "/api/app/projects/tasks": { rows: [{ id: "1", version: 1, number: "TASK-1", subject: "Design", status: "Open", project: "p1", exp_start_date: "2026-11-02", exp_end_date: "2026-11-06", assigned_to: [], depends_on: [] }], total: 1 },
   "/api/v1/ProjectBaseline": { rows: [], total: 0 },
 };
@@ -63,5 +63,13 @@ describe("Projects' routes as mounted", () => {
     const text = await open("/p/p1?tab=timeline");
     expect(text).toContain("Design");
     expect(text).toContain("Set a baseline");
+  });
+
+  it("shows the project's health, its status updates, and offers to post one", async () => {
+    const text = await open("/p/p1");
+    expect(text).toContain("At Risk");
+    expect(text).toContain("Status updates");
+    expect(text).toContain("None yet");
+    expect(text).toContain("Post an update");
   });
 });

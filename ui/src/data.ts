@@ -32,6 +32,10 @@ export interface Project {
   proj_costing_amount?: string | number | null;
   proj_billable_amount?: string | number | null;
   proj_billed_amount?: string | number | null;
+  /** From its latest status update: On Track, At Risk or Off Track, and that update's day. */
+  proj_health?: string | null;
+  proj_health_on?: string | null;
+  proj_is_template?: boolean | null;
   _titles?: Record<string, string>;
 }
 

@@ -149,12 +149,28 @@ async fn hide_rows(k: &Kernel, tenant: Uuid) -> Vec<(String, String, Vec<String>
         .unwrap()
 }
 
-const HIDDEN_PROJECT: [&str; 8] =
-    ["notes", "budget", "proj_members", "proj_project_manager", "proj_estimated_cost", "proj_costing_amount", "proj_baseline_cost", "proj_baseline_budget"];
+const HIDDEN_PROJECT: [&str; 10] = [
+    "notes",
+    "budget",
+    "proj_members",
+    "proj_project_manager",
+    "proj_estimated_cost",
+    "proj_costing_amount",
+    "proj_baseline_cost",
+    "proj_baseline_budget",
+    "proj_health",
+    "proj_health_on",
+];
 
 /// Every way the portal person could reach a hidden field, and what staff still read.
 async fn client_sees_none(k: &Arc<Kernel>, w: &Ws, cleo: &Ctx, slug: &str) {
     let b = &w.b;
+    // Staff's judgement of how the project goes is for staff (read as the release has it).
+    let admin = k.load_ctx(w.tenant, w.admin.user, None, "it".into()).await.unwrap();
+    k.insert(&admin, "ProjectUpdate", obj(json!({"project": b.project.to_string(), "health": "At Risk", "summary": "The steel is late"})))
+        .await
+        .expect("an update");
+    assert_eq!(k.get(&admin, "Project", b.project, false).await.unwrap()["proj_health"], json!("At Risk"), "staff read the health");
     let staff = [format!("lead@{slug}.test"), format!("mia@{slug}.test"), format!("vic@{slug}.test"), format!("aud@{slug}.test")];
     let leaks =
         |v: &Value| staff.iter().any(|e| v.to_string().contains(e.as_str())) || v.to_string().contains("staff only") || v.to_string().contains("internal chat");

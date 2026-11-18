@@ -40,13 +40,14 @@ fn task_label(number: Option<String>, subject: Option<String>) -> String {
 pub struct ProjectHook;
 
 /// The tables of the records that follow their project's privacy (`project_private`).
-const PRIVATE_TABLES: [(&str, &str); 6] = [
+const PRIVATE_TABLES: [(&str, &str); 7] = [
     ("Task", "e_task"),
     ("ProjectRisk", "e_project_risk"),
     ("ProjectIssue", "e_project_issue"),
     ("ChangeRequest", "e_change_request"),
     ("ResourceAllocation", "e_resource_allocation"),
     ("ProjectBaseline", "e_project_baseline"),
+    ("ProjectUpdate", "e_project_update"),
 ];
 
 /// The records a customer's portal people reach by their project being shared: `(entity, table, the link to the project,

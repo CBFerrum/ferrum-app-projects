@@ -143,3 +143,24 @@
   unique: [[project, baseline_name]]
   indexes: [[project, taken_on]]
   list: {columns: [baseline_name, project, taken_on, end_date], sort: taken_on desc}
+
+- name: ProjectUpdate
+  label: Status Update
+  kind: master
+  module: projects
+  title_field: health
+  company_scoped: true
+  owner_fields: [author]
+  description: "How a project is going on a day: a health rating and a summary. The project shows its latest one's rating."
+  fields:
+    - {name: project, type: link, to: Project, required: true, in_list: true, in_filter: true}
+    - {name: company, type: link, to: Company, fetch_from: project.company, read_only: true, in_filter: true}
+    - {name: project_private, type: check, fetch_from: project.proj_private, read_only: true, hidden: true, no_copy: true, description: "Its project is its members' alone (kept in step with the project)"}
+    - {name: on_date, type: date, label: Date, required: true, default_expr: today, in_list: true, in_filter: true}
+    - {name: health, type: select, options: [On Track, At Risk, Off Track], required: true, in_list: true, in_filter: true}
+    - {name: summary, type: text, required: true}
+    - {name: author, type: email, read_only: true, no_copy: true, in_list: true}
+  rules:
+    - {name: on_date, check: "doc.on_date <= today", message: "A status update is not dated in the future"}
+  indexes: [[project, on_date]]
+  list: {columns: [project, on_date, health, author], sort: on_date desc}

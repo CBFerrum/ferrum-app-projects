@@ -34,6 +34,7 @@ pub fn register(hooks: &mut HookRegistry) {
         .register("Task", Arc::new(project::TaskHook))
         .register("ProjectRisk", Arc::new(planning::RiskHook))
         .register("ChangeRequest", Arc::new(planning::ChangeRequestHook))
+        .register("ProjectUpdate", Arc::new(planning::UpdateHook))
         .register("Timesheet", Arc::new(timesheet::TimesheetHook))
         .register("ActivityCost", Arc::new(timesheet::ActivityCostHook));
     hooks.add_site("projects", Arc::new(site::ProjectsSite));

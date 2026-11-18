@@ -41,6 +41,7 @@ type Tone = "neutral" | "blue" | "green" | "amber" | "red" | "purple";
 /** Badge colour by stored status id (never by display text). Overdue is the server's own, worked out from the dates. */
 export const TASK_TONES: Record<string, Tone> = { Open: "neutral", Working: "blue", "Pending Review": "amber", Overdue: "red", Completed: "green", Cancelled: "neutral" };
 export const PROJECT_TONES: Record<string, Tone> = { Open: "blue", "On Hold": "amber", Completed: "green", Cancelled: "neutral" };
+export const HEALTH_TONES: Record<string, Tone> = { "On Track": "green", "At Risk": "amber", "Off Track": "red" };
 export const ISSUE_TONES: Record<string, Tone> = { Open: "amber", "In Progress": "blue", Resolved: "green", Closed: "neutral" };
 
 export const statusOf = (t: Task): string => t.status ?? "Open";

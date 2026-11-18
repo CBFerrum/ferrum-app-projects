@@ -166,6 +166,7 @@ async fn scenario() {
     let w = world().await;
     baselines(&w).await;
     earned_value(&w).await;
+    health(&w).await;
 }
 
 /// A key for one effect, through the gate as an agent asks.
@@ -380,4 +381,77 @@ async fn earned_value(w: &World) {
     pm.action("Project", ev, "save_as_template", json!({"template_name": "Earned Kit"})).await;
     let r = pm.report("earned_value", std::slice::from_ref(&co)).await.expect("earned value");
     assert!(row(&r, "Earned Kit").is_none(), "{r}");
+}
+
+/// PRJ-11: status updates with a health rating. The project shows its latest update's rating and day, worked out
+/// again under its lock whenever an update is saved or deleted; its managers post them.
+async fn health(w: &World) {
+    let (pm, lead, mia, nora, boss) =
+        (&w.users["pm"], &reload(&w.users["lead"]).await, &reload(&w.users["mia"]).await, &reload(&w.users["nora"]).await, &reload(&w.users["boss"]).await);
+    let k = &pm.k;
+    let today = Utc::now().date_naive();
+    let day = |n: i64| (today + Duration::days(n)).to_string();
+    let project = uid(&pm
+        .insert(
+            "Project",
+            json!({"project_name": "Health", "company": w.cid, "proj_private": true, "proj_project_manager": "boss@acme.test",
+                   "proj_members": [{"person": "lead@acme.test", "project_role": "Manager"}, {"person": "mia@acme.test", "project_role": "Member"}]}),
+        )
+        .await);
+    let post = |who: &U, health: &str, on: String| {
+        let body = json!({"project": project.to_string(), "health": health, "on_date": on, "summary": "How it goes"});
+        let (k, ctx) = (who.k.clone(), who.ctx.clone());
+        async move { k.insert(&ctx, "ProjectUpdate", obj(body)).await }
+    };
+    let state = || async {
+        let p = pm.get("Project", project).await;
+        (p["proj_health"].clone(), p["proj_health_on"].clone())
+    };
+
+    // the_latest_update_is_the_projects_health
+    let yesterday = uid(&post(lead, "At Risk", day(-1)).await.expect("the team's manager posts"));
+    let latest = uid(&post(boss, "On Track", day(0)).await.expect("the project's manager posts"));
+    assert_eq!(state().await, (json!("On Track"), json!(day(0))));
+    // an_older_update_does_not_win
+    let older = uid(&post(lead, "Off Track", day(-2)).await.expect("posted"));
+    assert_eq!(state().await, (json!("On Track"), json!(day(0))));
+    // editing_and_deleting_follow
+    boss.update("ProjectUpdate", latest, json!({"health": "Off Track"})).await;
+    assert_eq!(state().await, (json!("Off Track"), json!(day(0))));
+    k.delete(&boss.ctx, "ProjectUpdate", latest, None).await.expect("deleted");
+    assert_eq!(state().await, (json!("At Risk"), json!(day(-1))));
+    for u in [yesterday, older] {
+        k.delete(&pm.ctx, "ProjectUpdate", u, None).await.expect("deleted");
+    }
+    assert_eq!(state().await, (Value::Null, Value::Null), "none left");
+
+    // two_at_once
+    let (a, b) = tokio::join!(post(lead, "At Risk", day(0)), post(boss, "On Track", day(0)));
+    let (a, b) = (pm.get("ProjectUpdate", uid(&a.expect("one"))).await, pm.get("ProjectUpdate", uid(&b.expect("other"))).await);
+    let later = if (a["created_at"].as_str(), a["id"].as_str()) > (b["created_at"].as_str(), b["id"].as_str()) { &a } else { &b };
+    assert_eq!(state().await.0, later["health"], "{a:?} {b:?}");
+
+    // who_may_post
+    for who in [mia, nora] {
+        let r = post(who, "On Track", day(0)).await;
+        assert!(matches!(r, Err(Error::Forbidden(_))), "{r:?}");
+    }
+    assert_eq!(mia.list("ProjectUpdate", json!({"project": project.to_string()})).await.len(), 2, "a member reads them");
+    assert!(nora.list("ProjectUpdate", json!({"project": project.to_string()})).await.is_empty(), "an outsider reads none of a private project's");
+
+    // the_author_is_the_poster
+    let mut body = json!({"project": project.to_string(), "health": "On Track", "on_date": day(0), "summary": "Mine"});
+    body["author"] = json!("boss@acme.test");
+    let mine = lead.insert("ProjectUpdate", body).await;
+    assert_eq!(mine["author"], json!("lead@acme.test"));
+
+    // an_update_stays_with_its_project, not_on_a_template, not_in_the_future
+    let other = uid(&pm.insert("Project", json!({"project_name": "Elsewhere", "company": w.cid})).await);
+    let r = pm.try_update("ProjectUpdate", uid(&mine), json!({"project": other.to_string()})).await;
+    assert!(field_error(&r, "project", ""), "{r:?}");
+    let kit = pm.action("Project", other, "save_as_template", json!({"template_name": "Elsewhere Kit"})).await;
+    let r = pm.try_insert("ProjectUpdate", json!({"project": kit["id"], "health": "On Track", "summary": "A plan"})).await;
+    assert!(field_error(&r, "project", ""), "{r:?}");
+    let r = post(lead, "On Track", day(1)).await;
+    assert!(matches!(r, Err(Error::Validation(_))), "{r:?}");
 }

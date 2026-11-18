@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.13.0
+
+Package `projects` 0.7.0: a new record `ProjectUpdate` and two fields on Project (`proj_health`, `proj_health_on`). Needs the same platform as 0.11.0. `ui/dist`
+rebuilt with Ferrum-Frontend `5e2661f`.
+
+- **Status updates.** A project's team manager or its named manager (or a Projects Manager, or an agent for them)
+  posts a status update: its day (today unless given; never in the future), a health rating (On Track, At Risk, Off
+  Track) and a summary. Its author is whoever posts it. Whoever reads the project reads its updates; a private
+  project's stay its team's; an update stays with its project and is not posted on a template.
+- **The project's health.** The project shows the rating and day of its latest update (by day, then as posted), in
+  the head of its page, and a **Status updates** tile links to them; **Post an update** is there for those who may.
+  It is worked out again under the project's lock each time an update is saved, changed or deleted.
+- The client portal does not show a project's health.
+
 ## 0.12.1
 
 Package `projects` 0.6.1 (the report in the module). Needs the same platform as 0.11.0. No interface or database change.

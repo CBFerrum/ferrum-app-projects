@@ -1,5 +1,5 @@
 package: projects
-version: 0.6.1
+version: 0.7.0
 label: Projects
 description: Projects with task trees, dependencies and milestones, timesheets with costing and billing, activity rates, milestone and time-and-materials invoicing, and project profitability.
 # Projects and customers are shared records; invoicing through ERP comes with the projects_erp
@@ -29,6 +29,8 @@ overlays:
       - {op: add_field, after: proj_estimated_cost, field: {name: proj_estimated_hours, type: decimal, label: Estimated Hours, min: "0"}}
       - {op: add_field, after: proj_estimated_hours, field: {name: proj_percent_complete_method, type: select, label: "% Complete Method", options: [Task Progress, Manual], default: Task Progress, description: "Task Progress: the tasks without sub-tasks (a parent is its sub-tasks), each weighed by its expected hours (all alike when none has any); done counts as 100%, cancelled tasks drop out"}}
       - {op: add_field, after: proj_percent_complete_method, field: {name: proj_percent_complete, type: percent, label: "% Complete", min: "0", max: "100", read_only_if: "doc.proj_percent_complete_method != 'Manual'", in_list: true}}
+      - {op: add_field, after: proj_percent_complete, field: {name: proj_health, type: select, label: Health, options: [On Track, At Risk, Off Track], read_only: true, no_copy: true, in_filter: true, description: "From its latest status update"}}
+      - {op: add_field, after: proj_health, field: {name: proj_health_on, type: date, label: Health As Of, read_only: true, no_copy: true, description: "The day of its latest status update"}}
       - {op: add_field, field: {name: proj_actual_hours, type: decimal, label: Actual Hours, read_only: true, no_copy: true}}
       - {op: add_field, field: {name: proj_costing_amount, type: currency, currency: currency, label: Timesheet Cost, read_only: true, no_copy: true}}
       - {op: add_field, field: {name: proj_billable_amount, type: currency, currency: currency, label: Billable Time, read_only: true, no_copy: true}}
@@ -67,7 +69,7 @@ modules:
     label: Projects
     icon: briefcase
     order: 50
-    items: [Project, Task, Timesheet, ProjectRisk, ProjectIssue, ChangeRequest, ProjectBaseline, ResourceAllocation, Portfolio, ActivityType, ActivityCost, RateCard, TaskStatus, TaskWorkflow, ProjectType, ProjectPerson, ProjectsSettings, report:project_profitability, report:earned_value,
+    items: [Project, Task, Timesheet, ProjectRisk, ProjectIssue, ProjectUpdate, ChangeRequest, ProjectBaseline, ResourceAllocation, Portfolio, ActivityType, ActivityCost, RateCard, TaskStatus, TaskWorkflow, ProjectType, ProjectPerson, ProjectsSettings, report:project_profitability, report:earned_value,
             report:timesheet_summary, report:task_overview, report:workload, report:portfolio_overview]
 
 roles:
@@ -86,6 +88,7 @@ roles:
       - {entity: ChangeRequest, read: true, write: true, create: true, delete: true, submit: true, cancel: true, export: true, read_groups: [costing], write_groups: [costing]}
       # A baseline is set by the project's action and never edited: nobody creates or writes one by hand.
       - {entity: ProjectBaseline, read: true, delete: true, export: true}
+      - {entity: ProjectUpdate, read: true, write: true, create: true, delete: true, export: true}
       - {entity: ResourceAllocation, read: true, write: true, create: true, delete: true, export: true}
       - {entity: Portfolio, read: true, write: true, create: true, delete: true}
       - {entity: TaskStatus, read: true, write: true, create: true, delete: true}
@@ -111,6 +114,11 @@ roles:
       - {entity: ChangeRequest, read: true, write: true, create: true, submit: true, via: project.proj_members.person}
       - {entity: ProjectBaseline, read: true, where: {project_private: false}}
       - {entity: ProjectBaseline, read: true, via: project.proj_members.person}
+      # A project's status updates: posted by its managers (the team's and the one named on it), read like the project.
+      - {entity: ProjectUpdate, read: true, where: {project_private: false}}
+      - {entity: ProjectUpdate, read: true, via: project.proj_members.person}
+      - {entity: ProjectUpdate, read: true, write: true, create: true, delete: true, via: project.proj_members.manager}
+      - {entity: ProjectUpdate, read: true, write: true, create: true, delete: true, via: project.proj_project_manager}
       - {entity: ResourceAllocation, read: true, if_owner: true}
       - {entity: Portfolio, read: true}
       - {entity: Project, read: true, where: {proj_private: false}}
@@ -134,7 +142,7 @@ roles:
     permissions:
       # What staff write for staff is hidden (platform BD-40): per record on reads, refused in filters and sorts.
       - {entity: Project, read: true, via: customer.proj_portal_people.email, where: {proj_shared: true},
-         hide: [notes, budget, proj_members, proj_project_manager, proj_estimated_cost, proj_costing_amount, proj_baseline_cost, proj_baseline_budget]}
+         hide: [notes, budget, proj_members, proj_project_manager, proj_estimated_cost, proj_costing_amount, proj_baseline_cost, proj_baseline_budget, proj_health, proj_health_on]}
       - {entity: Task, read: true, via: project.customer.proj_portal_people.email, where: {client_visible: true, project_shared: true}, hide: [assigned_to]}
       - {entity: Timesheet, read: true, via: portal_project.customer.proj_portal_people.email, where: {portal_shared: true, status: [Submitted, Partly Billed, Billed]},
          hide: [user, note, approvers]}
@@ -155,6 +163,7 @@ personal_data:
   - {entity: ActivityCost, match: user, retain: "Costing records"}
   - {entity: ProjectPerson, match: user, retain: "Staffing records"}
   - {entity: ProjectBaseline, match: taken_by, erase: [taken_by]}
+  - {entity: ProjectUpdate, match: author, erase: [author]}
   - {entity: RateCard, match: user, retain: "Costing records"}
 # What a workspace used to add by hand: a timesheet asks the approvers the app names (its projects' managers, or the
 # person's manager, as Projects Settings says; never the person themselves), and goes straight through when it names none.
@@ -205,3 +214,4 @@ messages:
         inapp:
           title: "Your time for the week of {{ values.week_start }} is short"
           text: "{{ values.hours }} of {{ values.expected }} hours recorded."
+

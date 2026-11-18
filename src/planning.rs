@@ -5,6 +5,7 @@
 //! next occurrence when it falls due: the source task's lock, a re-check under it and the unique key on
 //! `repeated_from` keep replicas running at once, or a run repeated, from making it twice.
 
+use crate::project::try_get;
 use async_trait::async_trait;
 use chrono::{Datelike, Months, NaiveDate, Utc};
 use ferrum_domain::flow::created;
@@ -134,6 +135,76 @@ async fn apply(hc: &mut HookCtx<'_>, cr: &Doc) -> Result<()> {
     v.insert("proj_approved_changes".into(), json!(approved + 1));
     hc.kernel.update_tx(&sctx, hc.tx, "Project", project, v, None).await?;
     Ok(())
+}
+
+/// A project's status update: its author is whoever posts it, it stays with its project, never on a template, and
+/// the project's health is its latest update's after every save or delete.
+pub struct UpdateHook;
+
+#[async_trait]
+impl DocHook for UpdateHook {
+    async fn before_validate(&self, hc: &mut HookCtx<'_>, doc: &mut Doc) -> Result<()> {
+        let new = match id(doc, "id") {
+            Some(u) => try_get(hc.kernel, &sys(hc.ctx), hc.tx, "ProjectUpdate", u).await?.is_none(),
+            None => true,
+        };
+        if new {
+            doc.insert("author".into(), json!(hc.ctx.email));
+        }
+        Ok(())
+    }
+
+    async fn validate(&self, hc: &mut HookCtx<'_>, doc: &Doc) -> Result<()> {
+        let project = id(doc, "project").ok_or_else(|| Error::field("project", "is required"))?;
+        let p = try_get(hc.kernel, &sys(hc.ctx), hc.tx, "Project", project).await?.ok_or_else(|| Error::field("project", "does not exist"))?;
+        if p.get("proj_is_template").and_then(Value::as_bool) == Some(true) {
+            return Err(Error::field("project", "is a template: a template has no status updates"));
+        }
+        if let Some(u) = id(doc, "id")
+            && let Some(old) = try_get(hc.kernel, &sys(hc.ctx), hc.tx, "ProjectUpdate", u).await?
+            && id(&old, "project") != Some(project)
+        {
+            return Err(Error::field("project", "an update stays with the project it was written for"));
+        }
+        Ok(())
+    }
+
+    async fn after_save(&self, hc: &mut HookCtx<'_>, doc: &Doc, _old: Option<&Doc>) -> Result<()> {
+        if let Some(project) = id(doc, "project") {
+            refresh_health(hc.kernel, hc.ctx, hc.tx, project, None).await?;
+        }
+        Ok(())
+    }
+
+    async fn before_delete(&self, hc: &mut HookCtx<'_>, doc: &Doc) -> Result<()> {
+        if let Some(project) = id(doc, "project") {
+            refresh_health(hc.kernel, hc.ctx, hc.tx, project, id(doc, "id")).await?;
+        }
+        Ok(())
+    }
+}
+
+/// A project's health and its day: those of its latest status update (by day, then as posted), leaving out
+/// `without` (one being deleted), or none. Worked out again under the project's row lock, so updates saved at
+/// once queue and the last to commit reads the others.
+async fn refresh_health(k: &Kernel, ctx: &Ctx, tx: &mut ferrum_kernel::Tx, project: Uuid, without: Option<Uuid>) -> Result<()> {
+    let sctx = sys(ctx);
+    k.get_tx(&sctx, tx, "Project", project, true).await?;
+    let latest: Option<(Option<String>, Option<NaiveDate>)> = sqlx::query_as(
+        "select health, on_date from e_project_update where tenant_id = $1 and project = $2 and ($3::uuid is null or id <> $3) \
+         order by on_date desc, created_at desc, id desc limit 1",
+    )
+    .bind(ctx.tenant)
+    .bind(project)
+    .bind(without)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let (health, on) = latest.unwrap_or_default();
+    let values = Doc::from_iter([
+        ("proj_health".to_string(), health.map_or(Value::Null, Value::from)),
+        ("proj_health_on".to_string(), on.map_or(Value::Null, |d| json!(d.to_string()))),
+    ]);
+    k.set_values_tx(&sctx, tx, "Project", project, values).await
 }
 
 /// The most tasks a baseline holds (a record's lines are capped above it).
