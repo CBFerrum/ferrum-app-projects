@@ -126,6 +126,12 @@
        description: "Finish to Start: this starts once that is done; Start to Start: this starts once that has started; Finish to Finish: this is done once that is; Start to Finish: this is done once that has started"}
     - {name: lag_days, type: int, label: Lag (Days), in_list: true, description: "Days after that task's start or end (working days on Projects Settings' calendar); negative: a lead"}
 
+- name: TaskRepeatDay
+  label: Repeat Day
+  kind: child
+  fields:
+    - {name: weekday, type: select, options: [Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday], required: true, in_list: true}
+
 - name: Task
   label: Task
   kind: master
@@ -164,7 +170,10 @@
     - {name: backlog_rank, type: decimal, hidden: true, no_copy: true, description: "Its place in the backlog (empty: after the ranked ones, in the order made)"}
     - {name: assigned_to, type: table, of: TaskAssignee}
     - {name: depends_on, type: table, of: TaskDependency, description: "Tasks this one waits for, and how"}
-    - {name: repeat, type: select, options: [Daily, Weekly, Monthly], description: "Makes a new task when this one is due, with the same people; empty: once"}
+    - {name: repeat, type: select, options: [Daily, Weekly, Monthly], description: "Makes the next task of the same kind, with the same people, sub-tasks and details; empty: once"}
+    - {name: repeat_every, type: int, min: 1, max: 365, default: 1, label: Every, visible_if: "doc.repeat != null", description: "Every this many days, weeks or months"}
+    - {name: repeat_weekdays, type: table, of: TaskRepeatDay, label: On, visible_if: "doc.repeat == 'Weekly'", description: "A weekly task lands on each of these days; empty: the same weekday as this one"}
+    - {name: repeat_from, type: select, options: [Due Date, Completion], default: Due Date, label: Counted From, visible_if: "doc.repeat != null", description: "Due Date: the next is made when this one falls due, a step on from its due date. Completion: the next is made when this one is completed, a step on from that day"}
     - {name: repeat_until, type: date, visible_if: "doc.repeat != null"}
     - {name: repeated_from, type: link, to: Task, read_only: true, no_copy: true}
     - {name: description, type: text}
@@ -172,7 +181,7 @@
     - {name: billed_amount, type: currency, read_only: true, no_copy: true, visible_if: "doc.is_milestone"}
   form:
     - {label: Task, fields: [subject, project, company, task_status, priority, parent_task, is_milestone]}
-    - {label: Schedule, fields: [exp_start_date, exp_end_date, expected_hours, sprint, story_points, progress, actual_hours, completed_on, repeat, repeat_until]}
+    - {label: Schedule, fields: [exp_start_date, exp_end_date, expected_hours, sprint, story_points, progress, actual_hours, completed_on, repeat, repeat_every, repeat_weekdays, repeat_from, repeat_until]}
     - {label: Template, collapsible: true, fields: [start_offset, end_offset, assignee_role]}
     - {label: People and Dependencies, fields: [assigned_to, depends_on]}
     - {label: Details, fields: [description]}

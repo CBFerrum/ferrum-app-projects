@@ -2,8 +2,8 @@
 //!
 //! A change request is decided by someone other than whoever raised it, and once approved moves its
 //! project's plan by its effects, the plan as it was first kept as the project's baseline. A repeating task makes its
-//! next occurrence when it falls due: the source task's lock, a re-check under it and the unique key on
-//! `repeated_from` keep replicas running at once, or a run repeated, from making it twice.
+//! next occurrence when it falls due (or, counted from completion, when it is completed): the source task's lock, a
+//! re-check under it and the unique key on `repeated_from` keep two makers, or a run repeated, from making it twice.
 
 use crate::project::try_get;
 use async_trait::async_trait;
@@ -11,9 +11,11 @@ use chrono::{Datelike, Months, NaiveDate, Utc};
 use ferrum_domain::flow::created;
 use ferrum_domain::util::{d, elevated, id, money, rows, s, sys};
 use ferrum_kernel::value::parse_date;
-use ferrum_kernel::{Ctx, Doc, DocHook, Error, HookCtx, Kernel, Result};
+use ferrum_kernel::{Ctx, Doc, DocHook, Error, HookCtx, Kernel, Result, Tx};
+use ferrum_meta::FieldType;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 /// How bad a level is, for working out a risk's exposure.
@@ -263,13 +265,147 @@ pub(crate) async fn take_baseline(hc: &mut HookCtx<'_>, project: &Doc, name: &st
 }
 
 /// The day after `from` that a repetition lands on. A month's end stays within its month.
-pub fn next_day(from: NaiveDate, repeat: &str) -> Option<NaiveDate> {
+pub fn next_day(from: NaiveDate, repeat: &str, every: u32, weekdays: &[u32]) -> Option<NaiveDate> {
+    let every = every.max(1);
     match repeat {
-        "Daily" => from.succ_opt(),
-        "Weekly" => from.checked_add_days(chrono::Days::new(7)),
-        "Monthly" => from.checked_add_months(Months::new(1)),
+        "Daily" => from.checked_add_days(chrono::Days::new(every.into())),
+        "Weekly" if weekdays.is_empty() => from.checked_add_days(chrono::Days::new(7 * u64::from(every))),
+        "Weekly" => {
+            let chosen = |d: &NaiveDate| weekdays.contains(&d.weekday().number_from_monday());
+            let monday = week_of(from);
+            // Later this week, else the first chosen day of the week `every` weeks on.
+            let rest = (1..7).filter_map(|i| monday.checked_add_days(chrono::Days::new(i))).filter(|d| *d > from);
+            let later = monday.checked_add_days(chrono::Days::new(7 * u64::from(every)))?;
+            rest.chain((0..7).filter_map(|i| later.checked_add_days(chrono::Days::new(i)))).find(chosen)
+        }
+        "Monthly" => from.checked_add_months(Months::new(every)),
         _ => None,
     }
+}
+
+/// What a task's repeat says: its kind, every how many, and on which weekdays (1 Monday to 7 Sunday).
+fn repeat_of(doc: &Doc) -> Option<(String, u32, Vec<u32>)> {
+    let repeat = s(doc, "repeat")?.to_string();
+    let every = doc.get("repeat_every").and_then(Value::as_u64).filter(|n| *n >= 1).unwrap_or(1) as u32;
+    const DAYS: [&str; 7] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+    let days =
+        rows(doc, "repeat_weekdays").iter().filter_map(|r| s(r, "weekday")).filter_map(|w| DAYS.iter().position(|d| *d == w)).map(|i| i as u32 + 1).collect();
+    Some((repeat, every, days))
+}
+
+/// One occurrence's own: what a copy never carries (its place in the workflow, its progress, its dates, its parent,
+/// its sprint and its share of a fixed price, which the project's milestones may not exceed together).
+const OWN: [&str; 9] = ["task_status", "status", "status_category", "progress", "exp_start_date", "exp_end_date", "parent_task", "sprint", "billing_percent"];
+/// What a copied sub-task does not carry: it is made by its parent's repeat, not its own.
+const REPEAT: [&str; 4] = ["repeat", "repeat_every", "repeat_from", "repeat_until"];
+
+/// A task's values as a copy carries them: every field of the entity that people set and copies keep, rows without
+/// their ids, people no longer users left off.
+async fn copy_of(ctx: &Ctx, tx: &mut Tx, task: &Doc, sub: bool) -> Result<Doc> {
+    let ent = ctx.schema.entity("Task").ok_or_else(|| Error::internal("Task is not installed"))?;
+    let mut out = Doc::new();
+    for f in ent.value_fields() {
+        let skip = f.no_copy
+            || f.read_only
+            || matches!(f.ftype, FieldType::Secret | FieldType::Attach)
+            || OWN.contains(&f.name.as_str())
+            || (sub && REPEAT.contains(&f.name.as_str()));
+        if !skip && let Some(v) = task.get(&f.name).filter(|v| !v.is_null()) {
+            out.insert(f.name.clone(), v.clone());
+        }
+    }
+    let people: Vec<String> = rows(task, "assigned_to").iter().filter_map(|r| s(r, "user").map(str::to_string)).collect();
+    let gone = crate::unknown_users(tx, ctx.tenant, &people).await?;
+    let kept: Vec<Value> = people.into_iter().filter(|p| !gone.contains(&p.to_lowercase())).map(|p| json!({"user": p})).collect();
+    out.insert("assigned_to".into(), Value::Array(kept));
+    if !sub {
+        let days: Vec<Value> = rows(task, "repeat_weekdays")
+            .into_iter()
+            .map(|mut r| {
+                r.remove("id");
+                Value::Object(r)
+            })
+            .collect();
+        out.insert("repeat_weekdays".into(), Value::Array(days));
+    }
+    Ok(out)
+}
+
+/// The next occurrence of `source` (read under its row lock), a step on from `base` (its due date, or the day it was
+/// completed): the task with its sub-tasks (not cancelled ones, nor ones that repeat on their own) and the links
+/// among them, every date moved by the same days. `false` when its run has ended or the next exists already.
+pub(crate) async fn next_occurrence(k: &Kernel, ctx: &Ctx, tx: &mut Tx, source: &Doc, base: NaiveDate) -> Result<bool> {
+    let Some((repeat, every, days)) = repeat_of(source) else { return Ok(false) };
+    let Some(next_end) = next_day(base, &repeat, every, &days) else { return Ok(false) };
+    if s(source, "repeat_until").and_then(|d| parse_date(d).ok()).is_some_and(|until| next_end > until) {
+        return Ok(false);
+    }
+    let sid = id(source, "id").ok_or_else(|| Error::internal("a task without an id"))?;
+    // Under the source's lock: another maker that made it meanwhile has committed it (and the unique key holds).
+    let made: bool = sqlx::query_scalar("select exists (select 1 from e_task where tenant_id = $1 and repeated_from = $2)")
+        .bind(ctx.tenant)
+        .bind(sid)
+        .fetch_one(&mut **tx)
+        .await?;
+    if made {
+        return Ok(false);
+    }
+    let date = |d: &Doc, f: &str| s(d, f).and_then(|v| parse_date(v).ok());
+    let shift = next_end - date(source, "exp_end_date").unwrap_or(base);
+    let moved = |d: Option<NaiveDate>| d.map_or(Value::Null, |d| json!((d + shift).to_string()));
+    let mut root = copy_of(ctx, tx, source, false).await?;
+    root.insert("parent_task".into(), source.get("parent_task").cloned().unwrap_or(Value::Null));
+    root.insert("exp_end_date".into(), json!(next_end.to_string()));
+    root.insert("exp_start_date".into(), moved(date(source, "exp_start_date")));
+    let made = k.insert_tx(ctx, tx, "Task", root).await?;
+    let new_root = id(&made, "id").ok_or_else(|| Error::internal("a task came back without an id"))?;
+    k.set_values_tx(ctx, tx, "Task", new_root, Doc::from_iter([("repeated_from".to_string(), json!(sid.to_string()))])).await?;
+
+    // The sub-tree, parents before their sub-tasks.
+    let tree: Vec<Uuid> = sqlx::query_scalar(
+        "with recursive tree(id, depth) as ( \
+           select id, 1 from e_task where tenant_id = $1 and parent_task = $2 and status_category is distinct from 'Cancelled' and repeat is null \
+           union all select t.id, r.depth + 1 from e_task t join tree r on t.parent_task = r.id \
+           where t.tenant_id = $1 and r.depth < 50 and t.status_category is distinct from 'Cancelled' and t.repeat is null) \
+         select id from tree order by depth, id limit 201",
+    )
+    .bind(ctx.tenant)
+    .bind(sid)
+    .fetch_all(&mut **tx)
+    .await?;
+    if tree.len() > 200 {
+        return Err(Error::invalid("a repeating task carries at most 200 sub-tasks"));
+    }
+    let mut copies: HashMap<Uuid, Uuid> = HashMap::from([(sid, new_root)]);
+    let mut originals = vec![source.clone()];
+    for t in tree {
+        let doc = k.get_tx(ctx, tx, "Task", t, false).await?;
+        let Some(parent) = id(&doc, "parent_task").and_then(|p| copies.get(&p).copied()) else { continue };
+        let mut copy = copy_of(ctx, tx, &doc, true).await?;
+        copy.insert("parent_task".into(), json!(parent.to_string()));
+        copy.insert("exp_end_date".into(), moved(date(&doc, "exp_end_date")));
+        copy.insert("exp_start_date".into(), moved(date(&doc, "exp_start_date")));
+        let made = k.insert_tx(ctx, tx, "Task", copy).await?;
+        copies.insert(t, id(&made, "id").ok_or_else(|| Error::internal("a task came back without an id"))?);
+        originals.push(doc);
+    }
+    // The links among the copied tasks; one to a task outside them is not carried.
+    for t in &originals {
+        let deps: Vec<Value> = rows(t, "depends_on")
+            .into_iter()
+            .filter_map(|mut r| {
+                let to = copies.get(&id(&r, "task")?)?;
+                r.remove("id");
+                r.remove("subject");
+                r.insert("task".into(), json!(to.to_string()));
+                Some(Value::Object(r))
+            })
+            .collect();
+        if let (false, Some(copy)) = (deps.is_empty(), id(t, "id").and_then(|o| copies.get(&o))) {
+            k.update_tx(ctx, tx, "Task", *copy, Doc::from_iter([("depends_on".to_string(), Value::Array(deps))]), None).await?;
+        }
+    }
+    Ok(true)
 }
 
 /// Makes the next occurrence of repeating tasks that have fallen due. Returns how many it made.
@@ -278,7 +414,7 @@ pub async fn repeat_tasks(k: &Kernel, ctx: &Ctx, today: NaiveDate) -> Result<usi
     // Only the latest of a chain carries it on.
     let due: Vec<Uuid> = sqlx::query_scalar(
         "select t.id from e_task t where t.tenant_id = $1 and t.repeat is not null and t.exp_end_date <= $2 and t.status_category is distinct from 'Cancelled' \
-         and not exists (select 1 from e_task n where n.tenant_id = t.tenant_id and n.repeated_from = t.id) order by t.id limit 500",
+         and coalesce(t.repeat_from, 'Due Date') = 'Due Date' and not exists (select 1 from e_task n where n.tenant_id = t.tenant_id and n.repeated_from = t.id) order by t.id limit 500",
     )
     .bind(ctx.tenant)
     .bind(today)
@@ -297,45 +433,14 @@ pub async fn repeat_tasks(k: &Kernel, ctx: &Ctx, today: NaiveDate) -> Result<usi
     Ok(made)
 }
 
-/// The next occurrence of `task`, over the same span of days; `false` when its run has ended.
+/// The next occurrence of `task`, a step on from its due date; `false` when its run has ended or it exists already.
 async fn repeat_task(k: &Kernel, ctx: &Ctx, task: Uuid) -> Result<bool> {
     let mut tx = k.db.tenant_tx(ctx.tenant).await?;
     let doc = k.get_tx(ctx, &mut tx, "Task", task, true).await?;
-    // Under the source's lock: another run that made its occurrence meanwhile has committed it.
-    let made: bool = sqlx::query_scalar("select exists (select 1 from e_task where tenant_id = $1 and repeated_from = $2)")
-        .bind(ctx.tenant)
-        .bind(task)
-        .fetch_one(&mut *tx)
-        .await?;
-    if made {
-        return Ok(false);
-    }
-    let (Some(repeat), Some(end)) = (s(&doc, "repeat"), s(&doc, "exp_end_date").and_then(|d| parse_date(d).ok())) else { return Ok(false) };
-    let Some(next_end) = next_day(end, repeat) else { return Ok(false) };
-    if s(&doc, "repeat_until").and_then(|d| parse_date(d).ok()).is_some_and(|until| next_end > until) {
-        return Ok(false);
-    }
-    let span = s(&doc, "exp_start_date").and_then(|d| parse_date(d).ok()).map(|start| end - start);
-    let mut next = Doc::new();
-    for field in ["subject", "project", "priority", "is_milestone", "expected_hours", "repeat", "repeat_until", "description"] {
-        next.insert(field.into(), doc.get(field).cloned().unwrap_or(Value::Null));
-    }
-    next.insert("exp_end_date".into(), json!(next_end.to_string()));
-    next.insert("exp_start_date".into(), span.map_or(Value::Null, |days| json!((next_end - days).to_string())));
-    let people: Vec<Value> = rows(&doc, "assigned_to")
-        .into_iter()
-        .map(|mut r| {
-            r.remove("id");
-            Value::Object(r)
-        })
-        .collect();
-    next.insert("assigned_to".into(), Value::Array(people));
-    let made = k.insert_tx(ctx, &mut tx, "Task", next).await?;
-    let new_id = id(&made, "id").ok_or_else(|| Error::internal("a task came back without an id"))?;
-    // Read-only to people: the engine sets it, and it is what makes this happen once.
-    k.set_values_tx(ctx, &mut tx, "Task", new_id, Doc::from_iter([("repeated_from".to_string(), json!(task.to_string()))])).await?;
+    let Some(end) = s(&doc, "exp_end_date").and_then(|d| parse_date(d).ok()) else { return Ok(false) };
+    let made = next_occurrence(k, ctx, &mut tx, &doc, end).await?;
     tx.commit().await?;
-    Ok(true)
+    Ok(made)
 }
 
 pub(crate) fn week_of(day: NaiveDate) -> NaiveDate {
@@ -359,10 +464,27 @@ mod tests {
 
     #[test]
     fn repetitions_land_where_they_should() {
-        assert_eq!(next_day(d("2026-03-31"), "Daily"), Some(d("2026-04-01")));
-        assert_eq!(next_day(d("2026-03-31"), "Weekly"), Some(d("2026-04-07")));
-        assert_eq!(next_day(d("2026-01-31"), "Monthly"), Some(d("2026-02-28")), "a month's end stays in its month");
-        assert_eq!(next_day(d("2026-03-31"), "Never"), None);
+        assert_eq!(next_day(d("2026-03-31"), "Daily", 1, &[]), Some(d("2026-04-01")));
+        assert_eq!(next_day(d("2026-03-31"), "Weekly", 1, &[]), Some(d("2026-04-07")));
+        assert_eq!(next_day(d("2026-01-31"), "Monthly", 1, &[]), Some(d("2026-02-28")), "a month's end stays in its month");
+        assert_eq!(next_day(d("2026-03-31"), "Never", 1, &[]), None);
+    }
+
+    #[test]
+    fn every_n() {
+        assert_eq!(next_day(d("2026-03-31"), "Daily", 3, &[]), Some(d("2026-04-03")));
+        assert_eq!(next_day(d("2026-03-31"), "Weekly", 2, &[]), Some(d("2026-04-14")));
+        assert_eq!(next_day(d("2026-11-30"), "Monthly", 3, &[]), Some(d("2027-02-28")), "the last day of February");
+    }
+
+    #[test]
+    fn weekdays() {
+        // 16 November 2026 is a Monday.
+        let (mon, wed, fri) = (1, 3, 5);
+        assert_eq!(next_day(d("2026-11-16"), "Weekly", 1, &[mon, wed, fri]), Some(d("2026-11-18")), "Monday to Wednesday");
+        assert_eq!(next_day(d("2026-11-20"), "Weekly", 1, &[mon, wed, fri]), Some(d("2026-11-23")), "Friday to the next Monday");
+        assert_eq!(next_day(d("2026-11-20"), "Weekly", 2, &[mon, wed, fri]), Some(d("2026-11-30")), "the Monday two weeks on");
+        assert_eq!(next_day(d("2026-11-16"), "Weekly", 3, &[mon]), Some(d("2026-12-07")), "its own day, three weeks on");
     }
 
     #[test]

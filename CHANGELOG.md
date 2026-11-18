@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.16.0
+
+Package `projects` 0.9.0: three fields on Task (`repeat_every`, `repeat_weekdays` with its small table `TaskRepeatDay`,
+`repeat_from`). Needs the same platform as 0.11.0. No interface build: the task form draws the new fields.
+
+- **Every N, on weekdays.** A task repeats every N days, weeks or months; a weekly one on chosen weekdays (the next
+  chosen day this week, else the first chosen day N weeks on). An existing repeating task reads as every 1, from its
+  due date, on its own weekday: it behaves as before.
+- **From the due date or from completion.** Counted from the due date, the next is made by upkeep when the task falls
+  due, as before. Counted from completion, it is made by the save that completes the task, a step on from that day:
+  both happen or neither. A task reopened and completed again makes no second one; upkeep leaves such tasks alone.
+- **What the next carries.** Every field people set and copies keep, fields the workspace added included; its people,
+  less any who are no longer users; its sub-tasks (not cancelled ones, nor ones that repeat on their own) with the
+  links among them, every date moved by the same days. Not carried: the status (the next starts at the workflow's
+  first), progress, the sprint, board and backlog places, and a milestone's billing percent (a fixed price's
+  milestones bill at most 100 % together). A link to a task outside the copied ones is not carried.
+- A weekday listed twice is refused, and so is a task that repeats from its due date without one.
+
 ## 0.15.0
 
 Interface only, `ui/dist` rebuilt with Ferrum-Frontend `5e2661f`. Needs the same platform as 0.11.0 and package `projects` 0.8.0.

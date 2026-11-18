@@ -7,7 +7,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.15.0-b45309?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.16.0-b45309?style=flat-square)](CHANGELOG.md)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Ferrum platform](https://img.shields.io/badge/runs%20on-Ferrum-2f5bea?style=flat-square)](https://github.com/CBFerrum/Ferrum)
 ![Rust](https://img.shields.io/badge/Rust-server-b7410e?style=flat-square&logo=rust)
@@ -37,7 +37,7 @@ Projects gives a team a board, a timeline, task trees with dependencies, weekly 
 
 | | |
 |---|---|
-| **Version** | 0.15.0 (package `projects` 0.8.0; connector `projects-erp` 0.3.1) |
+| **Version** | 0.16.0 (package `projects` 0.9.0; connector `projects-erp` 0.3.1) |
 | **Kind** | Its own interface at `/projects/` (home, project, task, my work, planning) with Ferrum's records screens for everything else |
 | **What it adds** | 26 entities (18 records, 8 small tables) and extra fields on the shared Project and Customer records, 4 roles, 1 module with 5 reports, 3 project tabs, 1 notification kind and 1 message, 3 upkeep jobs, 3 own endpoints; the ERP connector adds invoicing fields and actions. No print formats. |
 | **Depends on** | Ferrum platform `>=0.4.0, <0.5`; the platform's `core`, `parties` and `project_records` packages |
@@ -149,7 +149,7 @@ Projects gives a team a board, a timeline, task trees with dependencies, weekly 
 - **Overdue job.** A task in a To Do status whose expected end date has passed moves to that status's late status (Overdue by default) when the project's workflow holds it, unless its project is completed or cancelled. The move is a save by the system: a new version, a line in the task's history and a `Task.updated` event.
 - **Four kinds of dependency**, each with a lag or lead in days: **Finish to Start**, **Start to Start**, **Finish to Finish**, **Start to Finish**. Each kind holds back starting or finishing until the other task allows it. Cycles are refused.
 - **Auto-schedule.** With the setting on, a task's dates follow its predecessors on the settings' business calendar, its length kept; done and cancelled tasks stay where they are.
-- **Repeating tasks.** Daily, weekly or monthly, until a date: the next is made when the current falls due, with the same people. The task's lock and a unique key keep a re-run, or two replicas at once, from making it twice.
+- **Repeating tasks.** Every N days, weeks or months, a weekly one on chosen weekdays, until a date; counted from its due date (made by upkeep when it falls due) or from the day it is completed (made by the save that completes it). The next carries every field that is not one occurrence's own (fields the workspace added included), the people still in the workspace, and its sub-tasks with the links among them, every date moved by the same days. It starts at the workflow's first status with no progress, sprint or share of a fixed price. The source's lock and a unique key make one next, whichever way and however often it is made.
 - **Client visibility.** A task or milestone can be marked **Visible to the Client**.
 - **Hand-over.** When a person leaves, their open tasks (To Do or In Progress) move to their manager.
 - **Notification.** Someone added to a task's assignees is told (kind **Tasks assigned to you**), in the bar and by email unless they chose otherwise.
@@ -352,7 +352,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 | Custom fields | 🟡³ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Teams, roles and private projects | ✅ | ✅ | ✅ | ✅ | 🟡¹ | ✅ | ✅ |
 | Client or guest portal | ✅ | 🟡¹ | 🟡¹ | 🟡¹ | 🟡¹ | 🟡¹ | 🟡¹ |
-| Recurring tasks | 🟡⁴ | ✅ | 🟡¹ | ✅ | 🟡¹ | ✅ | 🟡¹ |
+| Recurring tasks | ✅⁴ | ✅ | 🟡¹ | ✅ | 🟡¹ | ✅ | 🟡¹ |
 | Workload and capacity | 🟡⁵ | ✅ | 🟡¹ | ✅ | ✅ | ✅ | 🟡¹ |
 | Timesheets with a timer | ✅ | 🟡¹ | 🟡¹ | ✅ | 🟡¹ | 🟡¹ | ✅ |
 | Timesheet approval | ✅ | 🟡¹ | 🟡¹ | 🟡¹ | 🟡¹ | 🟡¹ | 🟡¹ |
@@ -380,7 +380,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 | One data set with accounting, CRM, helpdesk and HR | ✅ | ➖ | ➖ | ➖ | ➖ | ➖ | ➖ |
 | No per-seat price | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | 🟡¹⁰ |
 
-<sub>¹ Present in some form or not confirmed; check the product and its edition. ² Named baselines on demand, each with every task's dates and hours, drawn on the timeline with each task's days after or before; no baseline of costs per task. ³ A workspace can add fields to tasks and projects and they appear in forms and lists; the board, card and task page draw a fixed set. ⁴ Daily, weekly or monthly, made when the task falls due; it copies the people and a fixed list of fields, not sub-tasks. ⁵ From allocations, task estimates and each person's hours a week, on the working days of a calendar; leave is not known. ⁶ A portfolio overview of task counts, risks and issues; no budget or margin roll-up. ⁷ Automations are built by an administrator for the whole workspace, not per project. ⁸ Flat CSV import of records. ⁹ An on-premises edition exists with a different feature set. ¹⁰ The community edition is free; the enterprise edition is priced per user.</sub>
+<sub>¹ Present in some form or not confirmed; check the product and its edition. ² Named baselines on demand, each with every task's dates and hours, drawn on the timeline with each task's days after or before; no baseline of costs per task. ³ A workspace can add fields to tasks and projects and they appear in forms and lists; the board, card and task page draw a fixed set. ⁴ Every N days, weeks or months, on weekdays, from the due date or from completion, with sub-tasks and added fields; no yearly rule and no count of occurrences. ⁵ From allocations, task estimates and each person's hours a week, on the working days of a calendar; leave is not known. ⁶ A portfolio overview of task counts, risks and issues; no budget or margin roll-up. ⁷ Automations are built by an administrator for the whole workspace, not per project. ⁸ Flat CSV import of records. ⁹ An on-premises edition exists with a different feature set. ¹⁰ The community edition is free; the enterprise edition is priced per user.</sub>
 
 ### 🏆 Where Projects stands out
 
@@ -409,6 +409,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 ### ✅ Recently shipped
 
 - [x] **0.10.2** A time log's day is the workspace's date of its start, not UTC's; the task's time list sends it as a day.
+- [x] **0.16.0** Repeating tasks every N, on weekdays, from completion, with their sub-tasks and every added field.
 - [x] **0.15.0** The Backlog tab: sprints and the backlog with moves, points, start and close; the board filters by sprint.
 - [x] **0.14.0** Sprints and a backlog on the server: plan, start (one active a project), close with carry-over; points on tasks.
 - [x] **0.13.0** Status updates with a health rating: the project shows its latest.

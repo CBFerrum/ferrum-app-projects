@@ -168,6 +168,7 @@ async fn scenario() {
     earned_value(&w).await;
     health(&w).await;
     sprints(&w).await;
+    repeating(&w).await;
 }
 
 /// A key for one effect, through the gate as an agent asks.
@@ -428,9 +429,18 @@ async fn health(w: &World) {
 
     // two_at_once
     let (a, b) = tokio::join!(post(lead, "At Risk", day(0)), post(boss, "On Track", day(0)));
-    let (a, b) = (pm.get("ProjectUpdate", uid(&a.expect("one"))).await, pm.get("ProjectUpdate", uid(&b.expect("other"))).await);
-    let later = if (a["created_at"].as_str(), a["id"].as_str()) > (b["created_at"].as_str(), b["id"].as_str()) { &a } else { &b };
-    assert_eq!(state().await.0, later["health"], "{a:?} {b:?}");
+    let both = [uid(&a.expect("one")), uid(&b.expect("other"))];
+    // The later of the two as the database orders them (to the microsecond; a record shows milliseconds).
+    let mut tx = k.db.tenant_tx(w.admin.ctx.tenant).await.unwrap();
+    let later: String =
+        sqlx::query_scalar("select health from e_project_update where tenant_id = $1 and id = any($2) order by created_at desc, id desc limit 1")
+            .bind(w.admin.ctx.tenant)
+            .bind(&both[..])
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(state().await.0, json!(later));
 
     // who_may_post
     for who in [mia, nora] {
@@ -589,3 +599,105 @@ async fn sprints(w: &World) {
     }
     assert_eq!(dec(&row["story_points"]), n("8"));
 }
+
+/// PRJ-03: a task repeats every N days, weeks or months, on chosen weekdays, counted from its due date (upkeep) or from
+/// its completion (the completing save); the next carries every field that is not one occurrence's own, its people
+/// still here, and its sub-tasks with the links among them.
+async fn repeating(w: &World) {
+    let (admin, pm) = (&w.admin, &w.users["pm"]);
+    let k = &pm.k;
+    let tenant = admin.ctx.tenant;
+    // A field the workspace added to tasks.
+    let area: ferrum_kernel::customize::NewCustomization =
+        serde_json::from_value(json!({"entity": "Task", "op": {"op": "add_field", "field": {"name": "x_area", "type": "data", "label": "Area"}}})).unwrap();
+    k.batch_customizations(&admin.ctx, vec![area], false).await.map_err(|(_, e)| e).expect("an added field");
+    let pm = &reload(pm).await;
+    let today = Utc::now().date_naive();
+    let day = |n: i64| (today + Duration::days(n)).to_string();
+    let p = uid(&pm.insert("Project", json!({"project_name": "Repeats", "company": w.cid})).await);
+    let next_of = |t: Uuid| async move { pm.list("Task", json!({"repeated_from": t.to_string()})).await };
+    let upkeep = || ferrum_app_projects::maintenance(k, tenant);
+
+    // after_completion
+    let weekly = uid(&pm
+        .insert("Task", json!({"subject": "Weekly check", "project": p.to_string(), "repeat": "Weekly", "repeat_from": "Completion", "exp_end_date": day(-7)}))
+        .await);
+    pm.update("Task", weekly, json!({"status": "Completed"})).await;
+    let made = next_of(weekly).await;
+    assert_eq!(made.len(), 1, "made by the completing save");
+    assert_eq!(made[0]["exp_end_date"], json!(day(7)), "a week from the day it was completed");
+    upkeep().await.expect("upkeep");
+    assert_eq!(next_of(weekly).await.len(), 1, "upkeep makes no other");
+    // reopened_and_completed_again_makes_no_second
+    pm.update("Task", weekly, json!({"status": "Open"})).await;
+    pm.update("Task", weekly, json!({"status": "Completed"})).await;
+    assert_eq!(next_of(weekly).await.len(), 1);
+    // upkeep_leaves_completion_tasks_alone
+    let waiting = uid(&pm
+        .insert("Task", json!({"subject": "When done", "project": p.to_string(), "repeat": "Daily", "repeat_from": "Completion", "exp_end_date": day(-3)}))
+        .await);
+    upkeep().await.expect("upkeep");
+    assert!(next_of(waiting).await.is_empty(), "made only on completion");
+
+    // the_copy_carries_sub_tasks_and_their_links, added_fields_are_copied, one_occurrence_only_fields_are_not
+    let fixed = uid(&pm
+        .insert(
+            "Project",
+            json!({"project_name": "Retainer", "company": w.cid, "customer": w.globex, "proj_billing_method": "Fixed Price", "proj_contract_value": "1000"}),
+        )
+        .await);
+    let sprint = pm.insert("Sprint", json!({"sprint_name": "Now", "project": fixed.to_string(), "start_date": day(0), "end_date": day(13)})).await;
+    let outside = uid(&pm.insert("Task", json!({"subject": "Outside", "project": fixed.to_string()})).await);
+    let parent = uid(&pm
+        .insert(
+            "Task",
+            json!({"subject": "Monthly report", "project": fixed.to_string(), "repeat": "Weekly", "exp_start_date": day(-2), "exp_end_date": day(0),
+                   "x_area": "North", "story_points": "3", "progress": "40", "is_milestone": true, "billing_percent": "10", "sprint": sprint["id"],
+                   "assigned_to": [{"user": "lead@acme.test"}]}),
+        )
+        .await);
+    let sub = |subject: &str| json!({"subject": subject, "project": fixed.to_string(), "parent_task": parent.to_string(), "exp_start_date": day(-1), "exp_end_date": day(0)});
+    let a = uid(&pm.insert("Task", sub("Gather")).await);
+    let mut b = sub("Write");
+    b["depends_on"] = json!([{"task": a.to_string()}, {"task": outside.to_string()}]);
+    let b = uid(&pm.insert("Task", b).await);
+    let c = uid(&pm.insert("Task", sub("Dropped")).await);
+    pm.update("Task", c, json!({"status": "Cancelled"})).await;
+    // a_person_who_left_is_left_off: an address that is no user any more, written as the engine would have kept it.
+    let sys = Ctx::system(tenant, k.registry.schema(tenant).await.unwrap());
+    let mut tx = k.db.tenant_tx(tenant).await.unwrap();
+    k.set_child_rows_tx(&sys, &mut tx, "Task", "assigned_to", parent, vec![obj(json!({"user": "lead@acme.test"})), obj(json!({"user": "gone@acme.test"}))])
+        .await
+        .expect("people");
+    tx.commit().await.unwrap();
+    upkeep().await.expect("upkeep");
+    let made = next_of(parent).await;
+    assert_eq!(made.len(), 1, "the next occurrence");
+    let next = pm.get("Task", uid(&made[0])).await;
+    assert_eq!((next["exp_start_date"].clone(), next["exp_end_date"].clone()), (json!(day(5)), json!(day(7))));
+    assert_eq!(next["x_area"], json!("North"), "a field the workspace added is copied");
+    assert_eq!(dec(&next["story_points"]), n("3"));
+    assert!(next["billing_percent"].is_null() && next["sprint"].is_null(), "no billing share, no sprint: {next:?}");
+    assert_eq!((next["status"].clone(), dec(&next["progress"])), (json!("Open"), n("0")));
+    let people: Vec<Value> = next["assigned_to"].as_array().unwrap().iter().map(|r| r["user"].clone()).collect();
+    assert_eq!(people, [json!("lead@acme.test")], "who left is left off");
+    let kids = pm.list("Task", json!({"parent_task": uid(&next).to_string()})).await;
+    let mut names: Vec<String> = kids.iter().map(|t| t["subject"].as_str().unwrap().to_string()).collect();
+    names.sort();
+    assert_eq!(names, ["Gather", "Write"], "its sub-tasks, not the cancelled one");
+    let (a2, b2) = (kids.iter().find(|t| t["subject"] == json!("Gather")).unwrap(), kids.iter().find(|t| t["subject"] == json!("Write")).unwrap());
+    assert_eq!(a2["exp_end_date"], json!(day(7)), "moved by the same days");
+    let b2 = pm.get("Task", uid(b2)).await;
+    let waits: Vec<Value> = b2["depends_on"].as_array().unwrap().iter().map(|r| r["task"].clone()).collect();
+    assert_eq!(waits, [a2["id"].clone()], "it waits for the copy of its link, not for the task outside");
+    let _ = b;
+
+    // rules
+    let mut twice = json!({"subject": "Twice", "project": p.to_string(), "repeat": "Weekly", "exp_end_date": day(3)});
+    twice["repeat_weekdays"] = json!([{"weekday": "Monday"}, {"weekday": "Monday"}]);
+    let r = pm.try_insert("Task", twice).await;
+    assert!(field_error(&r, "weekday", "twice"), "{r:?}");
+    let r = pm.try_insert("Task", json!({"subject": "Undated", "project": p.to_string(), "repeat": "Daily"})).await;
+    assert!(field_error(&r, "exp_end_date", ""), "{r:?}");
+}
+

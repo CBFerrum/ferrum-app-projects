@@ -301,6 +301,12 @@ impl DocHook for TaskHook {
         if moved("exp_start_date") || moved("exp_end_date") {
             crate::schedule::follow(hc, doc).await?;
         }
+        // A task that repeats from its completion makes its next in the save that completes it (its row is locked by
+        // this save): the task is done and the next exists, or neither.
+        let done_now = s(doc, "status_category") == Some(DONE) && old.and_then(|o| s(o, "status_category")) != Some(DONE);
+        if done_now && s(doc, "repeat").is_some() && s(doc, "repeat_from") == Some("Completion") {
+            crate::planning::next_occurrence(hc.kernel, &sys(hc.ctx), hc.tx, doc, hc.ctx.today()).await?;
+        }
         // People newly given the task hear of it (not whoever gave it to them).
         let before = old.map(assignees).unwrap_or_default();
         let me = hc.ctx.email.to_lowercase();
@@ -415,6 +421,20 @@ async fn check_task(hc: &mut HookCtx<'_>, doc: &Doc) -> Result<()> {
             Some(p) if id(&p, "project") != Some(project_id) => errors.push(FieldError::new("parent_task", "belongs to another project")),
             _ => {}
         }
+    }
+
+    // A repeat lands on each weekday once, and one counted from the due date needs a due date.
+    let mut weekdays = Vec::new();
+    for (i, r) in rows(doc, "repeat_weekdays").iter().enumerate() {
+        if let Some(w) = s(r, "weekday") {
+            if weekdays.contains(&w.to_string()) {
+                errors.push(FieldError::new("weekday", "is listed twice").in_row("repeat_weekdays", i));
+            }
+            weekdays.push(w.to_string());
+        }
+    }
+    if s(doc, "repeat").is_some() && s(doc, "repeat_from") != Some("Completion") && s(doc, "exp_end_date").is_none() {
+        errors.push(FieldError::new("exp_end_date", "is needed for a task that repeats from its due date"));
     }
 
     // A task's sprint is of its project, and a closed sprint takes no task (one may be taken out of it).
