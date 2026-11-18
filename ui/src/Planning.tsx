@@ -162,7 +162,7 @@ const draftOf = (a: Allocation): Draft => ({ id: a.id, version: a.version, perso
 
 // ── one person's week ──
 
-function Drawer({ person, week, name, onClose, onEdit, onAdd }: { person: string; week: string; name: string; onClose: () => void; onEdit: (a: Allocation) => void; onAdd: () => void }) {
+export function Drawer({ person, week, name, fromTasks, onClose, onEdit, onAdd }: { person: string; week: string; name: string; fromTasks: number; onClose: () => void; onEdit: (a: Allocation) => void; onAdd: () => void }) {
   const q = useQuery({
     queryKey: ["projects", "allocations", person, week],
     queryFn: ({ signal }) =>
@@ -208,6 +208,7 @@ function Drawer({ person, week, name, onClose, onEdit, onAdd }: { person: string
                 </li>
               ))}
             </ul>
+            {fromTasks > 0 && <p className="faint">{tr("{hours} from task estimates", { hours: hoursText(fromTasks) })}</p>}
           </>
         )}
         <p>
@@ -358,7 +359,7 @@ function Capacity({ company }: { company: ReturnType<typeof useCompany> }) {
         ) : (
           <>
             <p className="faint" aria-live="polite">
-              {over > 0 ? <strong className="pj-late">{(over === 1 ? tr("1 person is booked beyond a week.") : tr("{over} people are booked beyond a week.", { over }))}</strong> : tr("Nobody is booked beyond a week.")} {tr("A week is 40 hours; weekends are not counted.")}
+              {over > 0 ? <strong className="pj-late">{(over === 1 ? tr("1 person is booked beyond a week.") : tr("{over} people are booked beyond a week.", { over }))}</strong> : tr("Nobody is booked beyond a week.")} {tr("A week is each person's own hours, 40 where none are set; days off on the calendar are not counted.")}
             </p>
             <Heat weeks={weeks} people={g.people} totals={g.totals} nameOf={names} selected={picked} onOpen={(person, week) => setPicked({ person, week })} />
             <ul className="pj-legend" aria-label={tr("Key")}>
@@ -376,6 +377,7 @@ function Capacity({ company }: { company: ReturnType<typeof useCompany> }) {
           person={picked.person}
           week={picked.week}
           name={names(picked.person)}
+          fromTasks={g.people.find((p) => p.email === picked.person)?.cells.find((c) => c.week === picked.week)?.fromTasks ?? 0}
           onClose={() => setPicked(null)}
           onEdit={(a) => setEditing(draftOf(a))}
           onAdd={() => setEditing({ person: picked.person, project: null, task: null, from_date: picked.week, to_date: addDays(picked.week, 4), hours_per_day: "8" })}

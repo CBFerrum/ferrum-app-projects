@@ -7,7 +7,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.11.1-b45309?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.11.2-b45309?style=flat-square)](CHANGELOG.md)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Ferrum platform](https://img.shields.io/badge/runs%20on-Ferrum-2f5bea?style=flat-square)](https://github.com/CBFerrum/Ferrum)
 ![Rust](https://img.shields.io/badge/Rust-server-b7410e?style=flat-square&logo=rust)
@@ -37,7 +37,7 @@ Projects gives a team a board, a timeline, task trees with dependencies, weekly 
 
 | | |
 |---|---|
-| **Version** | 0.11.1 (package `projects` 0.5.1; connector `projects-erp` 0.3.0) |
+| **Version** | 0.11.2 (package `projects` 0.5.2; connector `projects-erp` 0.3.0) |
 | **Kind** | Its own interface at `/projects/` (home, project, task, my work, planning) with Ferrum's records screens for everything else |
 | **What it adds** | 22 entities (15 records, 7 small tables) and extra fields on the shared Project and Customer records, 4 roles, 1 module with 5 reports, 3 project tabs, 1 notification kind and 1 message, 3 upkeep jobs, 3 own endpoints; the ERP connector adds invoicing fields and actions. No print formats. |
 | **Depends on** | Ferrum platform `>=0.4.0, <0.5`; the platform's `core`, `parties` and `project_records` packages |
@@ -228,7 +228,7 @@ For Projects Managers:
 | **Project Profitability** | Billed revenue against costs from timesheets and the ledger, per project; forecast margin |
 | **Timesheet Summary** | Hours by person, project and activity over a period |
 | **Task Overview** | Tasks by project and assignee with their status |
-| **Workload** | Hours planned per person per week against capacity, who is over and when |
+| **Workload** | Hours planned per person per week (allocations, and their share of task estimates) against their own capacity (hours a week on their Person record, else the hours a day asked), who is over and when; a planner sees everyone, a Projects User their own |
 | **Portfolio Overview** | How each portfolio's projects stand |
 
 ### 🔌 For other apps and agents
@@ -374,7 +374,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 | One data set with accounting, CRM, helpdesk and HR | ✅ | ➖ | ➖ | ➖ | ➖ | ➖ | ➖ |
 | No per-seat price | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | 🟡¹⁰ |
 
-<sub>¹ Present in some form or not confirmed; check the product and its edition. ² One project baseline of the end date, hours, cost, budget and contract value, kept by the first approved change request; no saved baselines on demand and no variance on the timeline. ³ A workspace can add fields to tasks and projects and they appear in forms and lists; the board, card and task page draw a fixed set. ⁴ Daily, weekly or monthly, made when the task falls due; it copies the people and a fixed list of fields, not sub-tasks. ⁵ From allocations and working days of a calendar; task estimates do not count and leave is not known. ⁶ A portfolio overview of task counts, risks and issues; no budget or margin roll-up. ⁷ Automations are built by an administrator for the whole workspace, not per project. ⁸ Flat CSV import of records. ⁹ An on-premises edition exists with a different feature set. ¹⁰ The community edition is free; the enterprise edition is priced per user.</sub>
+<sub>¹ Present in some form or not confirmed; check the product and its edition. ² One project baseline of the end date, hours, cost, budget and contract value, kept by the first approved change request; no saved baselines on demand and no variance on the timeline. ³ A workspace can add fields to tasks and projects and they appear in forms and lists; the board, card and task page draw a fixed set. ⁴ Daily, weekly or monthly, made when the task falls due; it copies the people and a fixed list of fields, not sub-tasks. ⁵ From allocations, task estimates and each person's hours a week, on the working days of a calendar; leave is not known. ⁶ A portfolio overview of task counts, risks and issues; no budget or margin roll-up. ⁷ Automations are built by an administrator for the whole workspace, not per project. ⁸ Flat CSV import of records. ⁹ An on-premises edition exists with a different feature set. ¹⁰ The community edition is free; the enterprise edition is priced per user.</sub>
 
 ### 🏆 Where Projects stands out
 
@@ -403,6 +403,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 ### ✅ Recently shipped
 
 - [x] **0.10.2** A time log's day is the workspace's date of its start, not UTC's; the task's time list sends it as a day.
+- [x] **0.11.2** Reports keep to what the reader may read: the portfolio overview, workload and profitability no longer show other teams' private projects or other people's plans. Capacity is each person's own week; task estimates count as planned hours. Profitability works without ERP.
 - [x] **0.11.1** A late task moved by upkeep is in its history and raises `Task.updated`; billing and releasing time and milestones is in their history; a repeating task makes one next occurrence however many replicas run.
 - [x] **0.11.0** Upkeep is one workspace's: needs Ferrum 0.4.0.
 - [x] **0.10.4** What is late and when a task was done follow the workspace's day, not UTC's: on saving, in the overdue job and in the task and portfolio overviews.
@@ -442,7 +443,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 ### 🔭 Later
 
 - [ ] **More baselines**, saved on demand, per task, with variance on the timeline; Gantt print and export.
-- [ ] **Workload from task estimates**, and **capacity that knows leave** from HR.
+- [ ] **Capacity that knows leave** from HR.
 - [ ] **Utilisation**: billable hours over capacity, against a target.
 - [ ] **Role-based and tentative booking**, and skills on people.
 - [ ] **Earned value** (planned value, earned value, actual cost, CPI, SPI).

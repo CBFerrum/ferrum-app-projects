@@ -247,7 +247,7 @@
   fields:
     - {name: user, type: email, required: true, unique: true, in_list: true}
     - {name: manager, type: email, in_list: true, description: Approves the person's timesheets when Projects Settings says the person's manager does}
-    - {name: weekly_hours, type: decimal, min: "0", max: "168", in_list: true, label: Hours a Week, description: "Reminded when a week's recorded time falls short of these; empty or 0: never"}
+    - {name: weekly_hours, type: decimal, min: "0", max: "168", in_list: true, label: Hours a Week, description: "The hours they work a week: their capacity in the workload, and what a week's recorded time is checked against for the reminder; empty or 0: the workload takes the report's hours a day, and they are never reminded"}
     - {name: reminded_week, type: date, read_only: true, no_copy: true, description: The last week they were reminded of}
   list: {columns: [user, manager, weekly_hours], sort: user asc}
 

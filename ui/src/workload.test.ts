@@ -39,7 +39,7 @@ describe("how full a week is", () => {
       [38, "busy"],
       [0, "free"],
     ]);
-    expect(g.people[1].cells[0]).toEqual({ week: "2026-11-02", hours: 44, capacity: 40, level: "over" });
+    expect(g.people[1].cells[0]).toEqual({ week: "2026-11-02", hours: 44, fromTasks: 0, capacity: 40, level: "over" });
     expect(g.people[1].peak).toBeCloseTo(1.1);
     expect(g.totals.map((c) => [c.hours, c.capacity])).toEqual([
       [64.5, 80],
@@ -56,6 +56,20 @@ describe("how full a week is", () => {
       ["a@x.test", "free"],
     ]);
     expect(grid([], ["2026-11-02"]).people).toEqual([]);
-    expect(grid([], ["2026-11-02"]).totals).toEqual([{ week: "2026-11-02", hours: 0, capacity: 0, level: "free" }]);
+    expect(grid([], ["2026-11-02"]).totals).toEqual([{ week: "2026-11-02", hours: 0, fromTasks: 0, capacity: 0, level: "free" }]);
+  });
+
+  it("keeps what task estimates add, per person and for the team", () => {
+    const rows = [
+      { person: "asha@acme.test", week: "2026-11-02", hours: "22", task_hours: "6", capacity: "16" },
+      { person: "ravi@acme.test", week: "2026-11-02", hours: "16", capacity: "32" },
+      { person: "ravi@acme.test", week: "2026-11-02", hours: "6", task_hours: "6", capacity: "32" },
+    ];
+    const g = grid(rows, ["2026-11-02"]);
+    expect(g.people.map((p) => [p.email, p.cells[0].hours, p.cells[0].fromTasks, p.cells[0].capacity])).toEqual([
+      ["asha@acme.test", 22, 6, 16],
+      ["ravi@acme.test", 22, 6, 32],
+    ]);
+    expect(g.totals[0].fromTasks).toBe(12);
   });
 });

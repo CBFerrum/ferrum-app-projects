@@ -915,6 +915,7 @@ async fn scenario() {
     workspace_day(&k).await;
     overdue_upkeep_is_on_the_record(&k).await;
     two_upkeeps_at_once(&k).await;
+    capacity_is_each_persons_own(&k).await;
 }
 
 /// The last line of a record's history.
@@ -1192,4 +1193,79 @@ async fn projects_alone(k: &Arc<Kernel>) {
         .expect("project");
     let task = k.insert(&ctx, "Task", json!({"subject": "Design", "project": p["id"]}).as_object().cloned().unwrap()).await.expect("task");
     assert_eq!(task["project"], p["id"]);
+    // Profitability without ERP: no invoices and no ledger to read, so nothing billed and no expense.
+    let u = U { k: k.clone(), ctx };
+    let pr = u.report("project_profitability", &[("company", company["id"].as_str().unwrap().to_string())]).await.expect("profitability without ERP");
+    let row = &pr["rows"][0];
+    assert_eq!((dec(&row["billed_revenue"]), dec(&row["expense_cost"]), pr["meta"]["ledger"].clone()), (Decimal::ZERO, Decimal::ZERO, json!(false)), "{pr}");
+}
+
+/// The workload weighs each person against their own week: their hours a week (Person) over the calendar's working
+/// days, the report's hours a day for anyone without; a holiday lowers both. Task estimates load the people on a task
+/// over its working days, unless an allocation of theirs names the task.
+async fn capacity_is_each_persons_own(k: &Arc<Kernel>) {
+    let (tenant, u, company, project) = workspace(k, "capacity").await;
+    for who in ["alice", "bob"] {
+        k.create_user(&u.ctx, &format!("{who}@capacity.test"), who, Some("Correct-Horse-9"), &["Projects User".into()], false).await.expect("user");
+    }
+    u.insert("ProjectPerson", json!({"user": "alice@capacity.test", "weekly_hours": "20"})).await;
+    let monday = crate_week(u.ctx.today()) + Duration::days(7);
+    let day = |n: i64| (monday + Duration::days(n)).to_string();
+    let mut tx = k.db.tenant_tx(tenant).await.unwrap();
+    sqlx::query("insert into logic_calendar (tenant_id, name, zone, weekends, holidays) values ($1, 'office', 'UTC', '{sat,sun}', array[$2::date])")
+        .bind(tenant)
+        .bind(monday + Duration::days(2))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    for who in ["alice", "bob"] {
+        u.insert(
+            "ResourceAllocation",
+            json!({"person": format!("{who}@capacity.test"), "project": project.to_string(), "from_date": day(0), "to_date": day(4), "hours_per_day": "4"}),
+        )
+        .await;
+    }
+    let co = company.as_str().unwrap().to_string();
+    let week = [("company", co), ("from_date", day(0)), ("to_date", day(6)), ("calendar", "office".to_string())];
+    let load = || async {
+        let r = u.report("workload", &week).await.expect("workload");
+        let of = |who: &str| r["rows"].as_array().unwrap().iter().find(|x| x["person"] == json!(format!("{who}@capacity.test"))).cloned().unwrap_or_default();
+        (of("alice"), of("bob"))
+    };
+    let (alice, bob) = load().await;
+    assert_eq!(
+        (dec(&alice["capacity"]), dec(&alice["hours"]), alice["over"].clone()),
+        (n("16"), n("16"), json!(false)),
+        "20 a week over 5 days, 4 worked: {alice}"
+    );
+    assert_eq!((dec(&bob["capacity"]), dec(&bob["hours"])), (n("32"), n("16")), "no Person record: 8 a day: {bob}");
+
+    // Twelve hours Monday to Thursday for two people: three worked days, two hours each a day.
+    let task = |subject: &str, hours: &str, dated: bool| {
+        let mut t = json!({"subject": subject, "project": project.to_string(), "expected_hours": hours,
+                           "assigned_to": [{"user": "alice@capacity.test"}, {"user": "bob@capacity.test"}]});
+        if dated {
+            t["exp_start_date"] = json!(day(0));
+            t["exp_end_date"] = json!(day(3));
+        }
+        t
+    };
+    let build = uid(&u.insert("Task", task("Build", "12", true)).await);
+    let (alice, bob) = load().await;
+    assert_eq!((dec(&alice["task_hours"]), dec(&alice["hours"]), dec(&bob["task_hours"])), (n("6"), n("22"), n("6")), "{alice} {bob}");
+    // A cancelled task and one without dates add nothing.
+    let dropped = uid(&u.insert("Task", task("Dropped", "100", true)).await);
+    u.update("Task", dropped, json!({"status": "Cancelled"})).await;
+    u.insert("Task", task("Someday", "50", false)).await;
+    let (alice, bob) = load().await;
+    assert_eq!((dec(&alice["task_hours"]), dec(&bob["task_hours"])), (n("6"), n("6")), "{alice} {bob}");
+    // An allocation of Alice's naming the task plans it: its estimate no longer counts for her.
+    u.insert(
+        "ResourceAllocation",
+        json!({"person": "alice@capacity.test", "project": project.to_string(), "task": build.to_string(), "from_date": day(0), "to_date": day(0), "hours_per_day": "1"}),
+    )
+    .await;
+    let (alice, bob) = load().await;
+    assert_eq!((dec(&alice["task_hours"]), dec(&alice["hours"]), dec(&bob["task_hours"])), (n("0"), n("17"), n("6")), "{alice} {bob}");
 }

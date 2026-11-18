@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.11.2
+
+Package `projects` 0.5.2 (a field's description). Needs the same platform as 0.11.0. `ui/dist` rebuilt with Ferrum-Frontend `5e2661f`.
+
+- **Reports show only what you may read.** The portfolio overview and project profitability list only projects you
+  may open: someone who is not on a private project's team no longer sees its name, task counts, risks and issues
+  there. The workload shows a Projects User their own planned hours, not everyone's; a planner still sees everyone.
+  Someone without a Projects role runs none of the three.
+- **Capacity is each person's own week.** The workload weighs a person against the hours a week on their Person
+  record, spread over the working days of the week on the calendar (a holiday lowers it); someone without one, or
+  with 0, against the report's hours a day (8 unless asked), as before. `meta.capacity` says `person`.
+- **Task estimates count.** A task's estimate is spread over the working days from its start to its end and shared
+  by its people; it adds to their planned hours (`task_hours`, the new column "From Task Estimates"). A person whose
+  allocation names the task has it planned there instead, not twice. Cancelled tasks and tasks without both dates
+  add nothing. A person's week on the capacity tab says how much comes from task estimates.
+- **Profitability without ERP.** With Projects alone the report no longer reads invoices or the ledger: billed
+  revenue and expenses are 0, and `meta.ledger` is `false`.
+
 ## 0.11.1
 
 Package `projects` 0.5.1 (a unique key on `Task.repeated_from`). Needs the same platform as 0.11.0. No interface change.

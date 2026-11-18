@@ -50,12 +50,16 @@ export interface WorkloadRow {
   person: string;
   week: string;
   hours: string | number;
+  /** The part of `hours` that comes from task estimates. */
+  task_hours?: string | number;
   capacity?: number | string;
 }
 
 export interface Cell {
   week: string;
   hours: number;
+  /** Of `hours`, what the person's tasks' estimates add. */
+  fromTasks: number;
   capacity: number;
   level: Level;
 }
@@ -74,26 +78,35 @@ export interface Grid {
   totals: Cell[];
 }
 
-const cell = (week: string, hours: number, capacity: number): Cell => ({ week, hours, capacity, level: level(hours, capacity) });
+const cell = (week: string, hours: number, capacity: number, fromTasks = 0): Cell => ({ week, hours, fromTasks, capacity, level: level(hours, capacity) });
 
 /** The people down and the weeks across. `everyone` adds people with nothing planned; `by` orders them. */
 export function grid(rows: WorkloadRow[], weeks: string[], everyone: string[] = [], by: (email: string) => string = (e) => e): Grid {
   const hours = new Map<string, number>();
   const room = new Map<string, number>();
+  const fromTasks = new Map<string, number>();
   const who = new Set(everyone.map((e) => e.toLowerCase()));
   for (const r of rows) {
     const person = r.person.toLowerCase();
     who.add(person);
     hours.set(`${person}|${r.week}`, (hours.get(`${person}|${r.week}`) ?? 0) + (Number(r.hours) || 0));
+    fromTasks.set(`${person}|${r.week}`, (fromTasks.get(`${person}|${r.week}`) ?? 0) + (Number(r.task_hours) || 0));
     if (r.capacity !== undefined) room.set(`${person}|${r.week}`, Number(r.capacity) || CAPACITY);
   }
   const people = [...who]
     .sort((a, b) => by(a).localeCompare(by(b)) || a.localeCompare(b))
     .map((email): Person => {
-      const cells = weeks.map((w) => cell(w, hours.get(`${email}|${w}`) ?? 0, room.get(`${email}|${w}`) ?? CAPACITY));
+      const cells = weeks.map((w) => cell(w, hours.get(`${email}|${w}`) ?? 0, room.get(`${email}|${w}`) ?? CAPACITY, fromTasks.get(`${email}|${w}`) ?? 0));
       return { email, cells, peak: Math.max(0, ...cells.map((c) => c.hours / c.capacity)) };
     });
-  const totals = weeks.map((w, i) => cell(w, people.reduce((n, p) => n + p.cells[i].hours, 0), people.reduce((n, p) => n + p.cells[i].capacity, 0)));
+  const totals = weeks.map((w, i) =>
+    cell(
+      w,
+      people.reduce((n, p) => n + p.cells[i].hours, 0),
+      people.reduce((n, p) => n + p.cells[i].capacity, 0),
+      people.reduce((n, p) => n + p.cells[i].fromTasks, 0),
+    ),
+  );
   return { weeks, people, totals };
 }
 

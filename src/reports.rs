@@ -6,9 +6,10 @@ use async_trait::async_trait;
 use chrono::NaiveDate;
 use ferrum_domain::reports::{Params, ReportCompany, ReportSource, col, param_def, period, read_tx, resolve_company};
 use ferrum_domain::util::money;
-use ferrum_kernel::{Access, Action, Ctx, Error, Kernel, Result, Tx};
+use ferrum_kernel::{Access, Action, Ctx, Error, Kernel, Result, Tx, row_scope};
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
+use sqlx::{Postgres, QueryBuilder};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use uuid::Uuid;
 
@@ -68,8 +69,11 @@ impl ReportSource for Reports {
 
 /// Hours a person is planned for, week by week, against the hours they can work that week: the
 /// working days of a business calendar (its weekends and holidays, FEO-029), or Monday to Friday
-/// without one, at the working hours a day (8 unless said). Who is over it, and when. Days that are
-/// not worked count for nothing. Leave is not known here (it is HR's).
+/// without one, at their own hours a week (Person) spread over a week's working days, else the
+/// report's hours a day (8 unless said). Planned is their allocations and their share of the
+/// estimates of tasks they are on, spread over each task's working days, unless an allocation of
+/// theirs names the task. Who is over it, and when. Only rows the caller may read: their
+/// allocations and the tasks they may read. Leave is not known here (it is HR's).
 async fn workload(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Params<'_>) -> Result<Value> {
     let (from, to) = period(p, co)?;
     let per_day = match p.str("hours_per_day") {
@@ -93,24 +97,25 @@ async fn workload(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Params<'_>) ->
         let name = day.format("%a").to_string().to_lowercase();
         !weekends.contains(&name) && !holidays.contains(&day)
     };
+    let week_days = Decimal::from(7usize.saturating_sub(weekends.iter().collect::<HashSet<_>>().len()).max(1) as i64);
     let who = p.raw.get("user").map(|u| u.trim().to_lowercase()).filter(|u| !u.is_empty());
-    let rows: Vec<(String, NaiveDate, NaiveDate, Decimal)> = sqlx::query_as(
-        "select lower(person), from_date, to_date, hours_per_day from e_resource_allocation \
-         where tenant_id = $1 and company = $2 and to_date >= $3 and from_date <= $4 and ($5::text is null or lower(person) = $5)",
-    )
-    .bind(ctx.tenant)
-    .bind(co.id)
-    .bind(from)
-    .bind(to)
-    .bind(&who)
-    .fetch_all(&mut **tx)
-    .await?;
-    let mut weeks: BTreeMap<(String, NaiveDate), Decimal> = BTreeMap::new();
+    let allocations = ctx.schema.entity("ResourceAllocation").ok_or_else(|| Error::NotFound("ResourceAllocation".into()))?;
+    let mut qb =
+        QueryBuilder::<Postgres>::new("select lower(a.person), a.from_date, a.to_date, a.hours_per_day from e_resource_allocation a where a.tenant_id = ");
+    qb.push_bind(ctx.tenant).push(" and a.company = ").push_bind(co.id);
+    row_scope(ctx, allocations, Action::Read)?.push_sql(&mut qb, "a");
+    qb.push(" and a.to_date >= ").push_bind(from).push(" and a.from_date <= ").push_bind(to);
+    if let Some(w) = &who {
+        qb.push(" and lower(a.person) = ").push_bind(w.clone());
+    }
+    let rows: Vec<(String, NaiveDate, NaiveDate, Decimal)> = qb.build_query_as().fetch_all(&mut **tx).await?;
+    // (planned, of which from task estimates) per person and week.
+    let mut weeks: BTreeMap<(String, NaiveDate), (Decimal, Decimal)> = BTreeMap::new();
     for (person, start, end, hours) in rows {
         let mut day = start.max(from);
         while day <= end.min(to) {
             if worked(day) {
-                *weeks.entry((person.clone(), crate::planning::week_of(day))).or_default() += hours;
+                weeks.entry((person.clone(), crate::planning::week_of(day))).or_default().0 += hours;
             }
             day = match day.succ_opt() {
                 Some(next) => next,
@@ -118,46 +123,142 @@ async fn workload(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Params<'_>) ->
             };
         }
     }
-    // A week's capacity: its worked days within the period, at the hours a day.
-    let capacity = |week: NaiveDate| {
+    let truncated = spread_estimates(tx, ctx, co, (from, to), &worked, who.as_deref(), &mut weeks).await?;
+    let weekly: HashMap<String, Decimal> =
+        sqlx::query_as("select lower(\"user\"), weekly_hours from e_project_person where tenant_id = $1 and weekly_hours > 0")
+            .bind(ctx.tenant)
+            .fetch_all(&mut **tx)
+            .await?
+            .into_iter()
+            .collect();
+    // A week's capacity: its worked days within the period, at the person's hours a day.
+    let capacity = |person: &str, week: NaiveDate| {
         let days = (0..7).filter_map(|i| week.checked_add_days(chrono::Days::new(i))).filter(|d| *d >= from && *d <= to && worked(*d)).count();
-        per_day * Decimal::from(days as i64)
+        weekly.get(person).map_or(per_day, |w| *w / week_days) * Decimal::from(days as i64)
     };
+    let shown = |v: Decimal| money(v.round_dp(2));
     let rows: Vec<Value> = weeks
         .into_iter()
-        .map(|((person, week), hours)| {
-            let can = capacity(week);
-            json!({"person": person, "week": week, "hours": money(hours), "capacity": money(can), "over": hours > can})
+        .map(|((person, week), (hours, from_tasks))| {
+            let can = capacity(&person, week);
+            json!({"person": person, "week": week, "hours": shown(hours), "task_hours": shown(from_tasks), "capacity": shown(can), "over": hours > can})
         })
         .collect();
     Ok(json!({
-        "columns": [col("person", "Person", "data"), col("week", "Week Of", "date"), col("hours", "Planned Hours", "float"), col("capacity", "Capacity", "float"), col("over", "Over", "check")],
+        "columns": [col("person", "Person", "data"), col("week", "Week Of", "date"), col("hours", "Planned Hours", "float"),
+            col("task_hours", "From Task Estimates", "float"), col("capacity", "Capacity", "float"), col("over", "Over", "check")],
         "rows": rows,
-        "meta": {"from_date": from, "to_date": to, "calendar": p.str("calendar"), "hours_per_day": money(per_day)},
+        "meta": {"from_date": from, "to_date": to, "calendar": p.str("calendar"), "hours_per_day": money(per_day), "capacity": "person", "truncated": truncated},
     }))
+}
+
+/// Adds the estimates of tasks the caller may read, with dates in the period and not cancelled, to `weeks`: each
+/// task's hours spread evenly over the working days of its whole span and shared equally by its people, on the
+/// days inside the period. A person an allocation names the task for has it planned there instead. `true` when
+/// more tasks than a report shows matched (the first ones count).
+async fn spread_estimates(
+    tx: &mut Tx,
+    ctx: &Ctx,
+    co: &ReportCompany,
+    (from, to): (NaiveDate, NaiveDate),
+    worked: &impl Fn(NaiveDate) -> bool,
+    who: Option<&str>,
+    weeks: &mut BTreeMap<(String, NaiveDate), (Decimal, Decimal)>,
+) -> Result<bool> {
+    let Some(ent) = ctx.schema.entity("Task") else { return Ok(false) };
+    let scope = match row_scope(ctx, ent, Action::Read) {
+        Ok(scope) => scope,
+        Err(Error::Forbidden(_)) => return Ok(false),
+        Err(e) => return Err(e),
+    };
+    let mut qb = QueryBuilder::<Postgres>::new(
+        "select t.id, t.exp_start_date, t.exp_end_date, t.expected_hours from e_task t join e_project p on p.tenant_id = t.tenant_id and p.id = t.project \
+         where t.tenant_id = ",
+    );
+    qb.push_bind(ctx.tenant).push(" and p.company = ").push_bind(co.id);
+    scope.push_sql(&mut qb, "t");
+    qb.push(" and t.expected_hours > 0 and t.exp_start_date is not null and t.exp_end_date is not null and t.exp_end_date >= ")
+        .push_bind(from)
+        .push(" and t.exp_start_date <= ")
+        .push_bind(to)
+        .push(" and t.status_category is distinct from 'Cancelled' order by t.id limit ")
+        .push_bind(MAX_ROWS + 1);
+    let mut tasks: Vec<(Uuid, NaiveDate, NaiveDate, Decimal)> = qb.build_query_as().fetch_all(&mut **tx).await?;
+    let truncated = tasks.len() as i64 > MAX_ROWS;
+    tasks.truncate(MAX_ROWS as usize);
+    if tasks.is_empty() {
+        return Ok(false);
+    }
+    let ids: Vec<Uuid> = tasks.iter().map(|t| t.0).collect();
+    let mut people: HashMap<Uuid, Vec<String>> = HashMap::new();
+    let rows: Vec<(Uuid, Option<String>)> =
+        sqlx::query_as("select parent_id, lower(\"user\") from e_task__assigned_to where tenant_id = $1 and parent_id = any($2)")
+            .bind(ctx.tenant)
+            .bind(&ids)
+            .fetch_all(&mut **tx)
+            .await?;
+    for (task, person) in rows {
+        if let Some(person) = person {
+            people.entry(task).or_default().push(person);
+        }
+    }
+    // Read whatever the scope: these only keep an allocated task from counting twice.
+    let planned: HashSet<(Uuid, String)> = sqlx::query_as::<_, (Uuid, String)>(
+        "select task, lower(person) from e_resource_allocation where tenant_id = $1 and task = any($2) and person is not null",
+    )
+    .bind(ctx.tenant)
+    .bind(&ids)
+    .fetch_all(&mut **tx)
+    .await?
+    .into_iter()
+    .collect();
+    for (task, start, end, estimate) in tasks {
+        let Some(on) = people.get(&task) else { continue };
+        // A span of ten years is a typing mistake, not a plan.
+        if end < start || (end - start).num_days() > 3660 {
+            continue;
+        }
+        let span: Vec<NaiveDate> = start.iter_days().take_while(|d| *d <= end).filter(|d| worked(*d)).collect();
+        if span.is_empty() {
+            continue;
+        }
+        let each = estimate / Decimal::from(span.len() as i64) / Decimal::from(on.len() as i64);
+        for day in span.into_iter().filter(|d| *d >= from && *d <= to) {
+            for person in on.iter().filter(|p| !planned.contains(&(task, (*p).clone())) && who.is_none_or(|w| w == p.as_str())) {
+                let cell = weeks.entry((person.clone(), crate::planning::week_of(day))).or_default();
+                cell.0 += each;
+                cell.1 += each;
+            }
+        }
+    }
+    Ok(truncated)
 }
 
 /// A portfolio's projects at a glance: tasks, what is overdue, risks and issues still open.
 async fn portfolio_overview(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Params<'_>) -> Result<Value> {
     let portfolio = p.uuid("portfolio")?;
-    let rows: Vec<(String, Option<String>, i64, i64, i64, i64, i64)> = sqlx::query_as(
+    let ent = ctx.schema.entity("Project").ok_or_else(|| Error::NotFound("Project".into()))?;
+    // Whoever reads a project reads its tasks, risks and issues: the counts follow the project's scope.
+    let mut qb = QueryBuilder::<Postgres>::new(
         "select a.project_name, a.status, \
          (select count(*) from e_task t where t.tenant_id = a.tenant_id and t.project = a.id), \
          (select count(*) from e_task t where t.tenant_id = a.tenant_id and t.project = a.id and t.status_category = 'Done'), \
-         (select count(*) from e_task t where t.tenant_id = a.tenant_id and t.project = a.id and t.status_category in ('To Do', 'In Progress') and t.exp_end_date < $5), \
-         (select count(*) from e_project_risk r where r.tenant_id = a.tenant_id and r.project = a.id and r.status in ('Open', 'Mitigating')), \
+         (select count(*) from e_task t where t.tenant_id = a.tenant_id and t.project = a.id and t.status_category in ('To Do', 'In Progress') and t.exp_end_date < ",
+    );
+    qb.push_bind(ctx.today()).push(
+        "), (select count(*) from e_project_risk r where r.tenant_id = a.tenant_id and r.project = a.id and r.status in ('Open', 'Mitigating')), \
          (select count(*) from e_project_issue i where i.tenant_id = a.tenant_id and i.project = a.id and i.status in ('Open', 'In Progress')) \
-         from e_project a where a.tenant_id = $1 and a.company = $2 \
-         and ($3::uuid is null or exists (select 1 from e_portfolio__projects x where x.tenant_id = a.tenant_id and x.parent_id = $3 and x.project = a.id)) \
-         order by a.project_name limit $4",
-    )
-    .bind(ctx.tenant)
-    .bind(co.id)
-    .bind(portfolio)
-    .bind(MAX_ROWS)
-    .bind(ctx.today())
-    .fetch_all(&mut **tx)
-    .await?;
+         from e_project a where a.tenant_id = ",
+    );
+    qb.push_bind(ctx.tenant).push(" and a.company = ").push_bind(co.id);
+    row_scope(ctx, ent, Action::Read)?.push_sql(&mut qb, "a");
+    if let Some(portfolio) = portfolio {
+        qb.push(" and exists (select 1 from e_portfolio__projects x where x.tenant_id = a.tenant_id and x.parent_id = ")
+            .push_bind(portfolio)
+            .push(" and x.project = a.id)");
+    }
+    qb.push(" order by a.project_name limit ").push_bind(MAX_ROWS);
+    let rows: Vec<(String, Option<String>, i64, i64, i64, i64, i64)> = qb.build_query_as().fetch_all(&mut **tx).await?;
     let rows: Vec<Value> = rows
         .into_iter()
         .map(|(name, status, tasks, done, overdue, risks, issues)| {
@@ -197,70 +298,30 @@ async fn profitability(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Params<'_
     {
         return Err(Error::field("from_date", "must not be after the to date"));
     }
-    #[allow(clippy::type_complexity)]
-    let projects: Vec<(Uuid, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, Option<Decimal>, Option<Decimal>)> = sqlx::query_as(
+    let ent = ctx.schema.entity("Project").ok_or_else(|| Error::NotFound("Project".into()))?;
+    let mut qb = QueryBuilder::<Postgres>::new(
         "select p.id, p.number, p.project_name, p.status, c.customer_name, p.ext->>'proj_billing_method', nullif(p.ext->>'proj_contract_value', '')::numeric, \
          nullif(p.ext->>'proj_estimated_cost', '')::numeric \
-         from e_project p left join e_customer c on c.tenant_id = p.tenant_id and c.id = p.customer \
-         where p.tenant_id = $1 and p.company = $2 and ($3::uuid is null or p.id = $3) and ($4::uuid is null or p.customer = $4) \
-         and ($5::text is null or p.status = $5) order by p.number nulls last, p.project_name limit $6",
-    )
-    .bind(ctx.tenant)
-    .bind(co.id)
-    .bind(p.uuid("project")?)
-    .bind(p.uuid("customer")?)
-    .bind(p.str("status"))
-    .bind(MAX_ROWS + 1)
-    .fetch_all(&mut **tx)
-    .await?;
+         from e_project p left join e_customer c on c.tenant_id = p.tenant_id and c.id = p.customer where p.tenant_id = ",
+    );
+    qb.push_bind(ctx.tenant).push(" and p.company = ").push_bind(co.id);
+    row_scope(ctx, ent, Action::Read)?.push_sql(&mut qb, "p");
+    if let Some(project) = p.uuid("project")? {
+        qb.push(" and p.id = ").push_bind(project);
+    }
+    if let Some(customer) = p.uuid("customer")? {
+        qb.push(" and p.customer = ").push_bind(customer);
+    }
+    if let Some(status) = p.str("status") {
+        qb.push(" and p.status = ").push_bind(status.to_string());
+    }
+    qb.push(" order by p.number nulls last, p.project_name limit ").push_bind(MAX_ROWS + 1);
+    #[allow(clippy::type_complexity)]
+    let projects: Vec<(Uuid, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, Option<Decimal>, Option<Decimal>)> =
+        qb.build_query_as().fetch_all(&mut **tx).await?;
     let truncated = projects.len() as i64 > MAX_ROWS;
     let ids: Vec<Uuid> = projects.iter().take(MAX_ROWS as usize).map(|r| r.0).collect();
-    // Revenue: submitted invoices (credit notes net it down), net of taxes, in company currency.
-    let revenue: HashMap<Uuid, Decimal> = sqlx::query_as::<_, (Uuid, Decimal)>(
-        "select project, coalesce(sum(base_net_total), 0) from e_sales_invoice where tenant_id = $1 and company = $2 and docstatus = 1 \
-         and project = any($3) and ($4::date is null or posting_date >= $4) and ($5::date is null or posting_date <= $5) group by project",
-    )
-    .bind(ctx.tenant)
-    .bind(co.id)
-    .bind(&ids)
-    .bind(from)
-    .bind(to)
-    .fetch_all(&mut **tx)
-    .await?
-    .into_iter()
-    .collect();
-    let time: HashMap<Uuid, (Decimal, Decimal)> = sqlx::query_as::<_, (Uuid, Decimal, Decimal)>(
-        "select l.project, coalesce(sum(l.costing_amount), 0), coalesce(sum(l.billing_amount) filter (where l.is_billable and not l.billed), 0) \
-         from e_timesheet__time_logs l join e_timesheet t on t.tenant_id = l.tenant_id and t.id = l.parent_id \
-         where l.tenant_id = $1 and t.docstatus = 1 and l.project = any($2) \
-         and ($3::date is null or l.day >= $3::date) and ($4::date is null or l.day <= $4::date) group by l.project",
-    )
-    .bind(ctx.tenant)
-    .bind(&ids)
-    .bind(from)
-    .bind(to)
-    .fetch_all(&mut **tx)
-    .await?
-    .into_iter()
-    .map(|(p, cost, unbilled)| (p, (cost, unbilled)))
-    .collect();
-    // Purchases and other expenses booked to the project: expense-account journal lines carrying
-    // it (cancellations post reversals, which net out here).
-    let expense: HashMap<Uuid, Decimal> = sqlx::query_as::<_, (Uuid, Decimal)>(
-        "select l.project_id, coalesce(sum(l.debit - l.credit), 0) from journal_line l \
-         join e_account a on a.tenant_id = l.tenant_id and a.id = l.account_id \
-         where l.tenant_id = $1 and l.company_id = $2 and l.project_id = any($3) and a.root_type = 'Expense' \
-         and ($4::date is null or l.posting_date >= $4) and ($5::date is null or l.posting_date <= $5) group by l.project_id",
-    )
-    .bind(ctx.tenant)
-    .bind(co.id)
-    .bind(&ids)
-    .bind(from)
-    .bind(to)
-    .fetch_all(&mut **tx)
-    .await?
-    .into_iter()
-    .collect();
+    let (revenue, time, expense) = costs_and_revenue(tx, ctx, co, &ids, from, to).await?;
     let r = |v: Decimal| money(v.round_dp(co.precision));
     let names = ["contract_value", "billed_revenue", "timesheet_cost", "expense_cost", "total_cost", "margin", "unbilled_time"];
     let mut totals = [Decimal::ZERO; 7];
@@ -298,8 +359,76 @@ async fn profitability(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Params<'_
             col("forecast_margin", "Forecast Margin", "currency")],
         "rows": rows,
         "totals": total_obj,
-        "meta": {"from_date": from, "to_date": to, "truncated": truncated},
+        "meta": {"from_date": from, "to_date": to, "truncated": truncated, "ledger": ctx.schema.entity("Account").is_some()},
     }))
+}
+
+/// Per project: billed revenue (submitted invoices, net), timesheet cost and unbilled billable time, and ledger
+/// expense, in the period. Revenue and expense are empty where ERP's records are not installed.
+#[allow(clippy::type_complexity)]
+async fn costs_and_revenue(
+    tx: &mut Tx,
+    ctx: &Ctx,
+    co: &ReportCompany,
+    ids: &[Uuid],
+    from: Option<NaiveDate>,
+    to: Option<NaiveDate>,
+) -> Result<(HashMap<Uuid, Decimal>, HashMap<Uuid, (Decimal, Decimal)>, HashMap<Uuid, Decimal>)> {
+    // Revenue: submitted invoices (credit notes net it down), net of taxes, in company currency; none without ERP.
+    let revenue: HashMap<Uuid, Decimal> = if ctx.schema.entity("SalesInvoice").is_none() {
+        HashMap::new()
+    } else {
+        sqlx::query_as::<_, (Uuid, Decimal)>(
+            "select project, coalesce(sum(base_net_total), 0) from e_sales_invoice where tenant_id = $1 and company = $2 and docstatus = 1 \
+         and project = any($3) and ($4::date is null or posting_date >= $4) and ($5::date is null or posting_date <= $5) group by project",
+        )
+        .bind(ctx.tenant)
+        .bind(co.id)
+        .bind(ids)
+        .bind(from)
+        .bind(to)
+        .fetch_all(&mut **tx)
+        .await?
+        .into_iter()
+        .collect()
+    };
+    let time: HashMap<Uuid, (Decimal, Decimal)> = sqlx::query_as::<_, (Uuid, Decimal, Decimal)>(
+        "select l.project, coalesce(sum(l.costing_amount), 0), coalesce(sum(l.billing_amount) filter (where l.is_billable and not l.billed), 0) \
+         from e_timesheet__time_logs l join e_timesheet t on t.tenant_id = l.tenant_id and t.id = l.parent_id \
+         where l.tenant_id = $1 and t.docstatus = 1 and l.project = any($2) \
+         and ($3::date is null or l.day >= $3::date) and ($4::date is null or l.day <= $4::date) group by l.project",
+    )
+    .bind(ctx.tenant)
+    .bind(ids)
+    .bind(from)
+    .bind(to)
+    .fetch_all(&mut **tx)
+    .await?
+    .into_iter()
+    .map(|(p, cost, unbilled)| (p, (cost, unbilled)))
+    .collect();
+    // Purchases and other expenses booked to the project: expense-account journal lines carrying
+    // it (cancellations post reversals, which net out here); none without a ledger.
+    let expense: HashMap<Uuid, Decimal> = if ctx.schema.entity("Account").is_none() {
+        HashMap::new()
+    } else {
+        sqlx::query_as::<_, (Uuid, Decimal)>(
+            "select l.project_id, coalesce(sum(l.debit - l.credit), 0) from journal_line l \
+         join e_account a on a.tenant_id = l.tenant_id and a.id = l.account_id \
+         where l.tenant_id = $1 and l.company_id = $2 and l.project_id = any($3) and a.root_type = 'Expense' \
+         and ($4::date is null or l.posting_date >= $4) and ($5::date is null or l.posting_date <= $5) group by l.project_id",
+        )
+        .bind(ctx.tenant)
+        .bind(co.id)
+        .bind(ids)
+        .bind(from)
+        .bind(to)
+        .fetch_all(&mut **tx)
+        .await?
+        .into_iter()
+        .collect()
+    };
+    Ok((revenue, time, expense))
 }
 
 async fn timesheet_summary(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Params<'_>) -> Result<Value> {
