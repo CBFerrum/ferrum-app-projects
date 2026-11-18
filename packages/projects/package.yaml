@@ -1,5 +1,5 @@
 package: projects
-version: 0.7.0
+version: 0.8.0
 label: Projects
 description: Projects with task trees, dependencies and milestones, timesheets with costing and billing, activity rates, milestone and time-and-materials invoicing, and project profitability.
 # Projects and customers are shared records; invoicing through ERP comes with the projects_erp
@@ -69,7 +69,7 @@ modules:
     label: Projects
     icon: briefcase
     order: 50
-    items: [Project, Task, Timesheet, ProjectRisk, ProjectIssue, ProjectUpdate, ChangeRequest, ProjectBaseline, ResourceAllocation, Portfolio, ActivityType, ActivityCost, RateCard, TaskStatus, TaskWorkflow, ProjectType, ProjectPerson, ProjectsSettings, report:project_profitability, report:earned_value,
+    items: [Project, Task, Sprint, Timesheet, ProjectRisk, ProjectIssue, ProjectUpdate, ChangeRequest, ProjectBaseline, ResourceAllocation, Portfolio, ActivityType, ActivityCost, RateCard, TaskStatus, TaskWorkflow, ProjectType, ProjectPerson, ProjectsSettings, report:project_profitability, report:earned_value,
             report:timesheet_summary, report:task_overview, report:workload, report:portfolio_overview]
 
 roles:
@@ -89,6 +89,7 @@ roles:
       # A baseline is set by the project's action and never edited: nobody creates or writes one by hand.
       - {entity: ProjectBaseline, read: true, delete: true, export: true}
       - {entity: ProjectUpdate, read: true, write: true, create: true, delete: true, export: true}
+      - {entity: Sprint, read: true, write: true, create: true, delete: true, export: true}
       - {entity: ResourceAllocation, read: true, write: true, create: true, delete: true, export: true}
       - {entity: Portfolio, read: true, write: true, create: true, delete: true}
       - {entity: TaskStatus, read: true, write: true, create: true, delete: true}
@@ -119,6 +120,11 @@ roles:
       - {entity: ProjectUpdate, read: true, via: project.proj_members.person}
       - {entity: ProjectUpdate, read: true, write: true, create: true, delete: true, via: project.proj_members.manager}
       - {entity: ProjectUpdate, read: true, write: true, create: true, delete: true, via: project.proj_project_manager}
+      # A project's sprints: planned, started and closed by its managers, read like the project.
+      - {entity: Sprint, read: true, where: {project_private: false}}
+      - {entity: Sprint, read: true, via: project.proj_members.person}
+      - {entity: Sprint, read: true, write: true, create: true, delete: true, via: project.proj_members.manager}
+      - {entity: Sprint, read: true, write: true, create: true, delete: true, via: project.proj_project_manager}
       - {entity: ResourceAllocation, read: true, if_owner: true}
       - {entity: Portfolio, read: true}
       - {entity: Project, read: true, where: {proj_private: false}}
@@ -143,7 +149,7 @@ roles:
       # What staff write for staff is hidden (platform BD-40): per record on reads, refused in filters and sorts.
       - {entity: Project, read: true, via: customer.proj_portal_people.email, where: {proj_shared: true},
          hide: [notes, budget, proj_members, proj_project_manager, proj_estimated_cost, proj_costing_amount, proj_baseline_cost, proj_baseline_budget, proj_health, proj_health_on]}
-      - {entity: Task, read: true, via: project.customer.proj_portal_people.email, where: {client_visible: true, project_shared: true}, hide: [assigned_to]}
+      - {entity: Task, read: true, via: project.customer.proj_portal_people.email, where: {client_visible: true, project_shared: true}, hide: [assigned_to, sprint, story_points]}
       - {entity: Timesheet, read: true, via: portal_project.customer.proj_portal_people.email, where: {portal_shared: true, status: [Submitted, Partly Billed, Billed]},
          hide: [user, note, approvers]}
       # A table's columns are hidden through the rows' own entity (a rule that grants nothing, only hides).

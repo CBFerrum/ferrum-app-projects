@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.14.0
+
+Package `projects` 0.8.0: a new record `Sprint` with the actions Start Sprint (`projects.sprint.start`) and Close Sprint
+(`projects.sprint.close`), and three fields on Task (`sprint`, `story_points`, `backlog_rank`). Needs the same platform as
+0.11.0. Server only: the backlog screen follows; until then sprints are in the records frame and the API.
+
+- **Sprints.** A project's team manager or named manager (or a Projects Manager) plans sprints: a name (once in the
+  project), two dates and a goal. Tasks are put in a sprint and estimated in points. **Start Sprint** makes it Active and
+  records the points and tasks committed; a project has one active sprint at a time. **Close Sprint** records the points
+  and tasks done and moves every task that is not done to the planned sprint named, or back to the backlog, all at once
+  or not at all. A closed sprint is kept as it closed; only a planned one is deleted (its tasks go back to the backlog).
+- **The backlog** is the project's open tasks with no sprint, ordered by `backlog_rank`.
+- A task's sprint must be of its project, and a closed sprint takes no task. The board's task list carries the three
+  fields. The client portal does not show a task's sprint or points.
+
 ## 0.13.0
 
 Package `projects` 0.7.0: a new record `ProjectUpdate` and two fields on Project (`proj_health`, `proj_health_on`). Needs the same platform as 0.11.0. `ui/dist`

@@ -218,8 +218,10 @@ async fn client_sees_none(k: &Arc<Kernel>, w: &Ws, cleo: &Ctx, slug: &str) {
     assert!(trail.is_err() || !leaks(&json!(format!("{:?}", trail.unwrap()))), "history");
     assert!(k.update(cleo, "Project", b.project, obj(json!({"notes": "x"})), None).await.is_err(), "a portal person changes nothing");
     // Tasks and their assignees.
+    // A task's sprint and points are the team's planning.
+    k.update(&admin, "Task", b.task, obj(json!({"story_points": "5"})), None).await.expect("points");
     let t = k.get(cleo, "Task", b.task, false).await.expect("the client-visible task");
-    assert!(!t.contains_key("assigned_to") && !leaks(&Value::Object(t)));
+    assert!(!t.contains_key("assigned_to") && !t.contains_key("sprint") && !t.contains_key("story_points") && !leaks(&Value::Object(t)), "the team's planning");
     let page = k.list(cleo, "Task", &ListQuery::default()).await.unwrap();
     assert!(!leaks(&json!(page.rows)));
     for (field, value) in [("assigned_to.user", format!("mia@{slug}.test"))] {
@@ -353,7 +355,7 @@ async fn scenario() {
     let mut want: Vec<String> = HIDDEN_PROJECT.iter().map(|s| s.to_string()).collect();
     want.sort();
     assert_eq!(project, want, "the corrected rule reached the workspace: {rows:?}");
-    assert_eq!(hide_of(&rows, "Task"), vec!["assigned_to".to_string()]);
+    assert_eq!(hide_of(&rows, "Task"), ["assigned_to", "sprint", "story_points"]);
     assert_eq!(hide_of(&rows, "TimesheetDetail"), vec!["billing_rate".to_string()], "and the new rule for the time logs");
     assert_eq!(hide_of(&rows, "Timesheet").len(), 3);
     let cleo_w = cleo(&k, &w).await;
@@ -365,7 +367,7 @@ async fn scenario() {
     // is read again by their client; the rules they did not edit took the release's `hide`.
     let rows = hide_rows(&k, e.tenant).await;
     assert_eq!(hide_of(&rows, "Project"), vec!["notes".to_string()], "the administrator's edit is kept: {rows:?}");
-    assert_eq!(hide_of(&rows, "Task"), vec!["assigned_to".to_string()]);
+    assert_eq!(hide_of(&rows, "Task"), ["assigned_to", "sprint", "story_points"]);
     let cleo_e = cleo(&k, &e).await;
     let p = k.get(&cleo_e, "Project", e.b.project, false).await.unwrap();
     assert!(!p.contains_key("notes") && p.contains_key("proj_members"), "only what the administrator hides is hidden: {p:?}");
@@ -375,7 +377,7 @@ async fn scenario() {
     let k = boot(false, true).await;
     let f = workspace(&k, "fresh").await;
     let rows = hide_rows(&k, f.tenant).await;
-    assert_eq!(hide_of(&rows, "Task"), vec!["assigned_to".to_string()]);
+    assert_eq!(hide_of(&rows, "Task"), ["assigned_to", "sprint", "story_points"]);
     let cleo_f = cleo(&k, &f).await;
     client_sees_none(&k, &f, &cleo_f, "fresh").await;
     staff_read_all(&k, &f, "fresh").await;

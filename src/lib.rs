@@ -16,6 +16,7 @@ mod project;
 mod reports;
 mod schedule;
 mod site;
+mod sprint;
 mod status;
 mod template;
 mod timesheet;
@@ -35,6 +36,7 @@ pub fn register(hooks: &mut HookRegistry) {
         .register("ProjectRisk", Arc::new(planning::RiskHook))
         .register("ChangeRequest", Arc::new(planning::ChangeRequestHook))
         .register("ProjectUpdate", Arc::new(planning::UpdateHook))
+        .register("Sprint", Arc::new(sprint::SprintHook))
         .register("Timesheet", Arc::new(timesheet::TimesheetHook))
         .register("ActivityCost", Arc::new(timesheet::ActivityCostHook));
     hooks.add_site("projects", Arc::new(site::ProjectsSite));

@@ -164,3 +164,49 @@
     - {name: on_date, check: "doc.on_date <= today", message: "A status update is not dated in the future"}
   indexes: [[project, on_date]]
   list: {columns: [project, on_date, health, author], sort: on_date desc}
+
+- name: Sprint
+  label: Sprint
+  kind: master
+  module: projects
+  title_field: sprint_name
+  company_scoped: true
+  description: "A stretch of days a team commits tasks to. Planned, then Active (one a project), then Closed: closing records what was done and moves the rest on."
+  fields:
+    - {name: sprint_name, type: data, label: Name, required: true, in_list: true}
+    - {name: project, type: link, to: Project, required: true, in_list: true, in_filter: true}
+    - {name: company, type: link, to: Company, fetch_from: project.company, read_only: true, in_filter: true}
+    - {name: project_private, type: check, fetch_from: project.proj_private, read_only: true, hidden: true, no_copy: true, description: "Its project is its members' alone (kept in step with the project)"}
+    - {name: start_date, type: date, required: true, in_list: true}
+    - {name: end_date, type: date, required: true, in_list: true}
+    - {name: goal, type: text}
+    - {name: state, type: select, options: [Planned, Active, Closed], default: Planned, read_only: true, no_copy: true, in_list: true, in_filter: true}
+    - {name: started_on, type: date, read_only: true, no_copy: true}
+    - {name: closed_on, type: date, read_only: true, no_copy: true}
+    - {name: committed_points, type: decimal, read_only: true, no_copy: true, description: "The points of its tasks when it started"}
+    - {name: committed_tasks, type: int, read_only: true, no_copy: true}
+    - {name: completed_points, type: decimal, read_only: true, no_copy: true, description: "The points of its tasks that were done when it closed"}
+    - {name: completed_tasks, type: int, read_only: true, no_copy: true}
+    - {name: carried_over, type: int, read_only: true, no_copy: true, description: "Tasks not done when it closed, moved to another sprint or back to the backlog"}
+  rules:
+    - {name: period, check: "doc.end_date >= doc.start_date", message: "A sprint cannot end before it starts"}
+  unique: [[project, sprint_name]]
+  indexes: [[project, state]]
+  actions:
+    - name: start
+      label: Start Sprint
+      permission: write
+      condition: "doc.state == 'Planned'"
+      contract:
+        returns: {type: object, properties: {state: {type: string}, committed_points: {type: string}, committed_tasks: {type: integer}}}
+        completion: "The sprint is Active, with the points and tasks committed at its start recorded; its project has no other active sprint"
+    - name: close
+      label: Close Sprint
+      permission: write
+      condition: "doc.state == 'Active'"
+      confirm: "Close the sprint? Tasks that are not done move to the sprint you name, or back to the backlog."
+      params: [{name: move_open_to, type: link, to: Sprint, label: Move Open Tasks To, description: "A planned sprint of the same project; empty: the backlog"}]
+      contract:
+        returns: {type: object, properties: {state: {type: string}, completed_points: {type: string}, completed_tasks: {type: integer}, carried_over: {type: integer}, moved_to: {type: [string, "null"], format: uuid}}}
+        completion: "The sprint is Closed with what was done recorded; every task of it that was not done or cancelled is in the sprint named, or in the backlog"
+  list: {columns: [sprint_name, project, start_date, end_date, state], sort: start_date desc}

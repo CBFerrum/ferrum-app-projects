@@ -167,6 +167,7 @@ async fn scenario() {
     baselines(&w).await;
     earned_value(&w).await;
     health(&w).await;
+    sprints(&w).await;
 }
 
 /// A key for one effect, through the gate as an agent asks.
@@ -454,4 +455,137 @@ async fn health(w: &World) {
     assert!(field_error(&r, "project", ""), "{r:?}");
     let r = post(lead, "On Track", day(1)).await;
     assert!(matches!(r, Err(Error::Validation(_))), "{r:?}");
+}
+
+/// PRJ-06 (server): sprints of a project, planned, started (one active a project) and closed; closing records what was
+/// done and moves what was not to the sprint named or back to the backlog.
+async fn sprints(w: &World) {
+    let (pm, lead, mia, nora) = (&w.users["pm"], &reload(&w.users["lead"]).await, &reload(&w.users["mia"]).await, &reload(&w.users["nora"]).await);
+    let k = &pm.k;
+    let today = Utc::now().date_naive();
+    let day = |n: i64| (today + Duration::days(n)).to_string();
+    let project = |name: &str, private: bool| {
+        let body = json!({"project_name": name, "company": w.cid, "proj_private": private,
+                          "proj_members": [{"person": "lead@acme.test", "project_role": "Manager"}, {"person": "mia@acme.test", "project_role": "Member"}]});
+        async move { uid(&pm.insert("Project", body).await) }
+    };
+    let sprint = |who: &U, name: &str, project: Uuid| {
+        let body = json!({"sprint_name": name, "project": project.to_string(), "start_date": day(0), "end_date": day(13)});
+        let (k, ctx) = (who.k.clone(), who.ctx.clone());
+        async move { k.insert(&ctx, "Sprint", obj(body)).await }
+    };
+    let p = project("Sprinting", true).await;
+    let s1 = uid(&sprint(lead, "Sprint 1", p).await.expect("a team manager plans a sprint"));
+    let s2 = uid(&sprint(lead, "Sprint 2", p).await.expect("and another"));
+    assert!(matches!(sprint(mia, "Mia's", p).await, Err(Error::Forbidden(_))), "a member plans none");
+    let task = |subject: &str, points: &str, sprint: Uuid| {
+        lead.insert("Task", json!({"subject": subject, "project": p.to_string(), "story_points": points, "sprint": sprint.to_string()}))
+    };
+    let (small, medium, large) = (uid(&task("Small", "3", s1).await), uid(&task("Medium", "5", s1).await), uid(&task("Large", "8", s1).await));
+    let state = |s: Uuid| async move { pm.get("Sprint", s).await["state"].clone() };
+    let sprint_of = |t: Uuid| async move { pm.get("Task", t).await["sprint"].clone() };
+
+    // a_sprint_is_planned_started_and_closed (with who_may and one_active_sprint on the way)
+    assert!(denied(&mia.try_action("Sprint", s1, "start", json!({})).await), "a member starts none");
+    let started = lead.action("Sprint", s1, "start", json!({})).await;
+    assert_eq!(
+        (started["state"].clone(), dec(&started["committed_points"]), started["committed_tasks"].clone()),
+        (json!("Active"), n("16"), json!(3)),
+        "{started}"
+    );
+    let r = lead.try_action("Sprint", s2, "start", json!({})).await;
+    assert!(matches!(&r, Err(Error::Invalid(m)) if m.contains("Sprint 1")), "one active sprint a project: {r:?}");
+    // the_target_is_checked
+    let elsewhere = project("Elsewhere", false).await;
+    let theirs = uid(&sprint(pm, "Theirs", elsewhere).await.expect("another project's sprint"));
+    for target in [s1, theirs] {
+        let r = lead.try_action("Sprint", s1, "close", json!({"move_open_to": target.to_string()})).await;
+        assert!(field_error(&r, "move_open_to", ""), "{r:?}");
+    }
+    assert_eq!(state(s1).await, json!("Active"), "nothing changed");
+    assert!(denied(&mia.try_action("Sprint", s1, "close", json!({})).await), "a member closes none");
+    for t in [small, medium] {
+        lead.update("Task", t, json!({"status": "Completed"})).await;
+    }
+    let closed = lead.action("Sprint", s1, "close", json!({"move_open_to": s2.to_string()})).await;
+    assert_eq!(
+        (
+            closed["state"].clone(),
+            dec(&closed["completed_points"]),
+            closed["completed_tasks"].clone(),
+            closed["carried_over"].clone(),
+            closed["moved_to"].clone()
+        ),
+        (json!("Closed"), n("8"), json!(2), json!(1), json!(s2.to_string())),
+        "{closed}"
+    );
+    assert_eq!(sprint_of(large).await, json!(s2.to_string()));
+    assert_eq!(sprint_of(small).await, json!(s1.to_string()), "done work stays where it was done");
+
+    // a_task_keeps_to_its_project
+    let r = lead.try_update("Task", large, json!({"sprint": theirs.to_string()})).await;
+    assert!(field_error(&r, "sprint", "another project"), "{r:?}");
+    let r = lead.try_update("Task", large, json!({"sprint": s1.to_string()})).await;
+    assert!(field_error(&r, "sprint", "closed"), "{r:?}");
+    lead.update("Task", small, json!({"sprint": null})).await;
+
+    // a_closed_sprint_is_kept
+    assert!(matches!(lead.try_update("Sprint", s1, json!({"sprint_name": "Renamed"})).await, Err(Error::Invalid(_))));
+    assert!(matches!(k.delete(&lead.ctx, "Sprint", s1, None).await, Err(Error::Invalid(_))));
+
+    // open_tasks_go_back_to_the_backlog (and a closed target is refused first)
+    lead.action("Sprint", s2, "start", json!({})).await;
+    let r = lead.try_action("Sprint", s2, "close", json!({"move_open_to": s1.to_string()})).await;
+    assert!(field_error(&r, "move_open_to", ""), "a closed sprint takes nothing: {r:?}");
+    assert_eq!((state(s2).await, sprint_of(large).await), (json!("Active"), json!(s2.to_string())));
+    assert!(matches!(k.delete(&lead.ctx, "Sprint", s2, None).await, Err(Error::Invalid(_))), "an active sprint is not deleted");
+    let closed = lead.action("Sprint", s2, "close", json!({})).await;
+    assert_eq!((closed["carried_over"].clone(), closed["moved_to"].clone()), (json!(1), Value::Null));
+    assert_eq!(sprint_of(large).await, Value::Null, "back to the backlog");
+
+    // A planned sprint is deleted, by its project's manager only, and its tasks go back to the backlog.
+    let s3 = uid(&sprint(lead, "Sprint 3", p).await.expect("planned"));
+    lead.update("Task", large, json!({"sprint": s3.to_string()})).await;
+    assert!(denied(&k.delete(&mia.ctx, "Sprint", s3, None).await), "a member deletes none");
+    k.delete(&lead.ctx, "Sprint", s3, None).await.expect("a planned sprint is deleted");
+    assert_eq!(sprint_of(large).await, Value::Null);
+    assert!(nora.list("Sprint", json!({"project": p.to_string()})).await.is_empty(), "an outsider reads no sprint of a private project");
+
+    // two_starts_at_once
+    let racing = project("Racing", false).await;
+    let (r1, r2) = (uid(&sprint(pm, "One", racing).await.unwrap()), uid(&sprint(pm, "Two", racing).await.unwrap()));
+    let (a, b) = tokio::join!(k.run_action(&pm.ctx, "Sprint", r1, "start", json!({})), k.run_action(&pm.ctx, "Sprint", r2, "start", json!({})));
+    assert_eq!([a.is_ok(), b.is_ok()].iter().filter(|x| **x).count(), 1, "{a:?} {b:?}");
+    assert!(matches!(a.as_ref().err().or(b.as_ref().err()), Some(Error::Invalid(_))), "{a:?} {b:?}");
+    let active = pm.list("Sprint", json!({"project": racing.to_string(), "state": "Active"})).await;
+    assert_eq!(active.len(), 1);
+
+    // started_once
+    let keyed = project("Keyed", false).await;
+    let ks = uid(&sprint(pm, "Keyed", keyed).await.unwrap());
+    let ask = || invocation("projects.sprint.start", json!({"id": ks.to_string()}), "s:1");
+    let first = k.invoke(&pm.ctx, ask()).await.expect("started");
+    let again = k.invoke(&pm.ctx, ask()).await.expect("answered");
+    assert!(!first.repeated && again.repeated);
+    assert!(pm.try_action("Sprint", ks, "start", json!({})).await.is_err(), "without a key, a started sprint is not started again");
+
+    // the_board_carries_them
+    lead.update("Task", large, json!({"backlog_rank": "1000"})).await;
+    let site = k.hooks.site("projects").expect("projects' endpoints").clone();
+    let req = ferrum_kernel::SiteRequest {
+        tenant: lead.ctx.tenant,
+        user: Some(lead.ctx.clone()),
+        method: "GET".into(),
+        path: "/tasks".into(),
+        query: json!({"project": p.to_string()}).as_object().cloned().unwrap(),
+        headers: Default::default(),
+        body: vec![],
+        client_ip: "203.0.113.9".into(),
+    };
+    let body: Value = serde_json::from_slice(&site.handle(k, req).await.expect("board").body).unwrap();
+    let row = body["rows"].as_array().unwrap().iter().find(|r| r["id"] == json!(large.to_string())).cloned().expect("the task");
+    for f in ["sprint", "story_points", "backlog_rank"] {
+        assert!(row.as_object().unwrap().contains_key(f), "{f}: {row}");
+    }
+    assert_eq!(dec(&row["story_points"]), n("8"));
 }

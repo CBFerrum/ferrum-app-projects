@@ -40,7 +40,7 @@ fn task_label(number: Option<String>, subject: Option<String>) -> String {
 pub struct ProjectHook;
 
 /// The tables of the records that follow their project's privacy (`project_private`).
-const PRIVATE_TABLES: [(&str, &str); 7] = [
+const PRIVATE_TABLES: [(&str, &str); 8] = [
     ("Task", "e_task"),
     ("ProjectRisk", "e_project_risk"),
     ("ProjectIssue", "e_project_issue"),
@@ -48,6 +48,7 @@ const PRIVATE_TABLES: [(&str, &str); 7] = [
     ("ResourceAllocation", "e_resource_allocation"),
     ("ProjectBaseline", "e_project_baseline"),
     ("ProjectUpdate", "e_project_update"),
+    ("Sprint", "e_sprint"),
 ];
 
 /// The records a customer's portal people reach by their project being shared: `(entity, table, the link to the project,
@@ -412,6 +413,26 @@ async fn check_task(hc: &mut HookCtx<'_>, doc: &Doc) -> Result<()> {
         match try_get(hc.kernel, hc.ctx, hc.tx, "Task", parent).await? {
             None => errors.push(FieldError::new("parent_task", "does not exist")),
             Some(p) if id(&p, "project") != Some(project_id) => errors.push(FieldError::new("parent_task", "belongs to another project")),
+            _ => {}
+        }
+    }
+
+    // A task's sprint is of its project, and a closed sprint takes no task (one may be taken out of it).
+    if hc.ctx.schema.entity("Sprint").is_some()
+        && let Some(sprint) = id(doc, "sprint")
+    {
+        let found: Option<(Option<Uuid>, Option<String>)> = sqlx::query_as("select project, state from e_sprint where tenant_id = $1 and id = $2")
+            .bind(tenant)
+            .bind(sprint)
+            .fetch_optional(&mut **hc.tx)
+            .await?;
+        let moved_in = old.as_ref().is_none_or(|o| id(o, "sprint") != Some(sprint));
+        match found {
+            None => errors.push(FieldError::new("sprint", "does not exist")),
+            Some((p, _)) if p != Some(project_id) => errors.push(FieldError::new("sprint", "belongs to another project")),
+            Some((_, state)) if moved_in && state.as_deref() == Some("Closed") => {
+                errors.push(FieldError::new("sprint", "is closed; plan the task in another sprint"))
+            }
             _ => {}
         }
     }

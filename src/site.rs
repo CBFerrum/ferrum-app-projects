@@ -33,7 +33,7 @@ impl Site for ProjectsSite {
 
 /// What the interface draws of a task. A list gives these; the people on a task and what it waits
 /// for are child rows, which a list leaves out and only a single record carries.
-const TASK_FIELDS: [&str; 16] = [
+const TASK_FIELDS: [&str; 19] = [
     "number",
     "subject",
     "project",
@@ -49,6 +49,9 @@ const TASK_FIELDS: [&str; 16] = [
     "is_milestone",
     "parent_task",
     "rank",
+    "sprint",
+    "story_points",
+    "backlog_rank",
     "version",
 ];
 
