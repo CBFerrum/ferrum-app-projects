@@ -7,7 +7,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.10.4-b45309?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.11.0-b45309?style=flat-square)](CHANGELOG.md)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Ferrum platform](https://img.shields.io/badge/runs%20on-Ferrum-2f5bea?style=flat-square)](https://github.com/CBFerrum/Ferrum)
 ![Rust](https://img.shields.io/badge/Rust-server-b7410e?style=flat-square&logo=rust)
@@ -37,10 +37,10 @@ Projects gives a team a board, a timeline, task trees with dependencies, weekly 
 
 | | |
 |---|---|
-| **Version** | 0.10.4 (package `projects` 0.5.0; connector `projects-erp` 0.3.0) |
+| **Version** | 0.11.0 (package `projects` 0.5.0; connector `projects-erp` 0.3.0) |
 | **Kind** | Its own interface at `/projects/` (home, project, task, my work, planning) with Ferrum's records screens for everything else |
 | **What it adds** | 22 entities (15 records, 7 small tables) and extra fields on the shared Project and Customer records, 4 roles, 1 module with 5 reports, 3 project tabs, 1 notification kind and 1 message, 3 upkeep jobs, 3 own endpoints; the ERP connector adds invoicing fields and actions. No print formats. |
-| **Depends on** | Ferrum platform `>=0.3.4, <0.4`; the platform's `core`, `parties` and `project_records` packages |
+| **Depends on** | Ferrum platform `>=0.4.0, <0.5`; the platform's `core`, `parties` and `project_records` packages |
 | **Works with** | ERP (invoicing, accounts), Helpdesk, Field Service, CRM (they link to projects), Objectives (key results name projects) |
 | **Languages** | English, Arabic and Hindi (307 interface words and 235 names in each), right-to-left |
 | **Tests** | 16 Rust tests (against a real PostgreSQL, including package updates), 106 interface tests |
@@ -403,6 +403,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 ### ✅ Recently shipped
 
 - [x] **0.10.2** A time log's day is the workspace's date of its start, not UTC's; the task's time list sends it as a day.
+- [x] **0.11.0** Upkeep is one workspace's: needs Ferrum 0.4.0.
 - [x] **0.10.4** What is late and when a task was done follow the workspace's day, not UTC's: on saving, in the overdue job and in the task and portfolio overviews.
 - [x] **0.10.3** The task page shows each time line's day, and places time logged by the day on its day.
 - [x] **0.10.1** Rebuilt on Ferrum-Frontend 06bd1a2: its start through `mountApp`, and no routes to the screens apps no longer have.
@@ -459,7 +460,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 
 ## 🚀 Install
 
-Projects is a native Ferrum app for platform `>=0.3.4, <0.4`.
+Projects is a native Ferrum app for platform `>=0.4.0, <0.5`.
 
 1. In Ferrum, open the **App Manager** (or the store) and install **Projects**. The invoicing connector **Projects and ERP** is offered where ERP is installed too, and ships with Projects. Self-hosters who build their own server image include the `projects` app with the others.
 2. Give roles: **Projects Manager** to the people who plan and bill, **Projects User** to everyone who works on tasks and records time, **Accounts Manager** to finance, and **Project Client** to a customer's people (list them under the customer's Client People).

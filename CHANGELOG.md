@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.0
+
+No database or interface change. Needs Ferrum 0.4.0 (apps' upkeep runs one workspace at a time, on whichever replica is free).
+
+- **Upkeep is one workspace's.** `maintenance(k, tenant)` marks overdue tasks, makes repeating tasks and reminds about missing time for the
+  one workspace it is given; it no longer lists workspaces. A failing step is logged and the others run, as before.
+
 ## 0.10.4
 
 Server only. Needs the same platform as 0.10.0. No interface or database change.

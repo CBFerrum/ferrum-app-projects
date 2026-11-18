@@ -59,7 +59,6 @@ async fn fresh_kernel() -> Arc<Kernel> {
     }
     let k = Kernel::boot(db, catalog, hooks, KernelSettings::default(), None).await.expect("boot");
     ferrum_domain::maintenance(&k).await.expect("domain maintenance");
-    ferrum_app_erp::maintenance(&k).await.expect("ERP maintenance");
     k
 }
 
@@ -411,9 +410,9 @@ async fn weekly_time(w: &World) {
         tx.commit().await.unwrap();
         who
     };
-    ferrum_app_projects::maintenance(&admin.k).await.expect("upkeep");
+    ferrum_app_projects::maintenance(&admin.k, admin.ctx.tenant).await.expect("upkeep");
     assert_eq!(told().await, ["mia@acme.test", "vic@acme.test"], "Mia has 10.5 of 40, Vic nothing of 8; Nora has her hour");
-    ferrum_app_projects::maintenance(&admin.k).await.expect("upkeep again");
+    ferrum_app_projects::maintenance(&admin.k, admin.ctx.tenant).await.expect("upkeep again");
     assert_eq!(told().await.len(), 2, "once a week");
 }
 
