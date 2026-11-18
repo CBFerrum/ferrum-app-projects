@@ -485,7 +485,11 @@ async fn scenario() {
     pm.k.delete(&pm.ctx, "SalesInvoice", vid(&draft), None).await.expect("delete draft");
     let si1 = vid(&pm.action("Timesheet", ts1_id, "make_sales_invoice", json!({})).await);
     acc.submit("SalesInvoice", si1).await;
+    // The timesheet's history names the invoice and the time it billed.
+    let line = last_event(&admin, "Timesheet", ts1_id).await;
+    assert_eq!((line["action"].clone(), line["diff"]["sales_invoice"].clone()), (json!("billed"), json!(si1.to_string())), "{line}");
     let ts1 = acc.get("Timesheet", ts1_id).await;
+    assert!(line["diff"]["time_logs"].as_array().unwrap().contains(&ts1["time_logs"][0]["id"]), "{line}");
     assert_eq!((ts1["status"].clone(), dec(&ts1["per_billed"]), dec(&ts1["total_billed_amount"])), (json!("Billed"), n("100"), n("735")));
     assert!(ts1["time_logs"][0]["billed"] == json!(true) && ts1["time_logs"][0]["sales_invoice"] == json!(si1.to_string()));
     assert_eq!(dec(&pm.get("Project", web).await["proj_billed_amount"]), n("735"));
@@ -494,6 +498,8 @@ async fn scenario() {
     let r = alice.k.cancel(&alice.ctx, "Timesheet", ts1_id, None).await;
     assert!(invalid(&r, "cancel their sales invoice first"), "billed time cannot be cancelled: {r:?}");
     acc.cancel("SalesInvoice", si1).await;
+    let line = last_event(&admin, "Timesheet", ts1_id).await;
+    assert_eq!((line["action"].clone(), line["diff"]["sales_invoice"].clone()), (json!("unbilled"), json!(si1.to_string())), "{line}");
     let ts1 = acc.get("Timesheet", ts1_id).await;
     assert_eq!(
         (ts1["status"].clone(), ts1["time_logs"][0]["billed"].clone(), ts1["time_logs"][0]["sales_invoice"].clone()),
@@ -550,6 +556,12 @@ async fn scenario() {
     let r = pm.try_action("Task", m1, "make_milestone_invoice", json!({})).await;
     assert!(invalid(&r, "already bills this milestone"), "{r:?}");
     acc.submit("SalesInvoice", draft).await;
+    let line = last_event(&admin, "Task", m1).await;
+    assert_eq!(
+        (line["action"].clone(), line["diff"]["sales_invoice"].clone(), dec(&line["diff"]["billed_amount"])),
+        (json!("milestone_billed"), json!(draft.to_string()), n("4000")),
+        "{line}"
+    );
     let m = pm.get("Task", m1).await;
     assert_eq!((m["sales_invoice"].clone(), dec(&m["billed_amount"])), (json!(draft.to_string()), n("4000")));
     assert_eq!(dec(&pm.get("Project", erp).await["proj_billed_amount"]), n("4000"));
@@ -558,6 +570,8 @@ async fn scenario() {
     let r = pm.try_update("Task", m1, json!({"billing_percent": "45"})).await;
     assert!(field_error(&r, "billing_percent", "invoiced"), "{r:?}");
     acc.cancel("SalesInvoice", draft).await;
+    let line = last_event(&admin, "Task", m1).await;
+    assert_eq!((line["action"].clone(), line["diff"]["sales_invoice"].clone()), (json!("milestone_unbilled"), json!(draft.to_string())), "{line}");
     assert_eq!(pm.get("Task", m1).await["sales_invoice"], Value::Null);
     assert_eq!(dec(&pm.get("Project", erp).await["proj_billed_amount"]), Decimal::ZERO);
     let again = vid(&pm.action("Task", m1, "make_milestone_invoice", json!({})).await);
@@ -877,9 +891,140 @@ async fn scenario() {
     let q = ListQuery { filters: ferrum_kernel::query::parse_filters(&json!({"subject": "Status report"})).unwrap(), ..Default::default() };
     assert_eq!(k.list(&pm.ctx, "Task", &q).await.unwrap().rows.len(), 3, "the next from the latest, once");
 
+    // ───────────── a completed project's last milestone ─────────────
+    // Commonly invoiced after the project is completed: what an invoice bills is marked on the
+    // milestone without saving it, which a closed project would refuse.
+    let closing = uid(&pm
+        .insert(
+            "Project",
+            json!({"project_name": "Closing", "company": cid, "customer": globex, "proj_billing_method": "Fixed Price",
+                   "proj_contract_value": "1000", "proj_billing_item": svc_fixed}),
+        )
+        .await);
+    let handover =
+        uid(&pm.insert("Task", json!({"subject": "Handover", "project": closing.to_string(), "is_milestone": true, "billing_percent": "100"})).await);
+    pm.update("Task", handover, json!({"status": "Completed"})).await;
+    pm.action("Project", closing, "complete", json!({})).await;
+    let last_si = vid(&pm.action("Task", handover, "make_milestone_invoice", json!({})).await);
+    acc.submit("SalesInvoice", last_si).await;
+    let h = pm.get("Task", handover).await;
+    assert_eq!((h["sales_invoice"].clone(), dec(&h["billed_amount"])), (json!(last_si.to_string()), n("1000")));
+
     projects_alone(&k).await;
     far_from_utc(&k).await;
     workspace_day(&k).await;
+    overdue_upkeep_is_on_the_record(&k).await;
+    two_upkeeps_at_once(&k).await;
+}
+
+/// The last line of a record's history.
+async fn last_event(u: &U, entity: &str, id: Uuid) -> Value {
+    u.k.audit_trail(&u.ctx, entity, id).await.expect("trail")["events"].as_array().unwrap().last().cloned().unwrap()
+}
+
+/// A workspace with Projects alone: its administrator, a company and a project.
+async fn workspace(k: &Arc<Kernel>, slug: &str) -> (Uuid, U, Value, Uuid) {
+    let tenant = k
+        .create_tenant(NewTenant {
+            slug: slug.into(),
+            name: slug.into(),
+            admin_email: format!("admin@{slug}.test"),
+            admin_password: "Correct-Horse-9".into(),
+            admin_name: None,
+            packages: vec!["projects".into()],
+            settings: None,
+        })
+        .await
+        .expect("tenant");
+    let session = k.login(slug, &format!("admin@{slug}.test"), "Correct-Horse-9").await.expect("login");
+    let u = U { k: k.clone(), ctx: k.load_ctx(tenant, session.user, Some(session.token_version), "it".into()).await.expect("ctx") };
+    let usd = u.find_one("Currency", json!({"code": "USD"})).await;
+    let company = u.insert("Company", json!({"company_name": slug, "abbr": slug[..3].to_uppercase(), "default_currency": usd["id"]})).await["id"].clone();
+    let project = uid(&u.insert("Project", json!({"project_name": "Upkeep", "company": company})).await);
+    (tenant, u, company, project)
+}
+
+/// A task due in three days whose end has since moved to yesterday behind the app's back, so only upkeep can find it late.
+async fn late_task(u: &U, project: Uuid) -> Uuid {
+    let today = u.ctx.today();
+    let task =
+        uid(&u.insert("Task", json!({"subject": "Late", "project": project.to_string(), "exp_end_date": (today + Duration::days(3)).to_string()})).await);
+    let mut tx = u.k.db.tenant_tx(u.ctx.tenant).await.unwrap();
+    sqlx::query("update e_task set exp_end_date = $3 where tenant_id = $1 and id = $2")
+        .bind(u.ctx.tenant)
+        .bind(task)
+        .bind(today - Duration::days(1))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    task
+}
+
+/// How many `Task.updated` events a task has raised.
+async fn updated_events(k: &Kernel, tenant: Uuid, task: Uuid) -> i64 {
+    let mut tx = k.db.system_tx().await.unwrap();
+    let n = sqlx::query_scalar("select count(*) from outbox where tenant_id = $1 and topic = 'Task.updated' and record_id = $2")
+        .bind(tenant)
+        .bind(task)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    n
+}
+
+/// Upkeep moves a late task as a save by the system would: a new version, a line in its history and a `Task.updated`
+/// event, once; and never to a late status its project's workflow does not hold.
+async fn overdue_upkeep_is_on_the_record(k: &Arc<Kernel>) {
+    let (tenant, u, company, project) = workspace(k, "ontime").await;
+    let late = late_task(&u, project).await;
+    let before = updated_events(k, tenant, late).await;
+    ferrum_app_projects::maintenance(k, tenant).await.expect("maintenance");
+    let t = u.get("Task", late).await;
+    assert_eq!((t["status"].clone(), t["version"].as_i64()), (json!("Overdue"), Some(2)));
+    let line = last_event(&u, "Task", late).await;
+    assert!(line["action"] == json!("update") && line["diff"].get("status").is_some(), "{line}");
+    assert_eq!(updated_events(k, tenant, late).await, before + 1, "one Task.updated");
+    ferrum_app_projects::maintenance(k, tenant).await.expect("maintenance again");
+    assert_eq!(u.get("Task", late).await["version"].as_i64(), Some(2), "moved once");
+    assert_eq!(updated_events(k, tenant, late).await, before + 1, "and raised once");
+
+    // A workflow without Overdue: a late task stays Open, as a save leaves it.
+    let mut statuses = vec![];
+    for name in ["Open", "Working", "Completed", "Cancelled"] {
+        statuses.push(json!({"status": u.find_one("TaskStatus", json!({"status_name": name})).await["id"]}));
+    }
+    let short = u.insert("TaskWorkflow", json!({"workflow_name": "Short", "statuses": statuses})).await;
+    let other = uid(&u.insert("Project", json!({"project_name": "Short", "company": company, "proj_task_workflow": short["id"]})).await);
+    let stays = late_task(&u, other).await;
+    ferrum_app_projects::maintenance(k, tenant).await.expect("maintenance");
+    let t = u.get("Task", stays).await;
+    assert_eq!((t["status"].clone(), t["version"].as_i64()), (json!("Open"), Some(1)), "not a status of its workflow");
+}
+
+/// Two upkeeps of one workspace at the same moment (two replicas): a late task is moved by one save, and a repeating
+/// task makes one next occurrence.
+async fn two_upkeeps_at_once(k: &Arc<Kernel>) {
+    let (tenant, u, _, project) = workspace(k, "twice").await;
+    let late = late_task(&u, project).await;
+    let weekly =
+        u.insert("Task", json!({"subject": "Weekly", "project": project.to_string(), "repeat": "Weekly", "exp_end_date": u.ctx.today().to_string()})).await;
+    let (a, b) = tokio::join!(ferrum_app_projects::maintenance(k, tenant), ferrum_app_projects::maintenance(k, tenant));
+    a.expect("one upkeep");
+    b.expect("the other");
+    let trail = k.audit_trail(&u.ctx, "Task", late).await.expect("trail");
+    let updates = trail["events"].as_array().unwrap().iter().filter(|e| e["action"] == json!("update")).count();
+    assert_eq!((u.get("Task", late).await["version"].as_i64(), updates), (Some(2), 1), "{trail}");
+    let mut tx = k.db.tenant_tx(tenant).await.unwrap();
+    let made: i64 = sqlx::query_scalar("select count(*) from e_task where tenant_id = $1 and repeated_from = $2")
+        .bind(tenant)
+        .bind(uid(&weekly))
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(made, 1, "one next occurrence");
 }
 
 /// What Projects calls today is the workspace's day, never UTC's. No clock is set: the workspace sits in a zone whose day

@@ -21,7 +21,9 @@ mod template;
 mod timesheet;
 
 use ferrum_domain::reports::ReportSource;
-use ferrum_kernel::{Ctx, HookRegistry, Kernel, Result, Tx};
+use ferrum_domain::util::{id, s};
+use ferrum_kernel::{Ctx, Doc, HookRegistry, Kernel, Result, Tx};
+use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -79,27 +81,71 @@ async fn repeat_due(k: &Kernel, tenant: Uuid) -> Result<usize> {
     planning::repeat_tasks(k, &ctx, ctx.today()).await
 }
 
-/// Only tasks still in such a status change, in one statement that re-checks each row under its
-/// lock, so replicas running at once (or a user starting the task meanwhile) never conflict.
+/// Each task moves by a save as the system, as a person's save would move it (`status::resolve`, so never to a late
+/// status outside its project's workflow): a new version, a line in its history and a `Task.updated` event. Each is
+/// re-read under its row lock first, so replicas running at once (or a person moving it meanwhile) move it once or
+/// not at all; one that fails is logged and the others go on.
 async fn mark_overdue(k: &Kernel, tenant: Uuid) -> Result<u64> {
     let ctx = Ctx::system(tenant, k.registry.schema(tenant).await?);
     if ctx.schema.entity("Task").is_none() || ctx.schema.entity("TaskStatus").is_none() {
         return Ok(0);
     }
+    let today = ctx.today();
     let mut tx = k.db.tenant_tx(tenant).await?;
-    let n = sqlx::query(
-        "update e_task t set task_status = l.id, status = l.status_name, status_category = l.category, updated_at = now() \
-         from e_task_status s join e_task_status l on l.tenant_id = s.tenant_id and l.id = s.late_status \
-         where t.tenant_id = $1 and s.tenant_id = $1 and s.id = t.task_status and s.category = 'To Do' and t.exp_end_date < $2 and not exists \
-         (select 1 from e_project p where p.tenant_id = t.tenant_id and p.id = t.project and p.status in ('Completed', 'Cancelled'))",
+    let late: Vec<(Uuid, Option<Uuid>, Uuid)> = sqlx::query_as(
+        "select t.id, t.project, t.task_status from e_task t join e_task_status s on s.tenant_id = t.tenant_id and s.id = t.task_status \
+         where t.tenant_id = $1 and s.category = 'To Do' and s.late_status is not null and t.exp_end_date < $2 and not exists \
+         (select 1 from e_project p where p.tenant_id = t.tenant_id and p.id = t.project and p.status in ('Completed', 'Cancelled')) order by t.id limit 500",
     )
     .bind(tenant)
-    .bind(ctx.today())
-    .execute(&mut *tx)
-    .await?
-    .rows_affected();
+    .bind(today)
+    .fetch_all(&mut *tx)
+    .await?;
     tx.commit().await?;
+    let mut lists: HashMap<Uuid, Vec<status::Status>> = HashMap::new();
+    let mut n = 0;
+    for (task, project, from) in late {
+        let Some(project) = project else { continue };
+        match mark_late(k, &ctx, &mut lists, task, project, from, today).await {
+            Ok(true) => n += 1,
+            Ok(false) => {}
+            Err(e) => tracing::warn!(%task, "a late task was not marked: {e}"),
+        }
+    }
     Ok(n)
+}
+
+/// Moves `task` from status `from` to that status's late one, when its project's workflow holds both and, under the
+/// task's lock, it is still in `from`, in `project` and past its end. `false` when nothing moved.
+async fn mark_late(
+    k: &Kernel,
+    ctx: &Ctx,
+    lists: &mut HashMap<Uuid, Vec<status::Status>>,
+    task: Uuid,
+    project: Uuid,
+    from: Uuid,
+    today: chrono::NaiveDate,
+) -> Result<bool> {
+    let mut tx = k.db.tenant_tx(ctx.tenant).await?;
+    let list = match lists.entry(project) {
+        std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
+        std::collections::hash_map::Entry::Vacant(e) => {
+            let doc = k.get_tx(ctx, &mut tx, "Project", project, false).await?;
+            e.insert(status::statuses_for(ctx, &mut tx, &doc).await?)
+        }
+    };
+    let Some(to) = list.iter().find(|s| s.id == from).and_then(|s| s.late).filter(|l| list.iter().any(|s| s.id == *l)) else {
+        return Ok(false);
+    };
+    let doc = k.get_tx(ctx, &mut tx, "Task", task, true).await?;
+    let end = s(&doc, "exp_end_date").and_then(|d| ferrum_kernel::value::parse_date(d).ok());
+    if id(&doc, "task_status") != Some(from) || id(&doc, "project") != Some(project) || end.is_none_or(|e| e >= today) {
+        return Ok(false);
+    }
+    let patch = Doc::from_iter([("task_status".to_string(), serde_json::json!(to.to_string()))]);
+    k.update_tx(ctx, &mut tx, "Task", task, patch, None).await?;
+    tx.commit().await?;
+    Ok(true)
 }
 
 /// Projects Managers (and administrators and the engine) act on everyone's tasks and time.

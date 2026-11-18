@@ -7,7 +7,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.11.0-b45309?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.11.1-b45309?style=flat-square)](CHANGELOG.md)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Ferrum platform](https://img.shields.io/badge/runs%20on-Ferrum-2f5bea?style=flat-square)](https://github.com/CBFerrum/Ferrum)
 ![Rust](https://img.shields.io/badge/Rust-server-b7410e?style=flat-square&logo=rust)
@@ -37,7 +37,7 @@ Projects gives a team a board, a timeline, task trees with dependencies, weekly 
 
 | | |
 |---|---|
-| **Version** | 0.11.0 (package `projects` 0.5.0; connector `projects-erp` 0.3.0) |
+| **Version** | 0.11.1 (package `projects` 0.5.1; connector `projects-erp` 0.3.0) |
 | **Kind** | Its own interface at `/projects/` (home, project, task, my work, planning) with Ferrum's records screens for everything else |
 | **What it adds** | 22 entities (15 records, 7 small tables) and extra fields on the shared Project and Customer records, 4 roles, 1 module with 5 reports, 3 project tabs, 1 notification kind and 1 message, 3 upkeep jobs, 3 own endpoints; the ERP connector adds invoicing fields and actions. No print formats. |
 | **Depends on** | Ferrum platform `>=0.4.0, <0.5`; the platform's `core`, `parties` and `project_records` packages |
@@ -144,10 +144,10 @@ Projects gives a team a board, a timeline, task trees with dependencies, weekly 
 - **Task** has a subject, project, status, priority, parent task, assignees (several), expected start and end, expected hours, progress, actual hours, completed on and a description. Tasks nest to any depth. A parent must be in the same project.
 - **Milestones.** A task can be a milestone, with a billing percent (see Billing).
 - **Statuses with categories.** A status is a record with a category: **To Do**, **In Progress**, **Done** or **Cancelled**. A workflow lists statuses in order; a project uses its own workflow, else its type's, else the default. Out of the box, the Standard workflow has Open, Working, Pending Review, Overdue, Completed and Cancelled. What a status means (started, finished, cancelled) is its category, which is all the code reads: starting, finishing, dependencies, completing a project, billing, reports, the overdue job and the hand-over.
-- **Overdue job.** A task in a To Do status whose expected end date has passed moves to that status's late status (Overdue by default), unless its project is completed or cancelled.
+- **Overdue job.** A task in a To Do status whose expected end date has passed moves to that status's late status (Overdue by default) when the project's workflow holds it, unless its project is completed or cancelled. The move is a save by the system: a new version, a line in the task's history and a `Task.updated` event.
 - **Four kinds of dependency**, each with a lag or lead in days: **Finish to Start**, **Start to Start**, **Finish to Finish**, **Start to Finish**. Each kind holds back starting or finishing until the other task allows it. Cycles are refused.
 - **Auto-schedule.** With the setting on, a task's dates follow its predecessors on the settings' business calendar, its length kept; done and cancelled tasks stay where they are.
-- **Repeating tasks.** Daily, weekly or monthly, until a date: the next is made when the current falls due, with the same people. A key keeps a re-run from making it twice.
+- **Repeating tasks.** Daily, weekly or monthly, until a date: the next is made when the current falls due, with the same people. The task's lock and a unique key keep a re-run, or two replicas at once, from making it twice.
 - **Client visibility.** A task or milestone can be marked **Visible to the Client**.
 - **Hand-over.** When a person leaves, their open tasks (To Do or In Progress) move to their manager.
 - **Notification.** Someone added to a task's assignees is told (kind **Tasks assigned to you**), in the bar and by email unless they chose otherwise.
@@ -200,7 +200,7 @@ For Projects Managers:
 
 - **Time and materials.** **Create Sales Invoice** on a project (up to a day) or on a timesheet invoices the unbilled billable time, one line per activity and rate, with the activity's service item. Needs the ERP connector.
 - **Fixed price.** Milestones carry a percent of the contract value, at most 100 % in total. **Create Milestone Invoice** bills a milestone's share.
-- **Marked on submit, undone on cancel.** Time is marked billed when the invoice is submitted, never when the draft is made, so a deleted draft leaves everything unbilled and two drafts can never bill the same time. Cancelling the invoice releases the time and milestones.
+- **Marked on submit, undone on cancel.** Time is marked billed when the invoice is submitted, never when the draft is made, so a deleted draft leaves everything unbilled and two drafts can never bill the same time. Cancelling the invoice releases the time and milestones. Each timesheet and milestone has a line in its history naming the invoice that billed or released it.
 - **Another currency.** A project can be invoiced in another currency at the day's exchange rate; its figures stay in the company's.
 - **Cost center** and **milestone billing item** per project.
 
@@ -403,6 +403,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 ### ✅ Recently shipped
 
 - [x] **0.10.2** A time log's day is the workspace's date of its start, not UTC's; the task's time list sends it as a day.
+- [x] **0.11.1** A late task moved by upkeep is in its history and raises `Task.updated`; billing and releasing time and milestones is in their history; a repeating task makes one next occurrence however many replicas run.
 - [x] **0.11.0** Upkeep is one workspace's: needs Ferrum 0.4.0.
 - [x] **0.10.4** What is late and when a task was done follow the workspace's day, not UTC's: on saving, in the overdue job and in the task and portfolio overviews.
 - [x] **0.10.3** The task page shows each time line's day, and places time logged by the day on its day.

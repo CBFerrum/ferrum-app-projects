@@ -1,7 +1,9 @@
 //! Customer billing: time-and-materials invoices from timesheets, milestone invoices for fixed
 //! price projects, and the Sales Invoice hook that marks what an invoice bills. Marking happens when
 //! the invoice is submitted (and is undone when it is cancelled), never when the draft is made: a
-//! deleted draft leaves everything unbilled, and two drafts can never both bill the same time.
+//! deleted draft leaves everything unbilled, and two drafts can never both bill the same time. The
+//! marks are written through the kernel without saving the timesheet or the milestone (a completed
+//! project's milestone is still billed), and each one's history says which invoice billed or released it.
 
 use crate::lock;
 use crate::logic::{BillableLog, CANCELLED, group_time};
@@ -10,8 +12,8 @@ use crate::timesheet::refresh_timesheet;
 use async_trait::async_trait;
 use chrono::NaiveDate;
 use ferrum_domain::flow::created;
-use ferrum_domain::util::{Company, b, company, d, elevated, get, id, money, round, rows, s};
-use ferrum_kernel::{Action, Doc, DocHook, Error, FieldError, HookCtx, Result};
+use ferrum_domain::util::{Company, b, company, d, elevated, get, id, money, round, rows, s, sys};
+use ferrum_kernel::{Action, Doc, DocHook, Error, FieldError, HookCtx, Result, audit};
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashSet};
@@ -308,6 +310,8 @@ async fn mark_billed(hc: &mut HookCtx<'_>, doc: &Doc) -> Result<()> {
     let tenant = hc.ctx.tenant;
     let mut problems: Vec<String> = Vec::new();
     let mut timesheets: Vec<Uuid> = Vec::new();
+    // Each billed log's timesheet, for the line on that timesheet's history.
+    let mut sheet_logs: BTreeMap<Uuid, Vec<Uuid>> = BTreeMap::new();
     if !logs.is_empty() {
         // The timesheets first, as their cancellation locks them, then the logs themselves: a
         // timesheet cannot be cancelled while its time is being billed, nor billed once cancelled.
@@ -319,11 +323,11 @@ async fn mark_billed(hc: &mut HookCtx<'_>, doc: &Doc) -> Result<()> {
         .bind(&logs)
         .fetch_all(&mut **hc.tx)
         .await?;
-        let found: Vec<(Uuid, Option<Uuid>, bool, bool, Option<String>, i16, Option<String>)> = sqlx::query_as(
-            "select l.id, l.project, l.is_billable, l.billed, si.number, t.docstatus, t.number from e_timesheet__time_logs l \
+        let found: Vec<(Uuid, Option<Uuid>, bool, bool, Option<String>, i16, Option<String>, Uuid)> = sqlx::query_as(
+            "select l.id, l.project, l.is_billable, l.billed, si.number, t.docstatus, t.number, l.parent_id from e_timesheet__time_logs l \
              join e_timesheet t on t.tenant_id = l.tenant_id and t.id = l.parent_id \
              left join e_sales_invoice si on si.tenant_id = l.tenant_id and si.id = l.sales_invoice \
-             where l.tenant_id = $1 and l.id = any($2) for update of l",
+             where l.tenant_id = $1 and l.id = any($2) order by l.id for update of l",
         )
         .bind(tenant)
         .bind(&logs)
@@ -332,7 +336,7 @@ async fn mark_billed(hc: &mut HookCtx<'_>, doc: &Doc) -> Result<()> {
         for log in &logs {
             let problem = match found.iter().find(|f| f.0 == *log) {
                 None => Some(format!("time log {log} no longer exists")),
-                Some((_, p, billable, billed, by, docstatus, ts)) => {
+                Some((_, p, billable, billed, by, docstatus, ts, _)) => {
                     let ts = ts.clone().unwrap_or_default();
                     if *docstatus != 1 {
                         Some(format!("timesheet {ts} is not submitted"))
@@ -350,6 +354,9 @@ async fn mark_billed(hc: &mut HookCtx<'_>, doc: &Doc) -> Result<()> {
             if let Some(p) = problem.filter(|p| !problems.contains(p)) {
                 problems.push(p);
             }
+        }
+        for f in &found {
+            sheet_logs.entry(f.7).or_default().push(f.0);
         }
     }
     let tasks: Vec<(Uuid, Decimal)> = milestones.into_iter().collect();
@@ -375,22 +382,18 @@ async fn mark_billed(hc: &mut HookCtx<'_>, doc: &Doc) -> Result<()> {
     if !problems.is_empty() {
         return Err(Error::invalid(format!("this invoice cannot bill its project items: {}", problems.join("; "))));
     }
-    if !logs.is_empty() {
-        sqlx::query("update e_timesheet__time_logs set billed = true, sales_invoice = $3, updated_at = now() where tenant_id = $1 and id = any($2)")
-            .bind(tenant)
-            .bind(&logs)
-            .bind(inv)
-            .execute(&mut **hc.tx)
-            .await?;
+    let engine = sys(hc.ctx);
+    for log in &logs {
+        let values = Doc::from_iter([("billed".to_string(), json!(true)), ("sales_invoice".to_string(), json!(inv.to_string()))]);
+        hc.kernel.set_child_values_tx(&engine, hc.tx, "Timesheet", "time_logs", *log, values).await?;
+    }
+    for (ts, billed) in &sheet_logs {
+        audit::record(hc.tx, hc.ctx, "Timesheet", *ts, "billed", None, json!({"sales_invoice": inv, "time_logs": billed})).await?;
     }
     for (t, amount) in &tasks {
-        sqlx::query("update e_task set sales_invoice = $3, billed_amount = $4, updated_at = now() where tenant_id = $1 and id = $2")
-            .bind(tenant)
-            .bind(t)
-            .bind(inv)
-            .bind(amount)
-            .execute(&mut **hc.tx)
-            .await?;
+        let values = Doc::from_iter([("sales_invoice".to_string(), json!(inv.to_string())), ("billed_amount".to_string(), money(*amount))]);
+        hc.kernel.set_values_tx(&engine, hc.tx, "Task", *t, values).await?;
+        audit::record(hc.tx, hc.ctx, "Task", *t, "milestone_billed", None, json!({"sales_invoice": inv, "billed_amount": amount.to_string()})).await?;
     }
     for ts in timesheets {
         refresh_timesheet(hc.kernel, hc.ctx, hc.tx, ts).await?;
@@ -409,20 +412,37 @@ async fn unmark_billed(hc: &mut HookCtx<'_>, doc: &Doc) -> Result<()> {
     .bind(inv)
     .fetch_all(&mut **hc.tx)
     .await?;
-    let mut projects: Vec<Option<Uuid>> =
-        sqlx::query_scalar("update e_timesheet__time_logs set billed = false, sales_invoice = null, updated_at = now() where tenant_id = $1 and sales_invoice = $2 returning project")
+    // Then the logs and the milestones, each in id order: the order `mark_billed` locks them in.
+    let logs: Vec<(Uuid, Uuid, Option<Uuid>)> =
+        sqlx::query_as("select id, parent_id, project from e_timesheet__time_logs where tenant_id = $1 and sales_invoice = $2 order by id for update")
             .bind(tenant)
             .bind(inv)
             .fetch_all(&mut **hc.tx)
             .await?;
-    let milestone_projects: Vec<Option<Uuid>> = sqlx::query_scalar(
-        "update e_task set sales_invoice = null, billed_amount = null, updated_at = now() where tenant_id = $1 and sales_invoice = $2 returning project",
-    )
-    .bind(tenant)
-    .bind(inv)
-    .fetch_all(&mut **hc.tx)
-    .await?;
-    projects.extend(milestone_projects);
+    let engine = sys(hc.ctx);
+    let mut sheet_logs: BTreeMap<Uuid, Vec<Uuid>> = BTreeMap::new();
+    let mut projects: Vec<Option<Uuid>> = Vec::new();
+    for (log, ts, project) in logs {
+        let values = Doc::from_iter([("billed".to_string(), json!(false)), ("sales_invoice".to_string(), Value::Null)]);
+        hc.kernel.set_child_values_tx(&engine, hc.tx, "Timesheet", "time_logs", log, values).await?;
+        sheet_logs.entry(ts).or_default().push(log);
+        projects.push(project);
+    }
+    for (ts, released) in &sheet_logs {
+        audit::record(hc.tx, hc.ctx, "Timesheet", *ts, "unbilled", None, json!({"sales_invoice": inv, "time_logs": released})).await?;
+    }
+    let milestones: Vec<(Uuid, Option<Uuid>)> =
+        sqlx::query_as("select id, project from e_task where tenant_id = $1 and sales_invoice = $2 order by id for update")
+            .bind(tenant)
+            .bind(inv)
+            .fetch_all(&mut **hc.tx)
+            .await?;
+    for (t, project) in milestones {
+        let values = Doc::from_iter([("sales_invoice".to_string(), Value::Null), ("billed_amount".to_string(), Value::Null)]);
+        hc.kernel.set_values_tx(&engine, hc.tx, "Task", t, values).await?;
+        audit::record(hc.tx, hc.ctx, "Task", t, "milestone_unbilled", None, json!({"sales_invoice": inv})).await?;
+        projects.push(project);
+    }
     let mut projects: Vec<Uuid> = projects.into_iter().flatten().collect();
     projects.sort();
     projects.dedup();

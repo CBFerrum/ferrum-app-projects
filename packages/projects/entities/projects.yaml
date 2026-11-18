@@ -134,6 +134,8 @@
   company_scoped: true
   numbering: {template: "TASK-{seq:5}"}
   owner_fields: [assigned_to.user]
+  # One next occurrence per repeating task, whoever makes it (tasks that repeat nothing are not compared).
+  unique: [[repeated_from]]
   fields:
     - {name: subject, type: data, required: true, in_list: true}
     - {name: project, type: link, to: Project, required: true, in_list: true, in_filter: true}

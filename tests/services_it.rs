@@ -414,6 +414,12 @@ async fn weekly_time(w: &World) {
     assert_eq!(told().await, ["mia@acme.test", "vic@acme.test"], "Mia has 10.5 of 40, Vic nothing of 8; Nora has her hour");
     ferrum_app_projects::maintenance(&admin.k, admin.ctx.tenant).await.expect("upkeep again");
     assert_eq!(told().await.len(), 2, "once a week");
+    // Two upkeeps at the same moment (two replicas) tell a person newly short of their hours once.
+    pm.insert("ProjectPerson", json!({"user": "lead@acme.test", "weekly_hours": "5"})).await;
+    let (a, b) = tokio::join!(ferrum_app_projects::maintenance(&admin.k, admin.ctx.tenant), ferrum_app_projects::maintenance(&admin.k, admin.ctx.tenant));
+    a.expect("upkeep");
+    b.expect("upkeep at once");
+    assert_eq!(told().await, ["lead@acme.test", "mia@acme.test", "vic@acme.test"], "once, however many run");
 }
 
 /// PJ-01: a project saved as a template keeps its tree, dependencies, estimates and team, dates as

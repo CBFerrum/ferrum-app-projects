@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.11.1
+
+Package `projects` 0.5.1 (a unique key on `Task.repeated_from`). Needs the same platform as 0.11.0. No interface change.
+
+- **A task upkeep marks late is in its history.** Upkeep moves a task to its late status by saving it as the system, as a
+  person's save would: the task gets a new version, a line in its history (shown as "Ferrum") and a `Task.updated`
+  event, so webhooks and automations on that event hear of it and a form opened before the move is refused as stale.
+  It moves each task once however many replicas run upkeep, and never over a status a person set meanwhile.
+- **A late status outside the project's workflow no longer applies from upkeep.** Upkeep used to move a task to its
+  status's late status even when the project's workflow does not hold it, which no save ever did. It now follows the
+  save's rule: such a task stays where it is.
+- **What an invoice bills says so on the record it billed.** Submitting an invoice adds a line `billed` to each
+  timesheet whose time it bills (with the invoice and the time logs) and `milestone_billed` to each milestone (with the
+  invoice and the amount); cancelling it adds `unbilled` and `milestone_unbilled`. The line's author is whoever submitted
+  or cancelled the invoice. A completed project's last milestone is still invoiced as before.
+- **A repeating task makes one next occurrence.** Two upkeeps at the same moment could each make it. The second now
+  finds the first's under the task's lock, and the database refuses a second occurrence of one task. A workspace that
+  already holds two (only possible after such a race) fails the package update with "rows already repeat a value"; find
+  them with `select repeated_from, count(*) from e_task where repeated_from is not null group by 1 having count(*) > 1`
+  and delete the extra one first.
+- The weekly reminder of missing time takes its once-a-week mark under the person's row lock; nothing changes for a person.
+
 ## 0.11.0
 
 No database or interface change. Needs Ferrum 0.4.0 (apps' upkeep runs one workspace at a time, on whichever replica is free).
