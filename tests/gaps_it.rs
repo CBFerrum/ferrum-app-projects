@@ -170,6 +170,7 @@ async fn scenario() {
     sprints(&w).await;
     repeating(&w).await;
     added_fields_reach_the_board(&w).await;
+    shipped_automations(&w).await;
 }
 
 /// A key for one effect, through the gate as an agent asks.
@@ -759,4 +760,133 @@ async fn added_fields_reach_the_board(w: &World) {
     }
     let row = board(&reader).await;
     assert!(row.contains_key("x_zone") && !row.contains_key("x_secret"), "a field the reader may not read is left out: {row:?}");
+}
+
+/// Runs the automations of every event waiting.
+async fn drain(k: &Kernel) {
+    while k.dispatch_outbox_once().await.unwrap_or(0) > 0 {}
+}
+
+/// PRJ-09 (the app's part): Projects ships three automations, switched on: an overdue task and a completed milestone
+/// tell the project's manager, a task due tomorrow tells its people; all in the app.
+async fn shipped_automations(w: &World) {
+    let (admin, pm) = (&w.admin, &reload(&w.users["pm"]).await);
+    let k = &pm.k;
+    let tenant = admin.ctx.tenant;
+    let today = Utc::now().date_naive();
+    let day = |n: i64| (today + Duration::days(n)).to_string();
+    let told = |template: &'static str| async move {
+        let mut tx = k.db.system_tx().await.unwrap();
+        // An in-app message names its person by user; mail by address.
+        let who: Vec<String> = sqlx::query_scalar(
+            "select coalesce(m.recipient, u.email::text) as who from message_send m left join app_user u on u.tenant_id = m.tenant_id and u.id = m.user_id \
+             where m.tenant_id = $1 and m.template = $2 order by who",
+        )
+        .bind(tenant)
+        .bind(template)
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        who
+    };
+    let sql = |q: &'static str| async move {
+        let mut tx = k.db.system_tx().await.unwrap();
+        sqlx::query(q).bind(tenant).execute(&mut *tx).await.unwrap();
+        tx.commit().await.unwrap();
+    };
+    // What the earlier sections left in the outbox runs first, so each check below counts its own.
+    drain(k).await;
+
+    // the_three_are_installed_on
+    let mut tx = k.db.system_tx().await.unwrap();
+    let rows: Vec<(String, bool)> =
+        sqlx::query_as("select package_key, is_active from automation where tenant_id = $1 and package = 'projects' order by package_key")
+            .bind(tenant)
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+    let schedule: Option<Value> =
+        sqlx::query_scalar("select schedule from automation where tenant_id = $1 and package = 'projects' and package_key = 'projects_task_due_tomorrow'")
+            .bind(tenant)
+            .fetch_optional(&mut *tx)
+            .await
+            .unwrap()
+            .flatten();
+    tx.commit().await.unwrap();
+    let keys: Vec<(&str, bool)> = rows.iter().map(|(k, a)| (k.as_str(), *a)).collect();
+    assert_eq!(keys, [("projects_milestone_reached", true), ("projects_task_due_tomorrow", true), ("projects_task_overdue", true)]);
+    // due_tomorrow_is_scheduled
+    assert_eq!(schedule.unwrap_or_default()["relative"]["field"], json!("exp_end_date"));
+
+    // an_overdue_task_tells_the_manager
+    let managed = uid(&pm.insert("Project", json!({"project_name": "Managed", "company": w.cid, "proj_project_manager": "vic@acme.test"})).await);
+    let late = uid(&pm.insert("Task", json!({"subject": "Late", "project": managed.to_string(), "exp_end_date": day(3)})).await);
+    let mut tx = k.db.tenant_tx(tenant).await.unwrap();
+    sqlx::query("update e_task set exp_end_date = $3 where tenant_id = $1 and id = $2")
+        .bind(tenant)
+        .bind(late)
+        .bind(today - Duration::days(1))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    ferrum_app_projects::maintenance(k, tenant).await.expect("upkeep");
+    drain(k).await;
+    assert_eq!(told("projects.task_overdue").await, ["vic@acme.test"], "the project's manager, once");
+    ferrum_app_projects::maintenance(k, tenant).await.expect("upkeep again");
+    drain(k).await;
+    assert_eq!(told("projects.task_overdue").await.len(), 1, "a second upkeep moves nothing");
+
+    // a_person_moving_a_late_task_back_tells_too
+    let working = uid(&pm.insert("Task", json!({"subject": "Stuck", "project": managed.to_string(), "exp_end_date": day(-2), "status": "Working"})).await);
+    drain(k).await;
+    let back = pm.update("Task", working, json!({"status": "Open"})).await;
+    assert_eq!(back["status"], json!("Overdue"));
+    drain(k).await;
+    assert_eq!(told("projects.task_overdue").await.len(), 2);
+
+    // no_manager_no_message
+    let loose = uid(&pm.insert("Project", json!({"project_name": "Unmanaged", "company": w.cid})).await);
+    let quiet = uid(&pm.insert("Task", json!({"subject": "Quiet", "project": loose.to_string(), "exp_end_date": day(3)})).await);
+    let mut tx = k.db.tenant_tx(tenant).await.unwrap();
+    sqlx::query("update e_task set exp_end_date = $3 where tenant_id = $1 and id = $2")
+        .bind(tenant)
+        .bind(quiet)
+        .bind(today - Duration::days(1))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    ferrum_app_projects::maintenance(k, tenant).await.expect("upkeep");
+    drain(k).await;
+    assert_eq!(told("projects.task_overdue").await.len(), 2, "nobody to tell");
+    let mut tx = k.db.system_tx().await.unwrap();
+    let failed: i64 = sqlx::query_scalar(
+        "select count(*) from automation_run r join automation a on a.id = r.automation_id where a.tenant_id = $1 and a.package = 'projects' and r.status = 'failed'",
+    )
+    .bind(tenant)
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(failed, 0, "and no run failed");
+
+    // a_completed_milestone_tells_the_manager
+    let milestone = uid(&pm.insert("Task", json!({"subject": "Go-live", "project": managed.to_string(), "is_milestone": true})).await);
+    let plain = uid(&pm.insert("Task", json!({"subject": "Plain", "project": managed.to_string()})).await);
+    pm.update("Task", milestone, json!({"status": "Completed"})).await;
+    pm.update("Task", plain, json!({"status": "Completed"})).await;
+    drain(k).await;
+    assert_eq!(told("projects.milestone_reached").await, ["vic@acme.test"]);
+    pm.update("Task", milestone, json!({"description": "Live on Monday"})).await;
+    drain(k).await;
+    assert_eq!(told("projects.milestone_reached").await.len(), 1, "an edit after does not tell again");
+
+    // an_administrator_switches_one_off
+    sql("update automation set is_active = false where tenant_id = $1 and package = 'projects' and package_key = 'projects_task_overdue'").await;
+    let off = uid(&pm.insert("Task", json!({"subject": "Unheard", "project": managed.to_string(), "exp_end_date": day(-2), "status": "Working"})).await);
+    pm.update("Task", off, json!({"status": "Open"})).await;
+    drain(k).await;
+    assert_eq!(told("projects.task_overdue").await.len(), 2, "switched off, it tells nobody");
 }

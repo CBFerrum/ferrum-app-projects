@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.18.0
+
+Package `projects` 0.10.0: three message templates and three automations. Needs the same platform as 0.11.0. No
+interface or database change.
+
+- **Automations that come with Projects**, switched on in every workspace, in the app only (no e-mail unless a workspace
+  adds the channel to the template):
+  - a task that goes overdue (by upkeep or by someone's save) tells its project's named manager;
+  - a milestone that is completed tells the project's named manager;
+  - at 09:00 the day before a task's expected end, each person on it is told, while it is open.
+- An administrator switches any of them off or edits it under Administration, Automations; the wording is under
+  Settings, Messages. A release updates them unless the workspace edited them. A project without a named manager is
+  told nothing.
+
 ## 0.17.0
 
 Server and interface; no database change. `ui/dist` rebuilt with Ferrum-Frontend `5e2661f`. Needs the same platform as 0.11.0.

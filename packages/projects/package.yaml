@@ -1,5 +1,5 @@
 package: projects
-version: 0.9.0
+version: 0.10.0
 label: Projects
 description: Projects with task trees, dependencies and milestones, timesheets with costing and billing, activity rates, milestone and time-and-materials invoicing, and project profitability.
 # Projects and customers are shared records; invoicing through ERP comes with the projects_erp
@@ -209,6 +209,39 @@ seed:
 
 # What the app sends; a workspace edits the wording under Settings.
 messages:
+  - key: projects.task_overdue
+    label: A task is overdue
+    values: [task, number, due, project]
+    languages:
+      en:
+        email:
+          subject: "Overdue: {{ values.number }} {{ values.task }}"
+          body: "<p>{{ values.number }} {{ values.task }} of {{ values.project }} was due on {{ values.due }} and is not started.</p>"
+        inapp:
+          title: "{{ values.number }} {{ values.task }} is overdue"
+          text: "{{ values.project }} · due {{ values.due }}"
+  - key: projects.milestone_reached
+    label: A milestone is completed
+    values: [task, number, project]
+    languages:
+      en:
+        email:
+          subject: "Milestone reached: {{ values.task }}"
+          body: "<p>{{ values.number }} {{ values.task }} of {{ values.project }} is completed.</p>"
+        inapp:
+          title: "Milestone reached: {{ values.task }}"
+          text: "{{ values.project }}"
+  - key: projects.task_due
+    label: A task is due tomorrow
+    values: [task, number, due]
+    languages:
+      en:
+        email:
+          subject: "Due tomorrow: {{ values.number }} {{ values.task }}"
+          body: "<p>{{ values.number }} {{ values.task }} is due on {{ values.due }}.</p>"
+        inapp:
+          title: "{{ values.number }} {{ values.task }} is due tomorrow"
+          text: "Due {{ values.due }}"
   - key: projects.time_missing
     label: Time short for the week
     values: [week_start, hours, expected]
@@ -221,3 +254,30 @@ messages:
           title: "Your time for the week of {{ values.week_start }} is short"
           text: "{{ values.hours }} of {{ values.expected }} hours recorded."
 
+# Shipped switched on; an administrator switches them off or edits them under Administration. In the app only.
+automations:
+  - name: projects_task_overdue
+    entity: Task
+    event: updated
+    condition: "doc.status_category == 'To Do' && old.task_status != doc.task_status && !isEmpty(doc.exp_end_date) && doc.exp_end_date < today && !isEmpty(links.project.proj_project_manager)"
+    actions:
+      - {type: message, template: projects.task_overdue, to: ["expr:links.project.proj_project_manager"], channels: [inapp],
+         values: {task: "doc.subject", number: "doc.number", due: "doc.exp_end_date", project: "links.project.project_name"}}
+  - name: projects_milestone_reached
+    entity: Task
+    event: updated
+    condition: "doc.is_milestone && doc.status_category == 'Done' && old.status_category != 'Done' && !isEmpty(links.project.proj_project_manager)"
+    actions:
+      - {type: message, template: projects.milestone_reached, to: ["expr:links.project.proj_project_manager"], channels: [inapp],
+         values: {task: "doc.subject", number: "doc.number", project: "links.project.project_name"}}
+  - name: projects_task_due_tomorrow
+    entity: Task
+    event: scheduled
+    schedule: {relative: {field: exp_end_date, offset: "-P1D", at: "09:00"}}
+    condition: "doc.status_category == 'To Do' || doc.status_category == 'In Progress'"
+    actions:
+      - type: for_each
+        table: assigned_to
+        effects:
+          - {type: message, template: projects.task_due, to: ["expr:item.user"], channels: [inapp],
+             values: {task: "doc.subject", number: "doc.number", due: "doc.exp_end_date"}}

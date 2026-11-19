@@ -7,7 +7,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.17.0-b45309?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.18.0-b45309?style=flat-square)](CHANGELOG.md)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Ferrum platform](https://img.shields.io/badge/runs%20on-Ferrum-2f5bea?style=flat-square)](https://github.com/CBFerrum/Ferrum)
 ![Rust](https://img.shields.io/badge/Rust-server-b7410e?style=flat-square&logo=rust)
@@ -37,7 +37,7 @@ Projects gives a team a board, a timeline, task trees with dependencies, weekly 
 
 | | |
 |---|---|
-| **Version** | 0.17.0 (package `projects` 0.9.0; connector `projects-erp` 0.3.1) |
+| **Version** | 0.18.0 (package `projects` 0.10.0; connector `projects-erp` 0.3.1) |
 | **Kind** | Its own interface at `/projects/` (home, project, task, my work, planning) with Ferrum's records screens for everything else |
 | **What it adds** | 26 entities (18 records, 8 small tables) and extra fields on the shared Project and Customer records, 4 roles, 1 module with 5 reports, 3 project tabs, 1 notification kind and 1 message, 3 upkeep jobs, 3 own endpoints; the ERP connector adds invoicing fields and actions. No print formats. |
 | **Depends on** | Ferrum platform `>=0.4.0, <0.5`; the platform's `core`, `parties` and `project_records` packages |
@@ -136,6 +136,7 @@ Projects gives a team a board, a timeline, task trees with dependencies, weekly 
 
 - **Team.** A project lists people and their role on it: **Manager** (changes the project and its tasks), **Member** (changes its tasks), **Viewer** (reads).
 - **Sprints and backlog.** A project's managers plan **sprints** (a name, two dates, a goal), put tasks in them and estimate tasks in **points**; the **backlog** is the project's open tasks with no sprint, in its own order. **Start Sprint** makes one Active (one a project) and records the points and tasks committed; **Close Sprint** records the points and tasks done and moves every task not done to the planned sprint named, or back to the backlog. A closed sprint is kept as it closed. A project's **Backlog** tab shows the active sprint, the planned ones and the backlog, each with its tasks, points and people: a row's menu moves a task to another sprint or to the backlog and orders the backlog (to the top, up, down), its points are typed in the row, and each sprint's head starts it or closes it, choosing where its open tasks go. The board filters by sprint (any, the active one, none, or one by name).
+- **Automations.** Three come with Projects, switched on, telling people in the app only: a task that goes overdue tells its project's manager; a milestone that is completed tells the manager; a task due tomorrow that is still open tells each person on it. An administrator switches them off or edits them under Administration, Automations; their wording is under Settings, Messages.
 - **Status updates.** A project's managers (its team's and the one named on it) post a **status update**: a day, a health rating (On Track, At Risk, Off Track) and a summary. The project shows the rating and day of its latest update in its head, with a tile linking to the updates; it is worked out again whenever one is saved or deleted. A summary is about the work: keep people's private details out of it.
 - **Private projects.** Tick Private and only the team (and Projects Managers) read the project, its tasks, risks, issues, change requests and allocations. Open projects are read by every Projects User. Erasing a person removes them from every team.
 - **Client portal.** **Project Client** is a portal role an administrator gives to a customer's people, listed on the customer (Client People). They read, and change nothing: the customer's projects marked **Shared with the Client**, the tasks and milestones on them marked **Visible to the Client**, the approved timesheets whose time is all on a shared project, and, with ERP, the project's submitted invoices.
@@ -381,7 +382,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 | One data set with accounting, CRM, helpdesk and HR | ✅ | ➖ | ➖ | ➖ | ➖ | ➖ | ➖ |
 | No per-seat price | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | 🟡¹⁰ |
 
-<sub>¹ Present in some form or not confirmed; check the product and its edition. ² Named baselines on demand, each with every task's dates and hours, drawn on the timeline with each task's days after or before; no baseline of costs per task. ³ A workspace adds fields to tasks and projects; forms, lists, the task page and side panel show them, and on the board the fields marked to show in lists are on the card, those marked as filters are filters, and a choice field can be the swimlanes. ⁴ Every N days, weeks or months, on weekdays, from the due date or from completion, with sub-tasks and added fields; no yearly rule and no count of occurrences. ⁵ From allocations, task estimates and each person's hours a week, on the working days of a calendar; leave is not known. ⁶ A portfolio overview of task counts, risks and issues; no budget or margin roll-up. ⁷ Automations are built by an administrator for the whole workspace, not per project. ⁸ Flat CSV import of records. ⁹ An on-premises edition exists with a different feature set. ¹⁰ The community edition is free; the enterprise edition is priced per user.</sub>
+<sub>¹ Present in some form or not confirmed; check the product and its edition. ² Named baselines on demand, each with every task's dates and hours, drawn on the timeline with each task's days after or before; no baseline of costs per task. ³ A workspace adds fields to tasks and projects; forms, lists, the task page and side panel show them, and on the board the fields marked to show in lists are on the card, those marked as filters are filters, and a choice field can be the swimlanes. ⁴ Every N days, weeks or months, on weekdays, from the due date or from completion, with sub-tasks and added fields; no yearly rule and no count of occurrences. ⁵ From allocations, task estimates and each person's hours a week, on the working days of a calendar; leave is not known. ⁶ A portfolio overview of task counts, risks and issues; no budget or margin roll-up. ⁷ Three automations ship switched on (overdue, milestone reached, due tomorrow); an administrator adds more for the workspace. A project manager's own rules for their project are not there yet. ⁸ Flat CSV import of records. ⁹ An on-premises edition exists with a different feature set. ¹⁰ The community edition is free; the enterprise edition is priced per user.</sub>
 
 ### 🏆 Where Projects stands out
 
@@ -410,6 +411,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 ### ✅ Recently shipped
 
 - [x] **0.10.2** A time log's day is the workspace's date of its start, not UTC's; the task's time list sends it as a day.
+- [x] **0.18.0** Three automations ship switched on: overdue and milestone notices to the manager, due-tomorrow notices to the people on a task.
 - [x] **0.17.0** Added fields on the board: on the card, as filters, as swimlanes.
 - [x] **0.16.0** Repeating tasks every N, on weekdays, from completion, with their sub-tasks and every added field.
 - [x] **0.15.0** The Backlog tab: sprints and the backlog with moves, points, start and close; the board filters by sprint.
