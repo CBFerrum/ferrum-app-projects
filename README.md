@@ -7,7 +7,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.19.0-b45309?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.20.0-b45309?style=flat-square)](CHANGELOG.md)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Ferrum platform](https://img.shields.io/badge/runs%20on-Ferrum-2f5bea?style=flat-square)](https://github.com/CBFerrum/Ferrum)
 ![Rust](https://img.shields.io/badge/Rust-server-b7410e?style=flat-square&logo=rust)
@@ -37,7 +37,7 @@ Projects gives a team a board, a timeline, task trees with dependencies, weekly 
 
 | | |
 |---|---|
-| **Version** | 0.19.0 (package `projects` 0.11.0; connector `projects-erp` 0.3.1) |
+| **Version** | 0.20.0 (package `projects` 0.12.0; connector `projects-erp` 0.3.1) |
 | **Kind** | Its own interface at `/projects/` (home, project, task, my work, planning) with Ferrum's records screens for everything else |
 | **What it adds** | 30 entities (20 records, 10 small tables) and extra fields on the shared Project and Customer records, 4 roles, 1 module with 5 reports, 3 project tabs, 1 notification kind and 1 message, 3 upkeep jobs, 3 own endpoints; the ERP connector adds invoicing fields and actions. No print formats. |
 | **Depends on** | Ferrum platform `>=0.4.0, <0.5`; the platform's `core`, `parties` and `project_records` packages |
@@ -155,6 +155,14 @@ Projects gives a team a board, a timeline, task trees with dependencies, weekly 
 - **Hand-over.** When a person leaves, their open tasks (To Do or In Progress) move to their manager.
 - **Notification.** Someone added to a task's assignees is told (kind **Tasks assigned to you**), in the bar and by email unless they chose otherwise.
 - **Billing percent and billed amount** on milestones; a milestone can be invoiced on its own.
+
+### 📥 Importing tasks
+
+- **Three steps.** Make a **Task Import** for a project (its managers may), choose a mapping and attach the file; press **Check** to see how many rows it has and every problem, row by row; press **Import** to make every row a task with its parent, what it waits for, its people, status, dates and estimates.
+- **Mappings are records.** Spreadsheet, Jira, Asana and MS Project (their CSV exports) come seeded; a workspace corrects a heading, a day pattern or what a status means, or adds a mapping for another tool.
+- **CSV only**, UTF-8, at most 2 MB and 500 rows. A spreadsheet or another tool's export is saved as CSV first.
+- **All or none.** Every row is made in one transaction as the person who presses Import, with the same checks as a task made by hand; one refused row makes nothing and the answer names it. An import runs once.
+- **Kept thirty days.** Every import, done or not, is deleted with its file thirty days after it was made.
 
 ### 🧲 The board
 
@@ -375,7 +383,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 | Email to task | ❌ | ✅ | ✅ | ✅ | 🟡¹ | 🟡¹ | ✅ |
 | Slack, Teams and Git integrations | ❌ | ✅ | ✅ | ✅ | 🟡¹ | ✅ | 🟡¹ |
 | Calendar feeds (iCalendar) | ❌ | ✅ | 🟡¹ | ✅ | 🟡¹ | ✅ | ✅ |
-| Import from Jira, Asana, MS Project, Excel | 🟡⁸ | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡¹ |
+| Import from Jira, Asana, MS Project, Excel | ✅⁸ | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡¹ |
 | Native mobile apps | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡¹ |
 | Arabic and Hindi, right to left | ✅ | 🟡¹ | 🟡¹ | 🟡¹ | 🟡¹ | 🟡¹ | 🟡¹ |
 | Open source | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
@@ -383,7 +391,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 | One data set with accounting, CRM, helpdesk and HR | ✅ | ➖ | ➖ | ➖ | ➖ | ➖ | ➖ |
 | No per-seat price | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | 🟡¹⁰ |
 
-<sub>¹ Present in some form or not confirmed; check the product and its edition. ² Named baselines on demand, each with every task's dates and hours, drawn on the timeline with each task's days after or before; no baseline of costs per task. ³ A workspace adds fields to tasks and projects; forms, lists, the task page and side panel show them, and on the board the fields marked to show in lists are on the card, those marked as filters are filters, and a choice field can be the swimlanes. ⁴ Every N days, weeks or months, on weekdays, from the due date or from completion, with sub-tasks and added fields; no yearly rule and no count of occurrences. ⁵ From allocations, task estimates and each person's hours a week, on the working days of a calendar; leave is not known. ⁶ A portfolio overview of task counts, risks and issues; no budget or margin roll-up. ⁷ Three automations ship switched on (overdue, milestone reached, due tomorrow); an administrator adds more for the workspace. A project manager's own rules for their project are not there yet. ⁸ Flat CSV import of records. ⁹ An on-premises edition exists with a different feature set. ¹⁰ The community edition is free; the enterprise edition is priced per user.</sub>
+<sub>¹ Present in some form or not confirmed; check the product and its edition. ² Named baselines on demand, each with every task's dates and hours, drawn on the timeline with each task's days after or before; no baseline of costs per task. ³ A workspace adds fields to tasks and projects; forms, lists, the task page and side panel show them, and on the board the fields marked to show in lists are on the card, those marked as filters are filters, and a choice field can be the swimlanes. ⁴ Every N days, weeks or months, on weekdays, from the due date or from completion, with sub-tasks and added fields; no yearly rule and no count of occurrences. ⁵ From allocations, task estimates and each person's hours a week, on the working days of a calendar; leave is not known. ⁶ A portfolio overview of task counts, risks and issues; no budget or margin roll-up. ⁷ Three automations ship switched on (overdue, milestone reached, due tomorrow); an administrator adds more for the workspace. A project manager's own rules for their project are not there yet. ⁸ A task tree from a CSV file (a spreadsheet, or Jira, Asana and MS Project CSV exports) through editable mappings, checked then imported all or none; no .xlsx or .mpp reader and no import straight from another product's API. ⁹ An on-premises edition exists with a different feature set. ¹⁰ The community edition is free; the enterprise edition is priced per user.</sub>
 
 ### 🏆 Where Projects stands out
 
@@ -398,7 +406,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 ### 🚧 Where the leaders are still ahead
 
 - **Agile work:** sprints, backlogs, story points, burndown and velocity.
-- **Integrations:** Slack, Teams, Git, email to task, calendar feeds and migration importers.
+- **Integrations:** Slack, Teams, Git, email to task, calendar feeds, and importing straight from another product's API.
 - **Project health:** portfolio roll-ups of money, dates and health, dashboards.
 - **Scheduling depth:** effort-driven scheduling, Gantt export; earned value over time (a curve), not only as of today.
 - **Mobile apps and offline use.**
@@ -412,6 +420,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 ### ✅ Recently shipped
 
 - [x] **0.10.2** A time log's day is the workspace's date of its start, not UTC's; the task's time list sends it as a day.
+- [x] **0.20.0** Import a task tree, part 2: Import makes every row a task with its tree, links and people, all or none, once; old imports and their files go after thirty days.
 - [x] **0.19.0** Import a task tree, part 1: mappings for a spreadsheet, Jira, Asana and MS Project as records; Check reads the CSV file and lists every problem row by row.
 - [x] **0.18.0** Three automations ship switched on: overdue and milestone notices to the manager, due-tomorrow notices to the people on a task.
 - [x] **0.17.0** Added fields on the board: on the card, as filters, as swimlanes.

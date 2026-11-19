@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.20.0
+
+Package `projects` 0.12.0: the action Import on a task import (`projects.task_import.run`), and a fourth upkeep step.
+Needs the same platform as 0.11.0. No interface build.
+
+- **Import makes the tasks.** After Check, **Import** makes every row of the file a task of the project: its parent, what
+  it waits for, its people, status, dates, hours, points and milestone mark. Parents are made first, then the links, so an
+  imported history (a done task that waited for an open one) is kept. Everything is made as the person who presses Import,
+  with every check a task made by hand has, in one transaction: one refused row makes nothing, and the answer names the
+  row and its title. An import runs once.
+- **Imports do not stay.** Upkeep deletes every import, done or not, with its file, thirty days after it was made; the
+  tasks it made stay.
+
 ## 0.19.0
 
 Package `projects` 0.11.0: `TaskImport` and `TaskImportMapping` (with their lines), the action Check

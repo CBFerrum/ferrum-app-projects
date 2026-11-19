@@ -40,7 +40,7 @@
   module: projects
   company_scoped: true
   numbering: {template: "IMP-{seq:5}"}
-  description: "A file of tasks brought into a project: checked first, then imported as a whole or not at all."
+  description: "A file of tasks brought into a project: checked first, then imported as a whole or not at all. Every import is deleted with its file thirty days after it was made."
   fields:
     - {name: project, type: link, to: Project, required: true, in_list: true, in_filter: true}
     - {name: company, type: link, to: Company, fetch_from: project.company, read_only: true, in_filter: true}
@@ -60,4 +60,12 @@
       contract:
         returns: {type: object, properties: {state: {type: string}, rows: {type: integer}, problems: {type: integer}}}
         completion: "No task is made. The import holds how many rows the file has and every problem that would refuse it; with none it is Checked"
+    - name: run
+      label: Import
+      permission: write
+      condition: "doc.state != 'Imported'"
+      confirm: "Make a task in this project for every row of the file?"
+      contract:
+        returns: {type: object, properties: {state: {type: string}, tasks: {type: integer}}}
+        completion: "Every row of the file is a task of the project, with its parent, what it waits for and its people, and the import is Imported. If any row is refused, no task is made and the import is unchanged"
   list: {columns: [number, project, mapping, state, rows_found], sort: created_at desc}

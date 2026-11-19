@@ -1,7 +1,8 @@
 //! Importing a task tree from a file (PRJ-15). A `TaskImport` names a project, a mapping and a CSV file attached to
 //! it. What another product calls its columns, how it writes a day and what its statuses mean are the mapping's
 //! (`TaskImportMapping`, records a workspace edits); the code reads "a CSV file through a mapping". **Check** reads
-//! the file and writes what it found onto the import, making no task.
+//! the file and writes what it found onto the import, making no task; **Import** makes every row a task, as the
+//! caller and in one transaction, or nothing. Upkeep deletes every import, with its file, thirty days after it was made.
 
 use crate::logic::CLOSED_PROJECT;
 use crate::project::{label, try_get};
@@ -9,7 +10,7 @@ use crate::status::statuses_for;
 use async_trait::async_trait;
 use chrono::{NaiveDate, NaiveDateTime};
 use ferrum_domain::util::{elevated, id, rows, s, sys};
-use ferrum_kernel::{Doc, DocHook, Error, HookCtx, Result};
+use ferrum_kernel::{Ctx, Doc, DocHook, Error, FieldError, HookCtx, Kernel, Result};
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
@@ -348,6 +349,7 @@ impl DocHook for ImportHook {
     async fn action(&self, hc: &mut HookCtx<'_>, name: &str, doc: &Doc, _params: &Value) -> Result<Option<Value>> {
         match name {
             "check" => check(hc, doc).await.map(Some),
+            "run" => run(hc, doc).await.map(Some),
             _ => Ok(None),
         }
     }
@@ -446,6 +448,122 @@ async fn check(hc: &mut HookCtx<'_>, doc: &Doc) -> Result<Value> {
     ]);
     hc.kernel.update_tx(&elevated(hc.ctx), hc.tx, "TaskImport", import, values, None).await?;
     Ok(json!({"state": state, "rows": planned.len(), "problems": problems.len()}))
+}
+
+/// What a refusal says, for a row: the kernel's words, a validation's field messages joined.
+fn why(e: &Error) -> String {
+    match e {
+        Error::Validation(fields) => fields.iter().map(|f| f.message.clone()).collect::<Vec<_>>().join("; "),
+        other => other.to_string(),
+    }
+}
+
+/// `run`: every row of the file a task of the project, parents first, made as the caller through the ordinary save;
+/// then what each waits for; then the import is Imported. One refusal and nothing is made (one transaction).
+async fn run(hc: &mut HookCtx<'_>, doc: &Doc) -> Result<Value> {
+    let import = id(doc, "id").ok_or_else(|| Error::internal("an import without an id"))?;
+    let project_id = id(doc, "project").ok_or_else(|| Error::field("project", "is required"))?;
+    let project = try_get(hc.kernel, &sys(hc.ctx), hc.tx, "Project", project_id).await?.ok_or_else(|| Error::field("project", "does not exist"))?;
+    if let Some(st) = s(&project, "status").filter(|st| CLOSED_PROJECT.contains(st)) {
+        return Err(Error::invalid(format!("project {} is {}; reopen it to import into it", label(&project), st.to_lowercase())));
+    }
+    let (planned, problems) = resolve(hc, doc).await?;
+    if !problems.is_empty() {
+        let mut errors: Vec<FieldError> =
+            problems.iter().take(50).map(|p| FieldError::new("file", format!("row {}: {}: {}", p.row, p.column, p.what))).collect();
+        if problems.len() > 50 {
+            errors.push(FieldError::new("file", format!("and {} more: Check lists them all", problems.len() - 50)));
+        }
+        return Err(Error::Validation(errors));
+    }
+    // Parents first: a row's depth is how many rows are above it in the tree; equal depths keep the file's order.
+    let depth = |i: usize| {
+        let (mut d, mut at) = (0, planned[i].parent);
+        while let Some(p) = at.filter(|_| d < 50) {
+            d += 1;
+            at = planned[p].parent;
+        }
+        d
+    };
+    let mut order: Vec<usize> = (0..planned.len()).collect();
+    order.sort_by_key(|i| depth(*i));
+    let statuses = statuses_for(hc.ctx, hc.tx, &project).await?;
+    let points = hc.ctx.schema.entity("Task").is_some_and(|t| t.field("story_points").is_some());
+    let mut made: Vec<Option<uuid::Uuid>> = vec![None; planned.len()];
+    for &i in &order {
+        let p = &planned[i];
+        let mut task = Doc::from_iter([("subject".to_string(), json!(p.subject)), ("project".to_string(), json!(project_id.to_string()))]);
+        let mut put = |k: &str, v: Option<Value>| {
+            if let Some(v) = v {
+                task.insert(k.to_string(), v);
+            }
+        };
+        put("parent_task", p.parent.and_then(|j| made[j]).map(|u| json!(u.to_string())));
+        put(
+            if statuses.is_empty() { "status" } else { "task_status" },
+            p.status.as_ref().map(|name| match statuses.iter().find(|st| &st.name == name) {
+                Some(st) => json!(st.id.to_string()),
+                None => json!(name),
+            }),
+        );
+        put("priority", p.priority.as_ref().map(|v| json!(v)));
+        put("exp_start_date", p.start.map(|d| json!(d.to_string())));
+        put("exp_end_date", p.end.map(|d| json!(d.to_string())));
+        put("expected_hours", p.hours.map(|h| json!(h.to_string())));
+        put("story_points", p.points.filter(|_| points).map(|v| json!(v.to_string())));
+        put("is_milestone", p.milestone.then_some(json!(true)));
+        put("description", p.description.as_ref().map(|v| json!(v)));
+        put("assigned_to", (!p.people.is_empty()).then(|| Value::Array(p.people.iter().map(|u| json!({"user": u})).collect())));
+        let doc = hc.kernel.insert_tx(hc.ctx, hc.tx, "Task", task).await.map_err(|e| Error::invalid(format!("row {} ({}): {}", p.row, p.subject, why(&e))))?;
+        made[i] = id(&doc, "id");
+    }
+    for &i in &order {
+        let p = &planned[i];
+        let (Some(task), false) = (made[i], p.deps.is_empty()) else { continue };
+        let deps: Vec<Value> = p.deps.iter().filter_map(|d| made[*d]).map(|u| json!({"task": u.to_string()})).collect();
+        hc.kernel
+            .update_tx(hc.ctx, hc.tx, "Task", task, Doc::from_iter([("depends_on".to_string(), Value::Array(deps))]), None)
+            .await
+            .map_err(|e| Error::invalid(format!("row {} ({}): {}", p.row, p.subject, why(&e))))?;
+    }
+    let n = planned.len();
+    let values = Doc::from_iter([
+        ("state".to_string(), json!("Imported")),
+        ("imported_on".to_string(), json!(chrono::Utc::now().to_rfc3339())),
+        ("tasks_made".to_string(), json!(n)),
+        ("rows_found".to_string(), json!(n)),
+        ("problems".to_string(), Value::Null),
+    ]);
+    hc.kernel.update_tx(&elevated(hc.ctx), hc.tx, "TaskImport", import, values, None).await?;
+    Ok(json!({"state": "Imported", "tasks": n}))
+}
+
+/// Upkeep: every import made more than thirty days ago is deleted, its file with it (the file holds people's names).
+/// Each in its own transaction, as the engine; one that fails is logged and the rest go on.
+pub(crate) async fn drop_old(k: &Kernel, tenant: uuid::Uuid) -> Result<usize> {
+    let ctx = Ctx::system(tenant, k.registry.schema(tenant).await?);
+    if ctx.schema.entity("TaskImport").is_none() {
+        return Ok(0);
+    }
+    let mut tx = k.db.tenant_tx(tenant).await?;
+    let old: Vec<uuid::Uuid> =
+        sqlx::query_scalar("select id from e_task_import where tenant_id = $1 and created_at < now() - interval '30 days' order by id limit 100")
+            .bind(tenant)
+            .fetch_all(&mut *tx)
+            .await?;
+    tx.commit().await?;
+    let mut gone = 0;
+    for import in old {
+        let mut tx = k.db.tenant_tx(tenant).await?;
+        match k.delete_tx(&ctx, &mut tx, "TaskImport", import, None).await {
+            Ok(()) => {
+                tx.commit().await?;
+                gone += 1;
+            }
+            Err(e) => tracing::warn!(%import, "an old task import was not deleted: {e}"),
+        }
+    }
+    Ok(gone)
 }
 
 #[cfg(test)]

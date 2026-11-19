@@ -172,6 +172,7 @@ async fn scenario() {
     added_fields_reach_the_board(&w).await;
     shipped_automations(&w).await;
     import_check(&w).await;
+    import_run(&w).await;
 }
 
 /// A key for one effect, through the gate as an agent asks.
@@ -1017,4 +1018,190 @@ async fn import_check(w: &World) {
     let answer =
         k.invoke(&lead.ctx, invocation("projects.task_import.check", json!({"id": good.to_string()}), "imp:1")).await.expect("checked through the gate");
     assert_eq!(answer.result, json!({"state": "Checked", "rows": 10, "problems": 0}));
+}
+
+/// PRJ-15, part 2: Import makes every row a task of the project, with its parent, its links and its people, as the
+/// caller and in one transaction, or nothing; once; and every import goes, with its file, thirty days after it was made.
+async fn import_run(w: &World) {
+    let (admin, pm, lead, mia) = (&w.admin, &reload(&w.users["pm"]).await, &reload(&w.users["lead"]).await, &reload(&w.users["mia"]).await);
+    let k = &pm.k;
+    let tenant = admin.ctx.tenant;
+    // A workspace rule a row of a file can break (the file passes Check; the task's save refuses it).
+    let rule: ferrum_kernel::customize::NewCustomization = serde_json::from_value(
+        json!({"entity": "Task", "op": {"op": "add_rule", "rule": {"name": "x_not_forbidden", "check": "doc.subject != 'Forbidden'", "message": "This title is not allowed"}}}),
+    )
+    .unwrap();
+    k.batch_customizations(&admin.ctx, vec![rule], false).await.map_err(|(_, e)| e).expect("a rule");
+    let (pm, lead) = (&reload(pm).await, &reload(lead).await);
+    let spreadsheet = uid(&pm.find_one("TaskImportMapping", json!({"mapping_name": "Spreadsheet"})).await);
+    let new_project = |name: &str| {
+        let body = json!({"project_name": name, "company": w.cid,
+                          "proj_members": [{"person": "lead@acme.test", "project_role": "Manager"}, {"person": "mia@acme.test", "project_role": "Member"}]});
+        async move { uid(&pm.insert("Project", body).await) }
+    };
+    let file = |text: String| {
+        let (k, ctx) = (lead.k.clone(), lead.ctx.clone());
+        async move { k.store_file(&ctx, None, "plan.csv", "text/csv", text.as_bytes()).await.expect("stored")["url"].clone() }
+    };
+    let import = |project: Uuid, mapping: Uuid, url: Value| {
+        let body = json!({"project": project.to_string(), "mapping": mapping.to_string(), "file": url});
+        let (k, ctx) = (lead.k.clone(), lead.ctx.clone());
+        async move { uid(&k.insert(&ctx, "TaskImport", obj(body)).await.expect("an import")) }
+    };
+    let count = |project: Uuid| async move { pm.list("Task", json!({"project": project.to_string()})).await.len() };
+    let head = "Key,Task,Parent,Depends On,Status,Priority,Assignees,Start,End,Hours,Points,Milestone,Description";
+    let tree = |forbidden: bool| {
+        let mut rows = vec![head.to_string()];
+        rows.push("P,Plan,,,Completed,High,lead@acme.test,2027-02-01,2027-02-05,8,3,no,The plan".into());
+        rows.push("P1,Scope,P,,Completed,,mia,2027-02-01,2027-02-02,4,1,no,".into());
+        rows.push("P2,Budget,P,P1,Open,,,2027-02-03,2027-02-05,4,2,no,".into());
+        rows.push("B,Build,,P,Open,,lead@acme.test,2027-02-08,2027-02-26,40,8,no,".into());
+        rows.push("B1,Backend,B,,Open,,,2027-02-08,2027-02-19,20,5,no,".into());
+        rows.push(format!("B11,{},B1,,Open,,,2027-02-08,2027-02-12,8,2,no,", if forbidden { "Forbidden" } else { "Schema" }));
+        rows.push("B12,API,B1,,Open,,,2027-02-15,2027-02-19,12,3,no,".into());
+        rows.push("B2,Frontend,B,,Open,,,2027-02-15,2027-02-26,20,5,no,".into());
+        rows.push("T,Test,,,Open,,,2027-03-01,2027-03-05,16,3,no,".into());
+        rows.push("T1,Load test,T,T2,Completed,,,2027-03-01,2027-03-02,6,1,no,".into());
+        rows.push("T2,Sign-off,T,,Open,,,2027-03-05,2027-03-05,,,yes,".into());
+        rows.push("L,Launch,,T,Open,Urgent,,,2027-03-08,,,yes,".into());
+        rows.join("\n")
+    };
+
+    // a_tree_is_imported, and history_is_not_refused: Load test is done and waits for Sign-off, which is open
+    let p = new_project("Imported tree").await;
+    let i = import(p, spreadsheet, file(tree(false)).await).await;
+    let before = count(p).await;
+    let done = lead.action("TaskImport", i, "run", json!({})).await;
+    assert_eq!(done, json!({"state": "Imported", "tasks": 12}));
+    assert_eq!(count(p).await, before + 12);
+    let by = |subject: &'static str| async move { pm.find_one("Task", json!({"project": p.to_string(), "subject": subject})).await };
+    let (plan, scope, budget, build, backend, launch) =
+        (by("Plan").await, by("Scope").await, by("Budget").await, by("Build").await, by("Backend").await, by("Launch").await);
+    assert_eq!((scope["parent_task"].clone(), backend["parent_task"].clone()), (plan["id"].clone(), build["id"].clone()));
+    assert_eq!(by("API").await["parent_task"], backend["id"], "three levels");
+    assert_eq!((plan["status"].clone(), budget["status"].clone()), (json!("Completed"), json!("Open")));
+    let budget = pm.get("Task", uid(&budget)).await;
+    assert_eq!(budget["depends_on"].as_array().unwrap().iter().map(|r| r["task"].clone()).collect::<Vec<_>>(), [scope["id"].clone()]);
+    let plan = pm.get("Task", uid(&plan)).await;
+    assert_eq!(plan["assigned_to"][0]["user"], json!("lead@acme.test"));
+    assert_eq!(pm.get("Task", uid(&scope)).await["assigned_to"][0]["user"], json!("mia@acme.test"), "a person by full name");
+    assert_eq!(
+        (plan["exp_start_date"].clone(), plan["exp_end_date"].clone(), dec(&plan["expected_hours"]), dec(&plan["story_points"])),
+        (json!("2027-02-01"), json!("2027-02-05"), n("8"), n("3"))
+    );
+    assert_eq!((launch["is_milestone"].clone(), launch["priority"].clone()), (json!(true), json!("Urgent")));
+    let load = pm.get("Task", uid(&by("Load test").await)).await;
+    assert_eq!(
+        (load["status"].clone(), load["depends_on"][0]["task"].clone()),
+        (json!("Completed"), by("Sign-off").await["id"].clone()),
+        "an imported history"
+    );
+    let imp = pm.get("TaskImport", i).await;
+    assert_eq!((imp["state"].clone(), imp["tasks_made"].clone()), (json!("Imported"), json!(12)));
+
+    // once
+    assert!(lead.try_action("TaskImport", i, "run", json!({})).await.is_err(), "an import runs once");
+    let p2 = new_project("Keyed import").await;
+    let keyed = import(p2, spreadsheet, file(tree(false)).await).await;
+    for _ in 0..2 {
+        k.invoke(&lead.ctx, invocation("projects.task_import.run", json!({"id": keyed.to_string()}), "i:1")).await.expect("run through the gate");
+    }
+    assert_eq!(count(p2).await, 12, "one key, one import");
+    let p3 = new_project("Raced import").await;
+    let raced = import(p3, spreadsheet, file(tree(false)).await).await;
+    let (a, b) = tokio::join!(k.run_action(&lead.ctx, "TaskImport", raced, "run", json!({})), k.run_action(&lead.ctx, "TaskImport", raced, "run", json!({})));
+    assert_eq!([a.is_ok(), b.is_ok()].iter().filter(|x| **x).count(), 1, "{a:?} {b:?}");
+    assert_eq!(count(p3).await, 12);
+
+    // all_or_none
+    let p4 = new_project("Refused import").await;
+    let bad = tree(false).replace("2027-02-08,2027-02-26", "2027-02-26,2027-02-08");
+    let refused = import(p4, spreadsheet, file(bad).await).await;
+    let r = lead.try_action("TaskImport", refused, "run", json!({})).await;
+    assert!(matches!(&r, Err(Error::Validation(_))), "Check's problem refuses it: {r:?}");
+    let forbidden = import(p4, spreadsheet, file(tree(true)).await).await;
+    let r = lead.try_action("TaskImport", forbidden, "run", json!({})).await;
+    assert!(matches!(&r, Err(Error::Invalid(m)) if m.contains("row 7 (Forbidden)")), "{r:?}");
+    assert_eq!(count(p4).await, 0, "nothing made");
+    let kept = pm.get("TaskImport", forbidden).await;
+    assert!(kept["state"] != json!("Imported") && !kept["file"].is_null(), "unchanged, with its file: {kept:?}");
+
+    // a_cycle_is_refused
+    let cycle = format!("{head}\nA,Alpha,,B,Open,,,,,,,,\nB,Beta,,A,Open,,,,,,,,");
+    let looped = import(p4, spreadsheet, file(cycle).await).await;
+    let r = lead.try_action("TaskImport", looped, "run", json!({})).await;
+    assert!(matches!(&r, Err(Error::Invalid(m)) if m.starts_with("row ")), "{r:?}");
+    assert_eq!(count(p4).await, 0);
+
+    // as_the_caller: a member runs nothing; a role that writes imports but adds no task is refused, nothing made
+    assert!(denied(&mia.try_action("TaskImport", i, "run", json!({})).await));
+    let rule = |v: Value| serde_json::from_value::<ferrum_meta::PermissionDef>(v).unwrap();
+    for r in [
+        json!({"entity": "TaskImport", "read": true, "write": true}),
+        json!({"entity": "Project", "read": true}),
+        json!({"entity": "TaskImportMapping", "read": true}),
+    ] {
+        k.set_role_permission(&admin.ctx, "Import Clerk", &rule(r)).await.expect("rule");
+    }
+    let clerk = k.create_user(&admin.ctx, "clerk@acme.test", "clerk", Some("Correct-Horse-9"), &["Import Clerk".into()], false).await.expect("user");
+    let clerk = U { k: k.clone(), ctx: k.load_ctx(tenant, clerk, None, "it".into()).await.expect("ctx") };
+    let p5 = new_project("Clerk's import").await;
+    let theirs = import(p5, spreadsheet, file(tree(false)).await).await;
+    let r = clerk.try_action("TaskImport", theirs, "run", json!({})).await;
+    assert!(r.is_err(), "{r:?}");
+    assert_eq!(count(p5).await, 0);
+
+    // by_level
+    let ms = uid(&pm.find_one("TaskImportMapping", json!({"mapping_name": "MS Project (CSV export)"})).await);
+    let p6 = new_project("Outline").await;
+    let outline = "ID,Name,Outline Level,Predecessors,Resource Names,Start,Finish\n1,Phase,1,,,,\n2,Step,2,,,,\n3,Next phase,1,1,,,\n";
+    let levels = import(p6, ms, file(outline.to_string()).await).await;
+    lead.action("TaskImport", levels, "run", json!({})).await;
+    let phase = pm.find_one("Task", json!({"project": p6.to_string(), "subject": "Phase"})).await;
+    assert_eq!(pm.find_one("Task", json!({"project": p6.to_string(), "subject": "Step"})).await["parent_task"], phase["id"]);
+
+    // old_imports_go
+    let fresh_draft = import(p4, spreadsheet, file(tree(false)).await).await;
+    let old_draft = import(p4, spreadsheet, file(tree(false)).await).await;
+    let file_of = |imp: Uuid| async move { pm.get("TaskImport", imp).await["file"].as_str().unwrap().rsplit('/').next().unwrap().parse::<Uuid>().unwrap() };
+    let (old_file, done_file) = (file_of(old_draft).await, file_of(i).await);
+    let mut tx = k.db.tenant_tx(tenant).await.unwrap();
+    sqlx::query("update e_task_import set created_at = now() - interval '31 days' where tenant_id = $1 and id = any($2)")
+        .bind(tenant)
+        .bind(&[old_draft, i][..])
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    ferrum_app_projects::maintenance(k, tenant).await.expect("upkeep");
+    for gone in [old_draft, i] {
+        assert!(denied(&pm.try_get("TaskImport", gone).await), "an import thirty days old is gone");
+    }
+    for f in [old_file, done_file] {
+        assert!(k.file_info(&pm.ctx, f).await.is_err(), "with its file");
+    }
+    pm.get("TaskImport", fresh_draft).await;
+    pm.get("TaskImport", keyed).await;
+    assert_eq!(count(p).await, before + 12, "the tasks it made stay");
+    // A manager may delete one too.
+    k.delete(&lead.ctx, "TaskImport", fresh_draft, None).await.expect("a manager deletes an import");
+
+    // The cap: five hundred rows (the most Check lets through) are made in one request.
+    let p8 = new_project("Five hundred").await;
+    let mut many = vec![head.to_string()];
+    for i in 1..=500 {
+        many.push(format!("R{i},Row {i},{},,,,,,,1,,,", if i % 10 == 1 { String::new() } else { format!("R{}", (i - 1) / 10 * 10 + 1) }));
+    }
+    let big = import(p8, spreadsheet, file(many.join("\n")).await).await;
+    let started = std::time::Instant::now();
+    assert_eq!(lead.action("TaskImport", big, "run", json!({})).await["tasks"], json!(500));
+    eprintln!("500-row import took {:?}", started.elapsed());
+
+    // a_closed_project_takes_no_import
+    let p7 = new_project("Closing").await;
+    let late = import(p7, spreadsheet, file(format!("{head}\nA,Alpha,,,,,,,,,,,")).await).await;
+    pm.action("Project", p7, "complete", json!({})).await;
+    let r = lead.try_action("TaskImport", late, "run", json!({})).await;
+    assert!(r.is_err(), "{r:?}");
+    assert_eq!(count(p7).await, 0);
 }
