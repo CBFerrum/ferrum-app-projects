@@ -67,7 +67,7 @@ describe("filters", () => {
   });
 
   it("lives in the address and survives the trip", () => {
-    const f: Filters = { q: "spec", who: "me", priority: "High", due: "late", parent: "top", sprint: "active" };
+    const f: Filters = { q: "spec", who: "me", priority: "High", due: "late", parent: "top", sprint: "active", fields: {} };
     const sp = new URLSearchParams(Object.entries(filterParams(f)).filter((e): e is [string, string] => e[1] !== null));
     expect(readFilters(sp)).toEqual(f);
     expect(filterParams(NO_FILTERS)).toEqual({ q: null, who: null, prio: null, due: null, parent: null, sprint: null });
@@ -84,6 +84,29 @@ describe("the sprint filter", () => {
     expect(filtersOn({ ...NO_FILTERS, sprint: "none" })).toBe(1);
     expect(readFilters(new URLSearchParams("sprint=active")).sprint).toBe("active");
     expect(boardModel(ts, { ...NO_FILTERS, sprint: "active" }, "none", "manual", { ...ctx, activeSprint: "s1" }).shown).toBe(1);
+  });
+});
+
+describe("added fields on the board", () => {
+  const ts = [t("n", { x_zone: "North", x_done: true }), t("s", { x_zone: "South" }), t("none")];
+  it("a field filter keeps matching tasks and counts as a filter", () => {
+    const pick = (fields: Record<string, string>) => ts.filter((x) => matches(x, { ...NO_FILTERS, fields }, ctx.me, today)).map((x) => x.id);
+    expect([pick({ x_zone: "North" }), pick({ x_done: "yes" }), pick({ x_done: "no" }), pick({ x_zone: "" })]).toEqual([["n"], ["n"], ["s", "none"], ["n", "s", "none"]]);
+    expect(filtersOn({ ...NO_FILTERS, fields: { x_zone: "North" } })).toBe(1);
+    const read = readFilters(new URLSearchParams("f.x_zone=South&f.other=x"), ["x_zone"]);
+    expect(read.fields).toEqual({ x_zone: "South" });
+    expect(filterParams(read)["f.x_zone"]).toBe("South");
+    expect(readLanes(new URLSearchParams("lanes=f.x_zone"), ["x_zone"])).toBe("f.x_zone");
+    expect(readLanes(new URLSearchParams("lanes=f.gone"), ["x_zone"])).toBe("none");
+  });
+
+  it("lanes by a choice field put tasks under their option, the empty lane last, and a drop changes the field", () => {
+    const m = boardModel(ts, NO_FILTERS, "f.x_zone", "manual", { ...ctx, laneOptions: ["North", "South"] });
+    expect(m.lanes.map((l) => l.id)).toEqual(["North", "South", NOBODY]);
+    expect(keys(m, "Open", "South")).toEqual(["s"]);
+    const plan = dropPlan(m, "North|n", "South|Open", 0, "f.x_zone", "manual");
+    expect(plan?.patch).toMatchObject({ x_zone: "South" });
+    expect(dropPlan(m, "North|n", `${NOBODY}|Open`, 0, "f.x_zone", "manual")?.patch).toMatchObject({ x_zone: null });
   });
 });
 

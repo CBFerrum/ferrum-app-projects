@@ -98,6 +98,47 @@ describe("the board's sprint filter", () => {
   });
 });
 
+describe("the board with a field the workspace added", () => {
+  const zone = {
+    name: "Task",
+    label: "Task",
+    label_plural: "Tasks",
+    kind: "master",
+    submittable: false,
+    permissions: all,
+    fields: [{ name: "x_zone", label: "Zone", type: "select", options: ["North", "South"], in_list: true, in_filter: true, can_read: true }],
+    form: [{ fields: ["x_zone"] }],
+    list: { columns: [] },
+    actions: [],
+    children: {},
+  };
+  const at = (where: string) => {
+    const qc = seeded();
+    qc.setQueryData(["meta", "Task"], zone);
+    const rows = tasks.map((x, i) => (i === 0 ? { ...x, x_zone: "North" } : x));
+    return renderToStaticMarkup(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={[where]}>
+          <Board project={project} set={{ rows, total: rows.length }} open={null} onOpen={() => {}} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  };
+
+  it("offers the field as a filter and draws it on the card", () => {
+    const html = at("/");
+    expect(html).toContain('aria-label="Zone"');
+    expect(html).toContain("pj-card-extras");
+    expect(html).toContain("North");
+  });
+
+  it("makes a lane of each of its options, and one for no value", () => {
+    const html = at("/?lanes=f.x_zone");
+    expect(html).toContain('aria-label="North"');
+    expect(html).toContain("No Zone");
+  });
+});
+
 describe("the backlog", () => {
   const sprints = [
     { id: "s1", sprint_name: "Sprint 7", start_date: day(2), end_date: day(15), state: "Active", goal: "Ship the checkout" },

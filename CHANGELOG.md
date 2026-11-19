@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.17.0
+
+Server and interface; no database change. `ui/dist` rebuilt with Ferrum-Frontend `5e2661f`. Needs the same platform as 0.11.0.
+
+- **Fields a workspace adds to tasks reach the board.** The board's task list carries the plain fields (text, choice,
+  number, date, tick) marked to show in lists or as filters, at most twelve, each only to whoever may read it. A card
+  draws up to three of those marked to show in lists, a line under its facts, and a screen reader hears them with it.
+- **As filters and swimlanes.** Each choice or tick field marked as a filter is a filter on the board (kept in the
+  address as `f.<field>`); a choice field can be the swimlanes, one lane per option and one for none, and dropping a
+  card in another lane sets that field.
+- The card's spoken "late, was due" and "due" now go through the translations.
+
 ## 0.16.0
 
 Package `projects` 0.9.0: three fields on Task (`repeat_every`, `repeat_weekdays` with its small table `TaskRepeatDay`,

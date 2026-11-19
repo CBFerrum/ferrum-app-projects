@@ -26,6 +26,8 @@ export interface Task {
   assigned_to?: { id?: string; user?: string | null }[] | null;
   depends_on?: { id?: string; task?: string | null }[] | null;
   _titles?: Record<string, string>;
+  /** Fields the workspace added (the board's endpoint sends the plain ones it marks). */
+  [field: string]: unknown;
 }
 
 /** The board's columns in order; Overdue shows only while a task is in it, Cancelled never. */

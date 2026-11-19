@@ -169,6 +169,7 @@ async fn scenario() {
     health(&w).await;
     sprints(&w).await;
     repeating(&w).await;
+    added_fields_reach_the_board(&w).await;
 }
 
 /// A key for one effect, through the gate as an agent asks.
@@ -701,3 +702,61 @@ async fn repeating(w: &World) {
     assert!(field_error(&r, "exp_end_date", ""), "{r:?}");
 }
 
+/// PRJ-02: fields a workspace adds to tasks reach the board: plain ones marked to show in lists or as filters, at most
+/// twelve, each only to whoever may read it.
+async fn added_fields_reach_the_board(w: &World) {
+    let admin = &w.admin;
+    let k = &admin.k;
+    let add = |field: Value| {
+        serde_json::from_value::<ferrum_kernel::customize::NewCustomization>(json!({"entity": "Task", "op": {"op": "add_field", "field": field}})).unwrap()
+    };
+    let mut fields = vec![
+        add(json!({"name": "x_zone", "type": "select", "label": "Zone", "options": ["North", "South"], "in_list": true, "in_filter": true})),
+        add(json!({"name": "x_secret", "type": "data", "label": "Secret", "in_list": true})),
+        add(json!({"name": "x_customer", "type": "link", "to": "Customer", "label": "Customer", "in_list": true})),
+        add(json!({"name": "x_notes", "type": "text", "label": "Notes", "in_list": true})),
+    ];
+    // With the packaged client_visible, x_zone and x_secret, these make fourteen: the last two are past the twelve.
+    for i in 1..=11 {
+        fields.push(add(json!({"name": format!("x_f{i}"), "type": "data", "label": format!("F{i}"), "in_list": true})));
+    }
+    k.batch_customizations(&admin.ctx, fields, false).await.map_err(|(_, e)| e).expect("added fields");
+    let admin = &reload(admin).await;
+    let rule = |v: Value| serde_json::from_value::<ferrum_meta::PermissionDef>(v).unwrap();
+    for r in [json!({"entity": "Task", "read": true, "hide": ["x_secret"]}), json!({"entity": "Project", "read": true})] {
+        k.set_role_permission(&admin.ctx, "Board Reader", &rule(r)).await.expect("rule");
+    }
+    let reader = k.create_user(&admin.ctx, "boards@acme.test", "boards", Some("Correct-Horse-9"), &["Board Reader".into()], false).await.expect("user");
+    let reader = U { k: k.clone(), ctx: k.load_ctx(admin.ctx.tenant, reader, None, "it".into()).await.expect("ctx") };
+    let pm = &reload(&w.users["pm"]).await;
+    let p = uid(&pm.insert("Project", json!({"project_name": "Fields", "company": w.cid})).await);
+    pm.insert(
+        "Task",
+        json!({"subject": "Survey", "project": p.to_string(), "x_zone": "North", "x_secret": "sealed", "x_f9": "nine", "x_f10": "ten", "x_notes": "long"}),
+    )
+    .await;
+    let board = |who: &U| {
+        let req = ferrum_kernel::SiteRequest {
+            tenant: who.ctx.tenant,
+            user: Some(who.ctx.clone()),
+            method: "GET".into(),
+            path: "/tasks".into(),
+            query: json!({"project": p.to_string()}).as_object().cloned().unwrap(),
+            headers: Default::default(),
+            body: vec![],
+            client_ip: "203.0.113.9".into(),
+        };
+        let (k, site) = (who.k.clone(), who.k.hooks.site("projects").expect("projects' endpoints").clone());
+        async move {
+            let body: Value = serde_json::from_slice(&site.handle(&k, req).await.expect("board").body).unwrap();
+            body["rows"][0].as_object().cloned().expect("the task")
+        }
+    };
+    let row = board(pm).await;
+    assert_eq!((row["x_zone"].clone(), row["x_secret"].clone(), row["x_f9"].clone()), (json!("North"), json!("sealed"), json!("nine")), "{row:?}");
+    for f in ["x_customer", "x_notes", "x_f10", "x_f11"] {
+        assert!(!row.contains_key(f), "{f} is not on the board: {row:?}");
+    }
+    let row = board(&reader).await;
+    assert!(row.contains_key("x_zone") && !row.contains_key("x_secret"), "a field the reader may not read is left out: {row:?}");
+}

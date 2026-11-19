@@ -16,7 +16,14 @@ const answers: Record<string, unknown> = {
   "/api/auth/me": { tenant: "t", user: { id: "u1", email: "asha@acme.test", full_name: "Asha Rao", is_admin: false, roles: [] }, scopes: {}, packages: ["projects"], fiscal_year_start_month: 4, default_company: null },
   "/api/meta": { version: 1, packages: [], modules: [], warnings: [], entities: [entity("Project"), entity("Task"), entity("ProjectBaseline"), entity("ProjectUpdate"), entity("Sprint")] },
   "/api/v1/Project/p1": { id: "p1", version: 1, project_name: "Website", status: "Open", start_date: "2026-11-02", end_date: "2026-12-20", proj_health: "At Risk", proj_health_on: "2026-11-13" },
-  "/api/app/projects/tasks": { rows: [{ id: "1", version: 1, number: "TASK-1", subject: "Design", status: "Open", project: "p1", exp_start_date: "2026-11-02", exp_end_date: "2026-11-06", assigned_to: [], depends_on: [] }], total: 1 },
+  "/api/app/projects/tasks": {
+    rows: [
+      { id: "1", version: 1, number: "TASK-1", subject: "Design", status: "Open", project: "p1", exp_start_date: "2026-11-02", exp_end_date: "2026-11-06", x_zone: "North", assigned_to: [], depends_on: [] },
+      { id: "2", version: 1, number: "TASK-2", subject: "Build", status: "Open", project: "p1", x_zone: "South", assigned_to: [], depends_on: [] },
+    ],
+    total: 2,
+  },
+  "/api/meta/Task": { ...entity("Task"), fields: [{ name: "x_zone", label: "Zone", type: "select", options: ["North", "South"], in_list: true, in_filter: true, can_read: true }], form: [{ fields: ["x_zone"] }], list: { columns: [] }, actions: [] },
   "/api/v1/ProjectBaseline": { rows: [], total: 0 },
   "/api/v1/Sprint": { rows: [{ id: "s1", version: 1, sprint_name: "Sprint 7", start_date: "2026-11-16", end_date: "2026-11-29", state: "Active" }], total: 1 },
 };
@@ -71,6 +78,11 @@ describe("Projects' routes as mounted", () => {
     expect(text).toContain("Backlog");
     expect(text).toContain("Sprint 7");
     expect(text).toContain("Design");
+  });
+
+  it("filters the board by a field the workspace added, from the address", async () => {
+    const text = await open("/p/p1?f.x_zone=North");
+    expect(text).toContain("1 of 2 tasks");
   });
 
   it("shows the project's health, its status updates, and offers to post one", async () => {

@@ -7,7 +7,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.16.0-b45309?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.17.0-b45309?style=flat-square)](CHANGELOG.md)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Ferrum platform](https://img.shields.io/badge/runs%20on-Ferrum-2f5bea?style=flat-square)](https://github.com/CBFerrum/Ferrum)
 ![Rust](https://img.shields.io/badge/Rust-server-b7410e?style=flat-square&logo=rust)
@@ -37,7 +37,7 @@ Projects gives a team a board, a timeline, task trees with dependencies, weekly 
 
 | | |
 |---|---|
-| **Version** | 0.16.0 (package `projects` 0.9.0; connector `projects-erp` 0.3.1) |
+| **Version** | 0.17.0 (package `projects` 0.9.0; connector `projects-erp` 0.3.1) |
 | **Kind** | Its own interface at `/projects/` (home, project, task, my work, planning) with Ferrum's records screens for everything else |
 | **What it adds** | 26 entities (18 records, 8 small tables) and extra fields on the shared Project and Customer records, 4 roles, 1 module with 5 reports, 3 project tabs, 1 notification kind and 1 message, 3 upkeep jobs, 3 own endpoints; the ERP connector adds invoicing fields and actions. No print formats. |
 | **Depends on** | Ferrum platform `>=0.4.0, <0.5`; the platform's `core`, `parties` and `project_records` packages |
@@ -158,7 +158,8 @@ Projects gives a team a board, a timeline, task trees with dependencies, weekly 
 ### 🧲 The board
 
 - **Columns from the project's workflow.** Drag a card to another column or to another place in its own and it stays where you put it, for everyone. Or move it from the keyboard (Shift and the arrow keys) or from its menu. A move shows at once and goes back, with the server's reason, if it is refused.
-- **Swimlanes** by person or priority, filters (anyone, priority, due date, all tasks), a sort order (manual and others) and a box to add a task to a column.
+- **Swimlanes** by person, priority or a choice field the workspace added; filters (anyone, priority, due date, sub-tasks, sprint, and each choice or tick field the workspace added and marks as a filter), a sort order (manual and others) and a box to add a task to a column.
+- **Fields the workspace added** reach the board: up to three plain ones marked to show in lists are drawn on the card (and spoken with it), only for whoever may read them.
 - **In the address.** Lanes, filters and sort are in the page address, so a link shares the view.
 - **A task opens in a panel** beside the board.
 - A hidden `rank` keeps the order among tasks of the same status.
@@ -349,7 +350,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 | Baselines | ✅² | 🟡¹ | 🟡¹ | 🟡¹ | ✅ | ✅ | 🟡¹ |
 | Project templates | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Statuses and workflows you define | ✅ | ✅ | ✅ | ✅ | 🟡¹ | ✅ | ✅ |
-| Custom fields | 🟡³ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Custom fields | ✅³ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Teams, roles and private projects | ✅ | ✅ | ✅ | ✅ | 🟡¹ | ✅ | ✅ |
 | Client or guest portal | ✅ | 🟡¹ | 🟡¹ | 🟡¹ | 🟡¹ | 🟡¹ | 🟡¹ |
 | Recurring tasks | ✅⁴ | ✅ | 🟡¹ | ✅ | 🟡¹ | ✅ | 🟡¹ |
@@ -380,7 +381,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 | One data set with accounting, CRM, helpdesk and HR | ✅ | ➖ | ➖ | ➖ | ➖ | ➖ | ➖ |
 | No per-seat price | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | 🟡¹⁰ |
 
-<sub>¹ Present in some form or not confirmed; check the product and its edition. ² Named baselines on demand, each with every task's dates and hours, drawn on the timeline with each task's days after or before; no baseline of costs per task. ³ A workspace can add fields to tasks and projects and they appear in forms and lists; the board, card and task page draw a fixed set. ⁴ Every N days, weeks or months, on weekdays, from the due date or from completion, with sub-tasks and added fields; no yearly rule and no count of occurrences. ⁵ From allocations, task estimates and each person's hours a week, on the working days of a calendar; leave is not known. ⁶ A portfolio overview of task counts, risks and issues; no budget or margin roll-up. ⁷ Automations are built by an administrator for the whole workspace, not per project. ⁸ Flat CSV import of records. ⁹ An on-premises edition exists with a different feature set. ¹⁰ The community edition is free; the enterprise edition is priced per user.</sub>
+<sub>¹ Present in some form or not confirmed; check the product and its edition. ² Named baselines on demand, each with every task's dates and hours, drawn on the timeline with each task's days after or before; no baseline of costs per task. ³ A workspace adds fields to tasks and projects; forms, lists, the task page and side panel show them, and on the board the fields marked to show in lists are on the card, those marked as filters are filters, and a choice field can be the swimlanes. ⁴ Every N days, weeks or months, on weekdays, from the due date or from completion, with sub-tasks and added fields; no yearly rule and no count of occurrences. ⁵ From allocations, task estimates and each person's hours a week, on the working days of a calendar; leave is not known. ⁶ A portfolio overview of task counts, risks and issues; no budget or margin roll-up. ⁷ Automations are built by an administrator for the whole workspace, not per project. ⁸ Flat CSV import of records. ⁹ An on-premises edition exists with a different feature set. ¹⁰ The community edition is free; the enterprise edition is priced per user.</sub>
 
 ### 🏆 Where Projects stands out
 
@@ -409,6 +410,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 ### ✅ Recently shipped
 
 - [x] **0.10.2** A time log's day is the workspace's date of its start, not UTC's; the task's time list sends it as a day.
+- [x] **0.17.0** Added fields on the board: on the card, as filters, as swimlanes.
 - [x] **0.16.0** Repeating tasks every N, on weekdays, from completion, with their sub-tasks and every added field.
 - [x] **0.15.0** The Backlog tab: sprints and the backlog with moves, points, start and close; the board filters by sprint.
 - [x] **0.14.0** Sprints and a backlog on the server: plan, start (one active a project), close with carry-over; points on tasks.
