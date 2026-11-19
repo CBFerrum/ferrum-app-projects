@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.19.0
+
+Package `projects` 0.11.0: `TaskImport` and `TaskImportMapping` (with their lines), the action Check
+(`projects.task_import.check`), four seeded mappings. One new dependency, `csv` (MIT OR Unlicense). Needs the same platform as
+0.11.0. No interface build: the import's form is the records frame's.
+
+- **Importing tasks, part 1: Check.** A project's manager (or a Projects Manager, or an agent for them) makes a task
+  import: the project, a mapping and a CSV file (UTF-8, at most 2 MB and 500 rows). **Check** reads the file through
+  the mapping and writes onto the import how many rows it has and every problem, row by row (a missing title, an unknown
+  parent or dependency, a person who is no user here, a day the mapping cannot read, a status the project's workflow does
+  not have, and the rest). No task is made yet; making them follows in the next release.
+- **Mappings are records.** Spreadsheet, Jira, Asana and MS Project (their CSV exports) are seeded: which heading is
+  the title, the parent or the outline level, the dates and the people; how the file writes a day; what its statuses and
+  priorities mean here. A workspace corrects a heading or adds a mapping for another tool. The seeded headings follow what
+  each product's export is known to write; they were not checked against real export files.
+- A person in the file is never copied into the import's text; the file stays with its import.
+
 ## 0.18.0
 
 Package `projects` 0.10.0: three message templates and three automations. Needs the same platform as 0.11.0. No

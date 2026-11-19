@@ -10,6 +10,7 @@
 //! timesheets recording their time through `owner_fields`.
 
 mod billing;
+mod importing;
 mod logic;
 mod planning;
 mod project;
@@ -37,6 +38,7 @@ pub fn register(hooks: &mut HookRegistry) {
         .register("ChangeRequest", Arc::new(planning::ChangeRequestHook))
         .register("ProjectUpdate", Arc::new(planning::UpdateHook))
         .register("Sprint", Arc::new(sprint::SprintHook))
+        .register("TaskImport", Arc::new(importing::ImportHook))
         .register("Timesheet", Arc::new(timesheet::TimesheetHook))
         .register("ActivityCost", Arc::new(timesheet::ActivityCostHook));
     hooks.add_site("projects", Arc::new(site::ProjectsSite));

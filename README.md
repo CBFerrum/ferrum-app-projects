@@ -7,7 +7,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.18.0-b45309?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.19.0-b45309?style=flat-square)](CHANGELOG.md)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Ferrum platform](https://img.shields.io/badge/runs%20on-Ferrum-2f5bea?style=flat-square)](https://github.com/CBFerrum/Ferrum)
 ![Rust](https://img.shields.io/badge/Rust-server-b7410e?style=flat-square&logo=rust)
@@ -37,9 +37,9 @@ Projects gives a team a board, a timeline, task trees with dependencies, weekly 
 
 | | |
 |---|---|
-| **Version** | 0.18.0 (package `projects` 0.10.0; connector `projects-erp` 0.3.1) |
+| **Version** | 0.19.0 (package `projects` 0.11.0; connector `projects-erp` 0.3.1) |
 | **Kind** | Its own interface at `/projects/` (home, project, task, my work, planning) with Ferrum's records screens for everything else |
-| **What it adds** | 26 entities (18 records, 8 small tables) and extra fields on the shared Project and Customer records, 4 roles, 1 module with 5 reports, 3 project tabs, 1 notification kind and 1 message, 3 upkeep jobs, 3 own endpoints; the ERP connector adds invoicing fields and actions. No print formats. |
+| **What it adds** | 30 entities (20 records, 10 small tables) and extra fields on the shared Project and Customer records, 4 roles, 1 module with 5 reports, 3 project tabs, 1 notification kind and 1 message, 3 upkeep jobs, 3 own endpoints; the ERP connector adds invoicing fields and actions. No print formats. |
 | **Depends on** | Ferrum platform `>=0.4.0, <0.5`; the platform's `core`, `parties` and `project_records` packages |
 | **Works with** | ERP (invoicing, accounts), Helpdesk, Field Service, CRM (they link to projects), Objectives (key results name projects) |
 | **Languages** | English, Arabic and Hindi (307 interface words and 235 names in each), right-to-left |
@@ -256,7 +256,7 @@ Costing and billing fields sit in permission groups (`costing`, `billing`), so a
 
 ### 🧾 Personal data
 
-An erasure request removes a person from every project team and from a customer's client people. Timesheets, activity costs, project people and rate cards are kept as billing, costing and staffing records, and are included in a person's export.
+An erasure request removes a person from every project team and from a customer's client people. Timesheets, activity costs, project people and rate cards are kept as billing, costing and staffing records, and are included in a person's export. A task import's file holds people's names and addresses: it is kept only with its import, and **Check** never copies a person into what it writes (a problem names the row and the column).
 
 ## 🧭 How it works
 
@@ -300,6 +300,7 @@ Projects extends the platform's Project record with its own fields, so other app
 | **Projects Settings** | Approval, scheduling and reminders | approver, calendar, week start, reminder day |
 | **Risk** / **Issue** | A project's risks and issues | probability, impact, exposure; severity, status |
 | **Sprint** | A stretch of days a team commits tasks to | dates, goal, state, points committed and completed, carried over |
+| **Task Import** / **Import Mapping** | A CSV file of tasks brought into a project; how a kind of file's columns and values become tasks | project, mapping, file, state, rows found, problems; headings, day pattern, value mapping |
 | **Status Update** | How a project is going on a day | day, health, summary, author |
 | **Change Request** | A submitted request to change the scope | effects, decision, decided by |
 | **Baseline** (with lines) | A project's plan as it stood on a day, set by Set Baseline, never edited | name, day, who, figures, each task's dates and hours |
@@ -411,6 +412,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 ### ✅ Recently shipped
 
 - [x] **0.10.2** A time log's day is the workspace's date of its start, not UTC's; the task's time list sends it as a day.
+- [x] **0.19.0** Import a task tree, part 1: mappings for a spreadsheet, Jira, Asana and MS Project as records; Check reads the CSV file and lists every problem row by row.
 - [x] **0.18.0** Three automations ship switched on: overdue and milestone notices to the manager, due-tomorrow notices to the people on a task.
 - [x] **0.17.0** Added fields on the board: on the card, as filters, as swimlanes.
 - [x] **0.16.0** Repeating tasks every N, on weekdays, from completion, with their sub-tasks and every added field.

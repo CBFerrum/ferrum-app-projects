@@ -1,0 +1,63 @@
+# Importing a task tree from a file (PRJ-15): a mapping says how a kind of file's columns and values become tasks;
+# an import names a project, a mapping and a CSV file, is checked, then made as a whole or not at all.
+
+- name: TaskImportColumn
+  label: Import Column
+  kind: child
+  fields:
+    - {name: target, type: select, required: true, in_list: true, label: Is, options: [Key, Subject, Parent, Level, Depends On, Status, Priority, Assignees, Start, End, Hours, Points, Milestone, Description]}
+    - {name: source, type: data, required: true, in_list: true, label: Column, description: "The column's heading in the file, as it is written there"}
+
+- name: TaskImportValue
+  label: Import Value
+  kind: child
+  fields:
+    - {name: field, type: select, options: [Status, Priority], required: true, in_list: true}
+    - {name: source, type: data, required: true, in_list: true, label: In the File}
+    - {name: becomes, type: select, options: [To Do, In Progress, Done, Cancelled, Low, Medium, High, Urgent], required: true, in_list: true, description: "A status becomes the first status of this category in the project's workflow; a priority one of Low, Medium, High, Urgent"}
+
+- name: TaskImportMapping
+  label: Import Mapping
+  kind: master
+  module: projects
+  title_field: mapping_name
+  description: "How a file's columns and values become tasks: which heading is the title, the parent, the dates; how the file writes a day; what its statuses and priorities mean here. One for each kind of file a workspace imports."
+  fields:
+    - {name: mapping_name, type: data, label: Name, required: true, unique: true, in_list: true}
+    - {name: description, type: text}
+    - {name: date_format, type: data, required: true, default: "%Y-%m-%d", description: "How the file writes a day, as a pattern: %Y-%m-%d is 2026-11-18, %d/%m/%Y is 18/11/2026, %d/%b/%y %I:%M %p is 18/Nov/26 9:30 AM (a time of day is dropped)"}
+    - {name: list_separator, type: data, required: true, default: ",", description: "What parts several people or several dependencies in one cell"}
+    - {name: hours_unit, type: select, options: [Hours, Minutes, Seconds], default: Hours, required: true}
+    - {name: unknown_people, type: select, options: [Refuse, Leave Out], default: Refuse, required: true, description: "A person in the file who is no user here: refuse the import, or leave the task without them"}
+    - {name: unknown_links, type: select, options: [Refuse, Leave Out], default: Refuse, required: true, label: Unknown Dependencies, description: "A dependency in the file that is no row of it: refuse the import, or leave it out"}
+    - {name: columns, type: table, of: TaskImportColumn, required: true}
+    - {name: values, type: table, of: TaskImportValue}
+  list: {columns: [mapping_name, date_format], sort: mapping_name asc}
+
+- name: TaskImport
+  label: Task Import
+  kind: master
+  module: projects
+  company_scoped: true
+  numbering: {template: "IMP-{seq:5}"}
+  description: "A file of tasks brought into a project: checked first, then imported as a whole or not at all."
+  fields:
+    - {name: project, type: link, to: Project, required: true, in_list: true, in_filter: true}
+    - {name: company, type: link, to: Company, fetch_from: project.company, read_only: true, in_filter: true}
+    - {name: project_private, type: check, fetch_from: project.proj_private, read_only: true, hidden: true, no_copy: true, description: "Its project is its members' alone (kept in step with the project)"}
+    - {name: mapping, type: link, to: TaskImportMapping, required: true, in_list: true}
+    - {name: file, type: attach, required: true, description: "A CSV file in UTF-8, at most 2 MB and 500 rows under its heading row. Save a spreadsheet as CSV first"}
+    - {name: state, type: select, options: [Draft, Checked, Imported], default: Draft, read_only: true, no_copy: true, in_list: true, in_filter: true}
+    - {name: rows_found, type: int, read_only: true, no_copy: true}
+    - {name: problems, type: text, read_only: true, no_copy: true, description: "What Check found, row by row; empty when the file can be imported"}
+    - {name: tasks_made, type: int, read_only: true, no_copy: true}
+    - {name: imported_on, type: datetime, read_only: true, no_copy: true}
+  actions:
+    - name: check
+      label: Check
+      permission: write
+      condition: "doc.state != 'Imported'"
+      contract:
+        returns: {type: object, properties: {state: {type: string}, rows: {type: integer}, problems: {type: integer}}}
+        completion: "No task is made. The import holds how many rows the file has and every problem that would refuse it; with none it is Checked"
+  list: {columns: [number, project, mapping, state, rows_found], sort: created_at desc}

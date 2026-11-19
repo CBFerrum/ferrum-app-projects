@@ -171,6 +171,7 @@ async fn scenario() {
     repeating(&w).await;
     added_fields_reach_the_board(&w).await;
     shipped_automations(&w).await;
+    import_check(&w).await;
 }
 
 /// A key for one effect, through the gate as an agent asks.
@@ -889,4 +890,131 @@ async fn shipped_automations(w: &World) {
     pm.update("Task", off, json!({"status": "Open"})).await;
     drain(k).await;
     assert_eq!(told("projects.task_overdue").await.len(), 2, "switched off, it tells nobody");
+}
+
+/// An in-memory object store standing in for the workspace's file storage.
+#[derive(Default)]
+struct MemFiles(std::sync::Mutex<HashMap<String, Vec<u8>>>);
+
+#[async_trait::async_trait]
+impl ferrum_kernel::files::FileStore for MemFiles {
+    async fn put(&self, key: &str, data: &[u8]) -> Result<()> {
+        self.0.lock().unwrap().insert(key.to_string(), data.to_vec());
+        Ok(())
+    }
+    async fn get(&self, key: &str) -> Result<Vec<u8>> {
+        self.0.lock().unwrap().get(key).cloned().ok_or_else(|| Error::NotFound("object".into()))
+    }
+    async fn delete(&self, key: &str) -> Result<()> {
+        self.0.lock().unwrap().remove(key);
+        Ok(())
+    }
+}
+
+/// PRJ-15, part 1: a file of tasks is checked through a mapping (records a workspace edits) and every problem is
+/// written onto the import, row by row; nothing is made.
+async fn import_check(w: &World) {
+    let (pm, lead, mia, nora) =
+        (&reload(&w.users["pm"]).await, &reload(&w.users["lead"]).await, &reload(&w.users["mia"]).await, &reload(&w.users["nora"]).await);
+    let k = &pm.k;
+    k.set_file_store(Arc::new(MemFiles::default()));
+
+    // the_four_mappings_are_seeded
+    let mut names: Vec<String> = pm.list("TaskImportMapping", json!({})).await.iter().map(|m| m["mapping_name"].as_str().unwrap().to_string()).collect();
+    names.sort();
+    assert_eq!(names, ["Asana (CSV export)", "Jira (CSV export)", "MS Project (CSV export)", "Spreadsheet"]);
+    for m in pm.list("TaskImportMapping", json!({})).await {
+        let m = pm.get("TaskImportMapping", uid(&m)).await;
+        assert!(m["columns"].as_array().unwrap().iter().any(|c| c["target"] == json!("Subject")), "{m:?}");
+    }
+    let spreadsheet = uid(&pm.find_one("TaskImportMapping", json!({"mapping_name": "Spreadsheet"})).await);
+
+    let project = uid(&pm
+        .insert(
+            "Project",
+            json!({"project_name": "Importing", "company": w.cid, "proj_private": true,
+                   "proj_members": [{"person": "lead@acme.test", "project_role": "Manager"}, {"person": "mia@acme.test", "project_role": "Member"}]}),
+        )
+        .await);
+    let file = |who: &U, text: String| {
+        let (k, ctx) = (who.k.clone(), who.ctx.clone());
+        async move { k.store_file(&ctx, None, "plan.csv", "text/csv", text.as_bytes()).await.expect("stored")["url"].clone() }
+    };
+    let import = |who: &U, mapping: Uuid, url: Value| {
+        let body = json!({"project": project.to_string(), "mapping": mapping.to_string(), "file": url});
+        let (k, ctx) = (who.k.clone(), who.ctx.clone());
+        async move { k.insert(&ctx, "TaskImport", obj(body)).await }
+    };
+    let tasks = || async { pm.list("Task", json!({"project": project.to_string()})).await.len() };
+    let head = "Key,Task,Parent,Depends On,Status,Priority,Assignees,Start,End,Hours,Points,Milestone,Description";
+
+    // check_finds_nothing_wrong_and_makes_nothing (and people_by_address_or_full_name)
+    let mut ok = vec![head.to_string()];
+    for i in 1..=10 {
+        let parent = if i > 1 && i % 3 == 0 { format!("K{}", i - 1) } else { String::new() };
+        let dep = if i > 1 { format!("K{}", i - 1) } else { String::new() };
+        let who = if i % 2 == 0 { "lead@acme.test" } else { "mia" };
+        ok.push(format!("K{i},Step {i},{parent},{dep},Open,High,{who},2027-01-0{},2027-01-1{},4,2,no,\"Notes, with a comma\"", i % 9 + 1, i % 9));
+    }
+    let url = file(lead, ok.join("\n")).await;
+    let good = uid(&import(lead, spreadsheet, url).await.expect("a team manager makes an import"));
+    let before = tasks().await;
+    let r = lead.action("TaskImport", good, "check", json!({})).await;
+    assert_eq!(r, json!({"state": "Checked", "rows": 10, "problems": 0}), "{:?}", pm.get("TaskImport", good).await["problems"]);
+    assert_eq!(tasks().await, before, "Check makes nothing");
+
+    // check_lists_every_problem
+    let bad = [
+        head.to_string(),
+        "A,,,,,,,,,,,,".to_string(),
+        "B,Second,Nowhere,,,,,,,,,,".to_string(),
+        "C,Third,,,,,Zed Quarry,,,,,,".to_string(),
+        "D,Fourth,,,,,,2027-13-01,,,,,".to_string(),
+    ];
+    let url = file(lead, bad.join("\n")).await;
+    let wrong = uid(&import(lead, spreadsheet, url).await.unwrap());
+    let r = lead.action("TaskImport", wrong, "check", json!({})).await;
+    assert_eq!((r["state"].clone(), r["problems"].clone()), (json!("Draft"), json!(4)), "{r}");
+    let text = pm.get("TaskImport", wrong).await["problems"].as_str().unwrap().to_string();
+    assert_eq!(text.lines().count(), 4, "{text}");
+    for row in ["row 2:", "row 3:", "row 4:", "row 5:"] {
+        assert!(text.contains(row), "{row} in {text}");
+    }
+    assert!(!text.contains("Zed Quarry"), "a person is not named: {text}");
+
+    // A lenient mapping: an unknown person is left out; a status mapped to Done needs a Done status.
+    let lenient = uid(&pm
+        .insert(
+            "TaskImportMapping",
+            json!({"mapping_name": "Lenient", "unknown_people": "Leave Out",
+                   "columns": [{"target": "Subject", "source": "Task"}, {"target": "Assignees", "source": "Assignees"}, {"target": "Status", "source": "Status"}],
+                   "values": [{"field": "Status", "source": "Finished", "becomes": "Done"}]}),
+        )
+        .await);
+    let url = file(lead, "Task,Assignees,Status\nOne,Zed Quarry,\nTwo,lead@acme.test,Finished\n".to_string()).await;
+    let leave = uid(&import(lead, lenient, url).await.unwrap());
+    assert_eq!(lead.action("TaskImport", leave, "check", json!({})).await["problems"], json!(0), "an unknown person left out");
+    // statuses_through_the_projects_workflow
+    let mut statuses = vec![];
+    for name in ["Open", "Working", "Cancelled"] {
+        statuses.push(json!({"status": pm.find_one("TaskStatus", json!({"status_name": name})).await["id"]}));
+    }
+    let flow = pm.insert("TaskWorkflow", json!({"workflow_name": "Never done", "statuses": statuses})).await;
+    pm.update("Project", project, json!({"proj_task_workflow": flow["id"]})).await;
+    let r = lead.action("TaskImport", leave, "check", json!({})).await;
+    assert_eq!(r["problems"], json!(1), "{r}");
+    assert!(pm.get("TaskImport", leave).await["problems"].as_str().unwrap().contains("row 3: Status: Finished is Done"));
+
+    // who_may
+    for who in [mia, nora] {
+        let url = file(who, "Task\nA\n".to_string()).await;
+        assert!(denied(&import(who, spreadsheet, url).await), "a member or an outsider makes no import");
+        assert!(denied(&who.try_action("TaskImport", good, "check", json!({})).await), "nor checks one");
+    }
+    assert!(nora.list("TaskImport", json!({"project": project.to_string()})).await.is_empty(), "an outsider reads no import of a private project");
+
+    // the_gate
+    let answer =
+        k.invoke(&lead.ctx, invocation("projects.task_import.check", json!({"id": good.to_string()}), "imp:1")).await.expect("checked through the gate");
+    assert_eq!(answer.result, json!({"state": "Checked", "rows": 10, "problems": 0}));
 }

@@ -1,5 +1,5 @@
 package: projects
-version: 0.10.0
+version: 0.11.0
 label: Projects
 description: Projects with task trees, dependencies and milestones, timesheets with costing and billing, activity rates, milestone and time-and-materials invoicing, and project profitability.
 # Projects and customers are shared records; invoicing through ERP comes with the projects_erp
@@ -69,7 +69,7 @@ modules:
     label: Projects
     icon: briefcase
     order: 50
-    items: [Project, Task, Sprint, Timesheet, ProjectRisk, ProjectIssue, ProjectUpdate, ChangeRequest, ProjectBaseline, ResourceAllocation, Portfolio, ActivityType, ActivityCost, RateCard, TaskStatus, TaskWorkflow, ProjectType, ProjectPerson, ProjectsSettings, report:project_profitability, report:earned_value,
+    items: [Project, Task, Sprint, Timesheet, ProjectRisk, ProjectIssue, ProjectUpdate, ChangeRequest, ProjectBaseline, ResourceAllocation, Portfolio, ActivityType, ActivityCost, RateCard, TaskStatus, TaskWorkflow, ProjectType, ProjectPerson, TaskImport, TaskImportMapping, ProjectsSettings, report:project_profitability, report:earned_value,
             report:timesheet_summary, report:task_overview, report:workload, report:portfolio_overview]
 
 roles:
@@ -90,6 +90,8 @@ roles:
       - {entity: ProjectBaseline, read: true, delete: true, export: true}
       - {entity: ProjectUpdate, read: true, write: true, create: true, delete: true, export: true}
       - {entity: Sprint, read: true, write: true, create: true, delete: true, export: true}
+      - {entity: TaskImport, read: true, write: true, create: true, delete: true}
+      - {entity: TaskImportMapping, read: true, write: true, create: true, delete: true}
       - {entity: ResourceAllocation, read: true, write: true, create: true, delete: true, export: true}
       - {entity: Portfolio, read: true, write: true, create: true, delete: true}
       - {entity: TaskStatus, read: true, write: true, create: true, delete: true}
@@ -125,6 +127,10 @@ roles:
       - {entity: Sprint, read: true, via: project.proj_members.person}
       - {entity: Sprint, read: true, write: true, create: true, delete: true, via: project.proj_members.manager}
       - {entity: Sprint, read: true, write: true, create: true, delete: true, via: project.proj_project_manager}
+      # Importing tasks into a project is its managers'; the mappings are everyone's to read.
+      - {entity: TaskImportMapping, read: true}
+      - {entity: TaskImport, read: true, write: true, create: true, delete: true, via: project.proj_members.manager}
+      - {entity: TaskImport, read: true, write: true, create: true, delete: true, via: project.proj_project_manager}
       - {entity: ResourceAllocation, read: true, if_owner: true}
       - {entity: Portfolio, read: true}
       - {entity: Project, read: true, where: {proj_private: false}}
@@ -194,6 +200,78 @@ seed:
       - {status_name: Pending Review, category: In Progress, sort_order: 3}
       - {status_name: Completed, category: Done, sort_order: 5}
       - {status_name: Cancelled, category: Cancelled, sort_order: 6}
+  - entity: TaskImportMapping
+    key: [mapping_name]
+    records:
+      - mapping_name: Spreadsheet
+        description: "A spreadsheet saved as CSV with these headings"
+        columns:
+          - {target: Key, source: "Key"}
+          - {target: Subject, source: "Task"}
+          - {target: Parent, source: "Parent"}
+          - {target: Depends On, source: "Depends On"}
+          - {target: Status, source: "Status"}
+          - {target: Priority, source: "Priority"}
+          - {target: Assignees, source: "Assignees"}
+          - {target: Start, source: "Start"}
+          - {target: End, source: "End"}
+          - {target: Hours, source: "Hours"}
+          - {target: Points, source: "Points"}
+          - {target: Milestone, source: "Milestone"}
+          - {target: Description, source: "Description"}
+      - mapping_name: Jira (CSV export)
+        description: "Issues exported from Jira as CSV"
+        date_format: "%d/%b/%y %I:%M %p"
+        hours_unit: Seconds
+        unknown_people: Leave Out
+        columns:
+          - {target: Key, source: "Issue key"}
+          - {target: Subject, source: "Summary"}
+          - {target: Parent, source: "Parent"}
+          - {target: Status, source: "Status"}
+          - {target: Priority, source: "Priority"}
+          - {target: Assignees, source: "Assignee"}
+          - {target: End, source: "Due date"}
+          - {target: Hours, source: "Original estimate"}
+          - {target: Description, source: "Description"}
+        values:
+          - {field: Status, source: "To Do", becomes: To Do}
+          - {field: Status, source: "In Progress", becomes: In Progress}
+          - {field: Status, source: "Done", becomes: Done}
+          - {field: Priority, source: "Highest", becomes: Urgent}
+          - {field: Priority, source: "High", becomes: High}
+          - {field: Priority, source: "Medium", becomes: Medium}
+          - {field: Priority, source: "Low", becomes: Low}
+          - {field: Priority, source: "Lowest", becomes: Low}
+      - mapping_name: Asana (CSV export)
+        description: "A project exported from Asana as CSV"
+        columns:
+          - {target: Key, source: "Task ID"}
+          - {target: Subject, source: "Name"}
+          - {target: Parent, source: "Parent task"}
+          - {target: Depends On, source: "Blocked By (Dependencies)"}
+          - {target: Status, source: "Section/Column"}
+          - {target: Assignees, source: "Assignee Email"}
+          - {target: Start, source: "Start Date"}
+          - {target: End, source: "Due Date"}
+          - {target: Description, source: "Notes"}
+        values:
+          - {field: Status, source: "To do", becomes: To Do}
+          - {field: Status, source: "Doing", becomes: In Progress}
+          - {field: Status, source: "Done", becomes: Done}
+      - mapping_name: MS Project (CSV export)
+        description: "Tasks saved from Microsoft Project as CSV"
+        date_format: "%a %m/%d/%y"
+        unknown_people: Leave Out
+        unknown_links: Leave Out
+        columns:
+          - {target: Key, source: "ID"}
+          - {target: Subject, source: "Name"}
+          - {target: Level, source: "Outline Level"}
+          - {target: Depends On, source: "Predecessors"}
+          - {target: Assignees, source: "Resource Names"}
+          - {target: Start, source: "Start"}
+          - {target: End, source: "Finish"}
   - entity: TaskWorkflow
     key: [workflow_name]
     records:
