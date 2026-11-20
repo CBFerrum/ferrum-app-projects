@@ -58,6 +58,7 @@
       permission: write
       condition: "doc.state != 'Imported'"
       contract:
+        effect: transactional_action
         returns: {type: object, properties: {state: {type: string}, rows: {type: integer}, problems: {type: integer}}}
         completion: "No task is made. The import holds how many rows the file has and every problem that would refuse it; with none it is Checked"
     - name: run
@@ -66,6 +67,7 @@
       condition: "doc.state != 'Imported'"
       confirm: "Make a task in this project for every row of the file?"
       contract:
+        effect: transactional_action
         returns: {type: object, properties: {state: {type: string}, tasks: {type: integer}}}
         completion: "Every row of the file is a task of the project, with its parent, what it waits for and its people, and the import is Imported. If any row is refused, no task is made and the import is unchanged"
   list: {columns: [number, project, mapping, state, rows_found], sort: created_at desc}

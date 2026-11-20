@@ -198,6 +198,7 @@
       permission: write
       condition: "doc.state == 'Planned'"
       contract:
+        effect: transactional_action
         returns: {type: object, properties: {state: {type: string}, committed_points: {type: string}, committed_tasks: {type: integer}}}
         completion: "The sprint is Active, with the points and tasks committed at its start recorded; its project has no other active sprint"
     - name: close
@@ -207,6 +208,7 @@
       confirm: "Close the sprint? Tasks that are not done move to the sprint you name, or back to the backlog."
       params: [{name: move_open_to, type: link, to: Sprint, label: Move Open Tasks To, description: "A planned sprint of the same project; empty: the backlog"}]
       contract:
-        returns: {type: object, properties: {state: {type: string}, completed_points: {type: string}, completed_tasks: {type: integer}, carried_over: {type: integer}, moved_to: {type: [string, "null"], format: uuid}}}
+        effect: transactional_action
+        returns: {type: object, properties: {state: {type: string}, completed_points: {type: string}, completed_tasks: {type: integer}, carried_over: {type: integer}, moved_to: {type: [string, "null"], format: uuid, x-ferrum-link: Sprint}}}
         completion: "The sprint is Closed with what was done recorded; every task of it that was not done or cancelled is in the sprint named, or in the backlog"
   list: {columns: [sprint_name, project, start_date, end_date, state], sort: start_date desc}

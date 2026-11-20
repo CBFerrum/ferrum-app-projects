@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.20.1
+
+Package `projects` 0.12.1 (contracts). Needs the same platform as 0.11.0. No interface or database change.
+
+- **Five more actions say what they do.** Set Baseline, Start Sprint, Close Sprint, Check and Import are in the catalog
+  with their effect, the shape of what they return (a baseline or a sprint is a link a screen or an agent can follow)
+  and a sentence saying what is true when they report done. Nothing else changes: who may run them, what they ask for and
+  what they do are as before. Run through the gate they need a key; the same key again is answered, not run again.
+
 ## 0.20.0
 
 Package `projects` 0.12.0: the action Import on a task import (`projects.task_import.run`), and a fourth upkeep step.

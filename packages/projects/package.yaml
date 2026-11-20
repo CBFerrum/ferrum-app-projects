@@ -1,5 +1,5 @@
 package: projects
-version: 0.12.0
+version: 0.12.1
 label: Projects
 description: Projects with task trees, dependencies and milestones, timesheets with costing and billing, activity rates, milestone and time-and-materials invoicing, and project profitability.
 # Projects and customers are shared records; invoicing through ERP comes with the projects_erp
@@ -48,7 +48,7 @@ overlays:
                                   contract: {returns: {type: object, properties: {status: {type: string}, cancelled_tasks: {type: integer}}}, completion: "The project is Completed; with force, its open tasks were cancelled first, each by its own save"}}}
       - {op: add_action, action: {name: set_baseline, label: Set Baseline, permission: write, condition: "!doc.proj_is_template",
                                   params: [{name: name, type: data, label: Name, required: true, description: "What to call this baseline, once in the project"}],
-                                  contract: {returns: {type: object, properties: {entity: {type: string}, id: {type: string, format: uuid}, number: {type: [string, "null"]}, tasks: {type: integer}}},
+                                  contract: {effect: transactional_action, returns: {type: object, properties: {entity: {type: string, const: ProjectBaseline}, id: {type: string, format: uuid, x-ferrum-link: ProjectBaseline}, number: {type: [string, "null"]}, tasks: {type: integer, description: "How many tasks the baseline holds"}}},
                                              completion: "A new baseline holds the project's plan figures and each task's dates and hours as they are now; the project and its tasks are unchanged"}}}
       - {op: add_action, action: {name: save_as_template, label: Save as Template, permission: write, condition: "!doc.proj_is_template",
                                   params: [{name: template_name, type: data, label: Template Name, required: true},

@@ -7,7 +7,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.20.0-b45309?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.20.1-b45309?style=flat-square)](CHANGELOG.md)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Ferrum platform](https://img.shields.io/badge/runs%20on-Ferrum-2f5bea?style=flat-square)](https://github.com/CBFerrum/Ferrum)
 ![Rust](https://img.shields.io/badge/Rust-server-b7410e?style=flat-square&logo=rust)
@@ -37,7 +37,7 @@ Projects gives a team a board, a timeline, task trees with dependencies, weekly 
 
 | | |
 |---|---|
-| **Version** | 0.20.0 (package `projects` 0.12.0; connector `projects-erp` 0.3.1) |
+| **Version** | 0.20.1 (package `projects` 0.12.1; connector `projects-erp` 0.3.1) |
 | **Kind** | Its own interface at `/projects/` (home, project, task, my work, planning) with Ferrum's records screens for everything else |
 | **What it adds** | 30 entities (20 records, 10 small tables) and extra fields on the shared Project and Customer records, 4 roles, 1 module with 5 reports, 3 project tabs, 1 notification kind and 1 message, 3 upkeep jobs, 3 own endpoints; the ERP connector adds invoicing fields and actions. No print formats. |
 | **Depends on** | Ferrum platform `>=0.4.0, <0.5`; the platform's `core`, `parties` and `project_records` packages |
@@ -420,6 +420,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 ### ✅ Recently shipped
 
 - [x] **0.10.2** A time log's day is the workspace's date of its start, not UTC's; the task's time list sends it as a day.
+- [x] **0.20.1** Set Baseline, Start and Close Sprint, Check and Import say what they do, return and mean by done.
 - [x] **0.20.0** Import a task tree, part 2: Import makes every row a task with its tree, links and people, all or none, once; old imports and their files go after thirty days.
 - [x] **0.19.0** Import a task tree, part 1: mappings for a spreadsheet, Jira, Asana and MS Project as records; Check reads the CSV file and lists every problem row by row.
 - [x] **0.18.0** Three automations ship switched on: overdue and milestone notices to the manager, due-tomorrow notices to the people on a task.

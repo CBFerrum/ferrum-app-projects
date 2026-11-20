@@ -245,6 +245,14 @@ async fn baselines(w: &World) {
     let again = k.invoke(&lead.ctx, ask()).await.expect("answered");
     assert!(!first.repeated && again.repeated);
     assert_eq!(pm.list("ProjectBaseline", json!({"baseline_name": "Agent"})).await.len(), 1);
+    let r = k
+        .invoke(
+            &lead.ctx,
+            ferrum_kernel::capability::Invocation::new("projects.project.set_baseline", json!({"id": launch.to_string(), "params": {"name": "No key"}})),
+        )
+        .await;
+    assert_eq!(r.as_ref().map_err(Error::code).unwrap_err(), "schema_invalid", "no key, no baseline: {r:?}");
+    assert!(pm.list("ProjectBaseline", json!({"baseline_name": "No key"})).await.is_empty());
 
     // only_who_may_change_the_project
     assert!(denied(&vic.try_action("Project", launch, "set_baseline", json!({"name": "Viewer's"})).await), "a viewer changes nothing");
@@ -582,6 +590,20 @@ async fn sprints(w: &World) {
     let again = k.invoke(&pm.ctx, ask()).await.expect("answered");
     assert!(!first.repeated && again.repeated);
     assert!(pm.try_action("Sprint", ks, "start", json!({})).await.is_err(), "without a key, a started sprint is not started again");
+    let ks2 = uid(&sprint(pm, "Keyed 2", keyed).await.unwrap());
+    let r = k.invoke(&pm.ctx, ferrum_kernel::capability::Invocation::new("projects.sprint.start", json!({"id": ks2.to_string()}))).await;
+    assert_eq!(r.as_ref().map_err(Error::code).unwrap_err(), "schema_invalid", "no key, no start: {r:?}");
+    assert_eq!(pm.get("Sprint", ks2).await["state"], json!("Planned"));
+
+    // closed_once
+    let ask = || invocation("projects.sprint.close", json!({"id": ks.to_string(), "params": {"move_open_to": ks2.to_string()}}), "s:2");
+    let first = k.invoke(&pm.ctx, ask()).await.expect("closed");
+    let again = k.invoke(&pm.ctx, ask()).await.expect("answered");
+    assert!(!first.repeated && again.repeated);
+    assert_eq!(first.result["state"], json!("Closed"));
+    assert_eq!(first.result["moved_to"], json!(ks2.to_string()));
+    let r = k.invoke(&pm.ctx, ferrum_kernel::capability::Invocation::new("projects.sprint.close", json!({"id": ks2.to_string()}))).await;
+    assert_eq!(r.as_ref().map_err(Error::code).unwrap_err(), "schema_invalid", "no key, no close: {r:?}");
 
     // the_board_carries_them
     lead.update("Task", large, json!({"backlog_rank": "1000"})).await;
@@ -1018,6 +1040,10 @@ async fn import_check(w: &World) {
     let answer =
         k.invoke(&lead.ctx, invocation("projects.task_import.check", json!({"id": good.to_string()}), "imp:1")).await.expect("checked through the gate");
     assert_eq!(answer.result, json!({"state": "Checked", "rows": 10, "problems": 0}));
+    let again = k.invoke(&lead.ctx, invocation("projects.task_import.check", json!({"id": good.to_string()}), "imp:1")).await.expect("answered");
+    assert!(!answer.repeated && again.repeated);
+    let r = k.invoke(&lead.ctx, ferrum_kernel::capability::Invocation::new("projects.task_import.check", json!({"id": good.to_string()}))).await;
+    assert_eq!(r.as_ref().map_err(Error::code).unwrap_err(), "schema_invalid", "no key, no check: {r:?}");
 }
 
 /// PRJ-15, part 2: Import makes every row a task of the project, with its parent, its links and its people, as the
@@ -1107,6 +1133,8 @@ async fn import_run(w: &World) {
         k.invoke(&lead.ctx, invocation("projects.task_import.run", json!({"id": keyed.to_string()}), "i:1")).await.expect("run through the gate");
     }
     assert_eq!(count(p2).await, 12, "one key, one import");
+    let r = k.invoke(&lead.ctx, ferrum_kernel::capability::Invocation::new("projects.task_import.run", json!({"id": keyed.to_string()}))).await;
+    assert_eq!(r.as_ref().map_err(Error::code).unwrap_err(), "schema_invalid", "no key, no import: {r:?}");
     let p3 = new_project("Raced import").await;
     let raced = import(p3, spreadsheet, file(tree(false)).await).await;
     let (a, b) = tokio::join!(k.run_action(&lead.ctx, "TaskImport", raced, "run", json!({})), k.run_action(&lead.ctx, "TaskImport", raced, "run", json!({})));
