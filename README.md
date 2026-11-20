@@ -7,7 +7,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.11.3-b45309?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.20.1-b45309?style=flat-square)](CHANGELOG.md)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Ferrum platform](https://img.shields.io/badge/runs%20on-Ferrum-2f5bea?style=flat-square)](https://github.com/CBFerrum/Ferrum)
 ![Rust](https://img.shields.io/badge/Rust-server-b7410e?style=flat-square&logo=rust)
@@ -37,9 +37,9 @@ Projects gives a team a board, a timeline, task trees with dependencies, weekly 
 
 | | |
 |---|---|
-| **Version** | 0.11.3 (package `projects` 0.5.3; connector `projects-erp` 0.3.1) |
+| **Version** | 0.20.1 (package `projects` 0.12.1; connector `projects-erp` 0.3.1) |
 | **Kind** | Its own interface at `/projects/` (home, project, task, my work, planning) with Ferrum's records screens for everything else |
-| **What it adds** | 22 entities (15 records, 7 small tables) and extra fields on the shared Project and Customer records, 4 roles, 1 module with 5 reports, 3 project tabs, 1 notification kind and 1 message, 3 upkeep jobs, 3 own endpoints; the ERP connector adds invoicing fields and actions. No print formats. |
+| **What it adds** | 30 entities (20 records, 10 small tables) and extra fields on the shared Project and Customer records, 4 roles, 1 module with 5 reports, 3 project tabs, 1 notification kind and 1 message, 3 upkeep jobs, 3 own endpoints; the ERP connector adds invoicing fields and actions. No print formats. |
 | **Depends on** | Ferrum platform `>=0.4.0, <0.5`; the platform's `core`, `parties` and `project_records` packages |
 | **Works with** | ERP (invoicing, accounts), Helpdesk, Field Service, CRM (they link to projects), Objectives (key results name projects) |
 | **Languages** | English, Arabic and Hindi (307 interface words and 235 names in each), right-to-left |
@@ -135,9 +135,12 @@ Projects gives a team a board, a timeline, task trees with dependencies, weekly 
 ### 🔐 Teams, private projects and the client portal
 
 - **Team.** A project lists people and their role on it: **Manager** (changes the project and its tasks), **Member** (changes its tasks), **Viewer** (reads).
+- **Sprints and backlog.** A project's managers plan **sprints** (a name, two dates, a goal), put tasks in them and estimate tasks in **points**; the **backlog** is the project's open tasks with no sprint, in its own order. **Start Sprint** makes one Active (one a project) and records the points and tasks committed; **Close Sprint** records the points and tasks done and moves every task not done to the planned sprint named, or back to the backlog. A closed sprint is kept as it closed. A project's **Backlog** tab shows the active sprint, the planned ones and the backlog, each with its tasks, points and people: a row's menu moves a task to another sprint or to the backlog and orders the backlog (to the top, up, down), its points are typed in the row, and each sprint's head starts it or closes it, choosing where its open tasks go. The board filters by sprint (any, the active one, none, or one by name).
+- **Automations.** Three come with Projects, switched on, telling people in the app only: a task that goes overdue tells its project's manager; a milestone that is completed tells the manager; a task due tomorrow that is still open tells each person on it. An administrator switches them off or edits them under Administration, Automations; their wording is under Settings, Messages.
+- **Status updates.** A project's managers (its team's and the one named on it) post a **status update**: a day, a health rating (On Track, At Risk, Off Track) and a summary. The project shows the rating and day of its latest update in its head, with a tile linking to the updates; it is worked out again whenever one is saved or deleted. A summary is about the work: keep people's private details out of it.
 - **Private projects.** Tick Private and only the team (and Projects Managers) read the project, its tasks, risks, issues, change requests and allocations. Open projects are read by every Projects User. Erasing a person removes them from every team.
 - **Client portal.** **Project Client** is a portal role an administrator gives to a customer's people, listed on the customer (Client People). They read, and change nothing: the customer's projects marked **Shared with the Client**, the tasks and milestones on them marked **Visible to the Client**, the approved timesheets whose time is all on a shared project, and, with ERP, the project's submitted invoices.
-- **What the portal hides.** A project's notes, budget, team, manager, estimated cost, timesheet cost and baseline figures; a task's assignees; a timesheet's person, approvers and note; a time log's billing rate. These are hidden by the role's own rules, so they are left out of the record, lists, filters, sorting, search, reports, history and the app's own routes. Comments and files are not shared with portal people yet.
+- **What the portal hides.** A project's notes, budget, team, manager, estimated cost, timesheet cost, baseline figures and health; a task's assignees; a timesheet's person, approvers and note; a time log's billing rate. These are hidden by the role's own rules, so they are left out of the record, lists, filters, sorting, search, reports, history and the app's own routes. Comments and files are not shared with portal people yet.
 
 ### ✅ Tasks
 
@@ -147,16 +150,25 @@ Projects gives a team a board, a timeline, task trees with dependencies, weekly 
 - **Overdue job.** A task in a To Do status whose expected end date has passed moves to that status's late status (Overdue by default) when the project's workflow holds it, unless its project is completed or cancelled. The move is a save by the system: a new version, a line in the task's history and a `Task.updated` event.
 - **Four kinds of dependency**, each with a lag or lead in days: **Finish to Start**, **Start to Start**, **Finish to Finish**, **Start to Finish**. Each kind holds back starting or finishing until the other task allows it. Cycles are refused.
 - **Auto-schedule.** With the setting on, a task's dates follow its predecessors on the settings' business calendar, its length kept; done and cancelled tasks stay where they are.
-- **Repeating tasks.** Daily, weekly or monthly, until a date: the next is made when the current falls due, with the same people. The task's lock and a unique key keep a re-run, or two replicas at once, from making it twice.
+- **Repeating tasks.** Every N days, weeks or months, a weekly one on chosen weekdays, until a date; counted from its due date (made by upkeep when it falls due) or from the day it is completed (made by the save that completes it). The next carries every field that is not one occurrence's own (fields the workspace added included), the people still in the workspace, and its sub-tasks with the links among them, every date moved by the same days. It starts at the workflow's first status with no progress, sprint or share of a fixed price. The source's lock and a unique key make one next, whichever way and however often it is made.
 - **Client visibility.** A task or milestone can be marked **Visible to the Client**.
 - **Hand-over.** When a person leaves, their open tasks (To Do or In Progress) move to their manager.
 - **Notification.** Someone added to a task's assignees is told (kind **Tasks assigned to you**), in the bar and by email unless they chose otherwise.
 - **Billing percent and billed amount** on milestones; a milestone can be invoiced on its own.
 
+### 📥 Importing tasks
+
+- **Three steps.** Make a **Task Import** for a project (its managers may), choose a mapping and attach the file; press **Check** to see how many rows it has and every problem, row by row; press **Import** to make every row a task with its parent, what it waits for, its people, status, dates and estimates.
+- **Mappings are records.** Spreadsheet, Jira, Asana and MS Project (their CSV exports) come seeded; a workspace corrects a heading, a day pattern or what a status means, or adds a mapping for another tool.
+- **CSV only**, UTF-8, at most 2 MB and 500 rows. A spreadsheet or another tool's export is saved as CSV first.
+- **All or none.** Every row is made in one transaction as the person who presses Import, with the same checks as a task made by hand; one refused row makes nothing and the answer names it. An import runs once.
+- **Kept thirty days.** Every import, done or not, is deleted with its file thirty days after it was made.
+
 ### 🧲 The board
 
 - **Columns from the project's workflow.** Drag a card to another column or to another place in its own and it stays where you put it, for everyone. Or move it from the keyboard (Shift and the arrow keys) or from its menu. A move shows at once and goes back, with the server's reason, if it is refused.
-- **Swimlanes** by person or priority, filters (anyone, priority, due date, all tasks), a sort order (manual and others) and a box to add a task to a column.
+- **Swimlanes** by person, priority or a choice field the workspace added; filters (anyone, priority, due date, sub-tasks, sprint, and each choice or tick field the workspace added and marks as a filter), a sort order (manual and others) and a box to add a task to a column.
+- **Fields the workspace added** reach the board: up to three plain ones marked to show in lists are drawn on the card (and spoken with it), only for whoever may read them.
 - **In the address.** Lanes, filters and sort are in the page address, so a link shares the view.
 - **A task opens in a panel** beside the board.
 - A hidden `rank` keeps the order among tasks of the same status.
@@ -207,7 +219,7 @@ For Projects Managers:
 ### 💹 Profitability and budgets
 
 - **Project Profitability** report: billed revenue against timesheet and ledger expense costs, by project, with the estimated cost and forecast margin of fixed price projects.
-- **Budget and baseline.** An **approved change request** moves the plan: the expected end date by its days, the estimated hours by its hours, the estimated cost and a set budget by its cost, and a fixed price's contract value by its effect. Before the first approved change, the plan as it was is kept as the project's **baseline** (end date, hours, cost, budget, contract value) with the day and the number of changes since. A milestone billed afterwards bills its share of the new contract value.
+- **Budget and baseline.** An **approved change request** moves the plan: the expected end date by its days, the estimated hours by its hours, the estimated cost and a set budget by its cost, and a fixed price's contract value by its effect. Before the first approved change, the plan as it was is kept as the project's **baseline** (end date, hours, cost, budget, contract value) with the day and the number of changes since. A milestone billed afterwards bills its share of the new contract value. **Set Baseline** on a project keeps a named **baseline** whenever someone who may change the project asks: its figures and each task's dates and hours as they stand, never edited afterwards; the first approved change takes one too, named after it. The timeline draws the chosen baseline (the latest unless another is picked) as a thin bar under each task and says how many days each ends after or before it.
 
 ### ⚠️ Risks, issues and changes
 
@@ -230,6 +242,7 @@ For Projects Managers:
 | **Task Overview** | Tasks by project and assignee with their status |
 | **Workload** | Hours planned per person per week (allocations, and their share of task estimates) against their own capacity (hours a week on their Person record, else the hours a day asked), who is over and when; a planner sees everyone, a Projects User their own |
 | **Portfolio Overview** | How each portfolio's projects stand |
+| **Earned Value** | As of today, per project: budget at completion (the latest baseline's estimated cost or budget, else the project's), planned value (the share of the baseline's tasks due by today), earned value (by % complete), actual cost (submitted time and ledger expense), schedule and cost variance, the two indices and the estimate at completion; for roles that see costs |
 
 ### 🔌 For other apps and agents
 
@@ -251,7 +264,7 @@ Costing and billing fields sit in permission groups (`costing`, `billing`), so a
 
 ### 🧾 Personal data
 
-An erasure request removes a person from every project team and from a customer's client people. Timesheets, activity costs, project people and rate cards are kept as billing, costing and staffing records, and are included in a person's export.
+An erasure request removes a person from every project team and from a customer's client people. Timesheets, activity costs, project people and rate cards are kept as billing, costing and staffing records, and are included in a person's export. A task import's file holds people's names and addresses: it is kept only with its import, and **Check** never copies a person into what it writes (a problem names the row and the column).
 
 ## 🧭 How it works
 
@@ -294,7 +307,11 @@ Projects extends the platform's Project record with its own fields, so other app
 | **Project Person** | Manager and weekly hours of a person who records time | manager, weekly hours |
 | **Projects Settings** | Approval, scheduling and reminders | approver, calendar, week start, reminder day |
 | **Risk** / **Issue** | A project's risks and issues | probability, impact, exposure; severity, status |
+| **Sprint** | A stretch of days a team commits tasks to | dates, goal, state, points committed and completed, carried over |
+| **Task Import** / **Import Mapping** | A CSV file of tasks brought into a project; how a kind of file's columns and values become tasks | project, mapping, file, state, rows found, problems; headings, day pattern, value mapping |
+| **Status Update** | How a project is going on a day | day, health, summary, author |
 | **Change Request** | A submitted request to change the scope | effects, decision, decided by |
+| **Baseline** (with lines) | A project's plan as it stood on a day, set by Set Baseline, never edited | name, day, who, figures, each task's dates and hours |
 | **Resource Allocation** | Who is planned when, for how many hours a day | person, project, dates, hours per day |
 | **Portfolio** | A group of projects | projects, owner |
 | Small tables | Team members, client people, task assignees, dependencies, workflow statuses, timesheet lines, portfolio projects | |
@@ -340,13 +357,13 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 | Timeline or Gantt, drag to schedule | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Four kinds of dependency with lag | ✅ | 🟡¹ | 🟡¹ | 🟡¹ | ✅ | ✅ | 🟡¹ |
 | Critical path | ✅ | 🟡¹ | 🟡¹ | 🟡¹ | ✅ | ✅ | 🟡¹ |
-| Baselines | 🟡² | 🟡¹ | 🟡¹ | 🟡¹ | ✅ | ✅ | 🟡¹ |
+| Baselines | ✅² | 🟡¹ | 🟡¹ | 🟡¹ | ✅ | ✅ | 🟡¹ |
 | Project templates | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Statuses and workflows you define | ✅ | ✅ | ✅ | ✅ | 🟡¹ | ✅ | ✅ |
-| Custom fields | 🟡³ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Custom fields | ✅³ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Teams, roles and private projects | ✅ | ✅ | ✅ | ✅ | 🟡¹ | ✅ | ✅ |
 | Client or guest portal | ✅ | 🟡¹ | 🟡¹ | 🟡¹ | 🟡¹ | 🟡¹ | 🟡¹ |
-| Recurring tasks | 🟡⁴ | ✅ | 🟡¹ | ✅ | 🟡¹ | ✅ | 🟡¹ |
+| Recurring tasks | ✅⁴ | ✅ | 🟡¹ | ✅ | 🟡¹ | ✅ | 🟡¹ |
 | Workload and capacity | 🟡⁵ | ✅ | 🟡¹ | ✅ | ✅ | ✅ | 🟡¹ |
 | Timesheets with a timer | ✅ | 🟡¹ | 🟡¹ | ✅ | 🟡¹ | 🟡¹ | ✅ |
 | Timesheet approval | ✅ | 🟡¹ | 🟡¹ | 🟡¹ | 🟡¹ | 🟡¹ | 🟡¹ |
@@ -357,16 +374,16 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 | Invoice in the client's currency | ✅ | ➖ | ➖ | ➖ | ➖ | ➖ | ➖ |
 | Risks, issues and change requests with approval | ✅ | ❌ | 🟡¹ | 🟡¹ | 🟡¹ | 🟡¹ | 🟡¹ |
 | Portfolio view | 🟡⁶ | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡¹ |
-| Sprints and backlog | ❌ | 🟡¹ | ✅ | ✅ | 🟡¹ | 🟡¹ | ✅ |
+| Sprints and backlog | ✅ | 🟡¹ | ✅ | ✅ | 🟡¹ | 🟡¹ | ✅ |
 | Burndown and velocity | ❌ | 🟡¹ | ✅ | ✅ | 🟡¹ | 🟡¹ | ✅ |
-| Earned value | ❌ | 🟡¹ | 🟡¹ | 🟡¹ | ✅ | 🟡¹ | 🟡¹ |
+| Earned value | ✅ | 🟡¹ | 🟡¹ | 🟡¹ | ✅ | 🟡¹ | 🟡¹ |
 | Automation rules | 🟡⁷ | ✅ | ✅ | ✅ | 🟡¹ | ✅ | 🟡¹ |
 | Task approvals | ❌ | ✅ | 🟡¹ | 🟡¹ | ❌ | ✅ | 🟡¹ |
-| Status updates with project health | ❌ | ✅ | 🟡¹ | ✅ | 🟡¹ | ✅ | 🟡¹ |
+| Status updates with project health | ✅ | ✅ | 🟡¹ | ✅ | 🟡¹ | ✅ | 🟡¹ |
 | Email to task | ❌ | ✅ | ✅ | ✅ | 🟡¹ | 🟡¹ | ✅ |
 | Slack, Teams and Git integrations | ❌ | ✅ | ✅ | ✅ | 🟡¹ | ✅ | 🟡¹ |
 | Calendar feeds (iCalendar) | ❌ | ✅ | 🟡¹ | ✅ | 🟡¹ | ✅ | ✅ |
-| Import from Jira, Asana, MS Project, Excel | 🟡⁸ | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡¹ |
+| Import from Jira, Asana, MS Project, Excel | ✅⁸ | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡¹ |
 | Native mobile apps | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡¹ |
 | Arabic and Hindi, right to left | ✅ | 🟡¹ | 🟡¹ | 🟡¹ | 🟡¹ | 🟡¹ | 🟡¹ |
 | Open source | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
@@ -374,7 +391,7 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 | One data set with accounting, CRM, helpdesk and HR | ✅ | ➖ | ➖ | ➖ | ➖ | ➖ | ➖ |
 | No per-seat price | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | 🟡¹⁰ |
 
-<sub>¹ Present in some form or not confirmed; check the product and its edition. ² One project baseline of the end date, hours, cost, budget and contract value, kept by the first approved change request; no saved baselines on demand and no variance on the timeline. ³ A workspace can add fields to tasks and projects and they appear in forms and lists; the board, card and task page draw a fixed set. ⁴ Daily, weekly or monthly, made when the task falls due; it copies the people and a fixed list of fields, not sub-tasks. ⁵ From allocations, task estimates and each person's hours a week, on the working days of a calendar; leave is not known. ⁶ A portfolio overview of task counts, risks and issues; no budget or margin roll-up. ⁷ Automations are built by an administrator for the whole workspace, not per project. ⁸ Flat CSV import of records. ⁹ An on-premises edition exists with a different feature set. ¹⁰ The community edition is free; the enterprise edition is priced per user.</sub>
+<sub>¹ Present in some form or not confirmed; check the product and its edition. ² Named baselines on demand, each with every task's dates and hours, drawn on the timeline with each task's days after or before; no baseline of costs per task. ³ A workspace adds fields to tasks and projects; forms, lists, the task page and side panel show them, and on the board the fields marked to show in lists are on the card, those marked as filters are filters, and a choice field can be the swimlanes. ⁴ Every N days, weeks or months, on weekdays, from the due date or from completion, with sub-tasks and added fields; no yearly rule and no count of occurrences. ⁵ From allocations, task estimates and each person's hours a week, on the working days of a calendar; leave is not known. ⁶ A portfolio overview of task counts, risks and issues; no budget or margin roll-up. ⁷ Three automations ship switched on (overdue, milestone reached, due tomorrow); an administrator adds more for the workspace. A project manager's own rules for their project are not there yet. ⁸ A task tree from a CSV file (a spreadsheet, or Jira, Asana and MS Project CSV exports) through editable mappings, checked then imported all or none; no .xlsx or .mpp reader and no import straight from another product's API. ⁹ An on-premises edition exists with a different feature set. ¹⁰ The community edition is free; the enterprise edition is priced per user.</sub>
 
 ### 🏆 Where Projects stands out
 
@@ -389,9 +406,9 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 ### 🚧 Where the leaders are still ahead
 
 - **Agile work:** sprints, backlogs, story points, burndown and velocity.
-- **Integrations:** Slack, Teams, Git, email to task, calendar feeds and migration importers.
-- **Project health:** status updates with a health rating, portfolio roll-ups of money and dates, dashboards.
-- **Scheduling depth:** several baselines, earned value, effort-driven scheduling, Gantt export.
+- **Integrations:** Slack, Teams, Git, email to task, calendar feeds, and importing straight from another product's API.
+- **Project health:** portfolio roll-ups of money, dates and health, dashboards.
+- **Scheduling depth:** effort-driven scheduling, Gantt export; earned value over time (a curve), not only as of today.
 - **Mobile apps and offline use.**
 - **Task approvals, proofing and automations owned by a project manager.**
 
@@ -403,6 +420,17 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 ### ✅ Recently shipped
 
 - [x] **0.10.2** A time log's day is the workspace's date of its start, not UTC's; the task's time list sends it as a day.
+- [x] **0.20.1** Set Baseline, Start and Close Sprint, Check and Import say what they do, return and mean by done.
+- [x] **0.20.0** Import a task tree, part 2: Import makes every row a task with its tree, links and people, all or none, once; old imports and their files go after thirty days.
+- [x] **0.19.0** Import a task tree, part 1: mappings for a spreadsheet, Jira, Asana and MS Project as records; Check reads the CSV file and lists every problem row by row.
+- [x] **0.18.0** Three automations ship switched on: overdue and milestone notices to the manager, due-tomorrow notices to the people on a task.
+- [x] **0.17.0** Added fields on the board: on the card, as filters, as swimlanes.
+- [x] **0.16.0** Repeating tasks every N, on weekdays, from completion, with their sub-tasks and every added field.
+- [x] **0.15.0** The Backlog tab: sprints and the backlog with moves, points, start and close; the board filters by sprint.
+- [x] **0.14.0** Sprints and a backlog on the server: plan, start (one active a project), close with carry-over; points on tasks.
+- [x] **0.13.0** Status updates with a health rating: the project shows its latest.
+- [x] **0.12.1** Earned value as a report: planned value from the latest baseline, earned value, actual cost, variances, SPI, CPI and the estimate at completion, as of today.
+- [x] **0.12.0** Baselines on demand: Set Baseline keeps the plan and each task's dates; the timeline draws the chosen one and each task's days after or before it.
 - [x] **0.11.3** Every action says what it returns and what done means, for a process or an agent that runs it.
 - [x] **0.11.2** Reports keep to what the reader may read: the portfolio overview, workload and profitability no longer show other teams' private projects or other people's plans. Capacity is each person's own week; task estimates count as planned hours. Profitability works without ERP.
 - [x] **0.11.1** A late task moved by upkeep is in its history and raises `Task.updated`; billing and releasing time and milestones is in their history; a repeating task makes one next occurrence however many replicas run.
@@ -421,12 +449,11 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 ### 🔜 Next up
 
 **Agile and delivery**
-- [ ] **Backlog and sprints**: plan, start, complete and carry over, for software and product teams.
 - [ ] **Estimates in points** and a remaining estimate, with **burndown and velocity**.
 - [ ] **Work-in-progress limits** on board columns.
 
 **Project health**
-- [ ] **Status updates with a health rating** and a posted note, with a weekly reminder.
+- [ ] **A weekly reminder** to post a status update.
 - [ ] **Budget alerts** at a threshold, and a burn rate.
 - [ ] **A portfolio roll-up of money, dates and health**, not only task counts.
 
@@ -443,11 +470,10 @@ Projects is compared with Asana, Atlassian Jira, monday.com, Microsoft Project, 
 
 ### 🔭 Later
 
-- [ ] **More baselines**, saved on demand, per task, with variance on the timeline; Gantt print and export.
+- [ ] **Gantt print and export.**
 - [ ] **Capacity that knows leave** from HR.
 - [ ] **Utilisation**: billable hours over capacity, against a target.
 - [ ] **Role-based and tentative booking**, and skills on people.
-- [ ] **Earned value** (planned value, earned value, actual cost, CPI, SPI).
 - [ ] **Revenue recognition** of fixed price projects by percent complete.
 - [ ] **Task approvals** with a named approver and history.
 - [ ] **Checklists in a task**, and **typed links between tasks** (related, duplicates).

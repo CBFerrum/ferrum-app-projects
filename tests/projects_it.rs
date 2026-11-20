@@ -928,7 +928,7 @@ async fn actions_keep_their_promises(k: &Arc<Kernel>, pm: &U, alice: &U, erp: Uu
     let record = ["entity", "id", "number"];
     let timer = ["hours_added", "running"];
     let decision = ["decision"];
-    let promised: [(&str, &[&str]); 10] = [
+    let promised: [(&str, &[&str]); 15] = [
         ("projects.project.complete", &["cancelled_tasks", "status"]),
         ("projects.project.save_as_template", &["entity", "id", "number", "tasks"]),
         ("projects.project.create_from_template", &["entity", "id", "number", "tasks"]),
@@ -939,6 +939,11 @@ async fn actions_keep_their_promises(k: &Arc<Kernel>, pm: &U, alice: &U, erp: Uu
         ("projects.change_request.reject", &decision),
         ("projects_erp.project.make_sales_invoice", &["entity", "id", "logs", "number"]),
         ("projects_erp.timesheet.make_sales_invoice", &["entity", "id", "logs", "number"]),
+        ("projects.project.set_baseline", &["entity", "id", "number", "tasks"]),
+        ("projects.sprint.start", &["committed_points", "committed_tasks", "state"]),
+        ("projects.sprint.close", &["carried_over", "completed_points", "completed_tasks", "moved_to", "state"]),
+        ("projects.task_import.check", &["problems", "rows", "state"]),
+        ("projects.task_import.run", &["state", "tasks"]),
     ];
     for (id, keys) in promised {
         let c = catalog.iter().find(|c| c.id == id).unwrap_or_else(|| panic!("{id} is in the catalog"));
@@ -948,6 +953,10 @@ async fn actions_keep_their_promises(k: &Arc<Kernel>, pm: &U, alice: &U, erp: Uu
         got.sort();
         assert_eq!(got, keys, "{id} returns");
     }
+    // The ids of records it names are links, so a screen or an agent can follow them.
+    let link = |id: &str, field: &str| catalog.iter().find(|c| c.id == id).unwrap().output["properties"][field]["x-ferrum-link"].clone();
+    assert_eq!(link("projects.project.set_baseline", "id"), json!("ProjectBaseline"));
+    assert_eq!(link("projects.sprint.close", "moved_to"), json!("Sprint"));
     let rights = |id: &str| catalog.iter().find(|c| c.id == id).unwrap().permissions.clone();
     assert_eq!(rights("projects.project.complete"), ["Project:write"]);
     assert_eq!(rights("projects.change_request.approve"), ["ChangeRequest:submit"]);

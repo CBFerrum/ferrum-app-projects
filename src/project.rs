@@ -40,12 +40,16 @@ fn task_label(number: Option<String>, subject: Option<String>) -> String {
 pub struct ProjectHook;
 
 /// The tables of the records that follow their project's privacy (`project_private`).
-const PRIVATE_TABLES: [(&str, &str); 5] = [
+const PRIVATE_TABLES: [(&str, &str); 9] = [
     ("Task", "e_task"),
     ("ProjectRisk", "e_project_risk"),
     ("ProjectIssue", "e_project_issue"),
     ("ChangeRequest", "e_change_request"),
     ("ResourceAllocation", "e_resource_allocation"),
+    ("ProjectBaseline", "e_project_baseline"),
+    ("ProjectUpdate", "e_project_update"),
+    ("Sprint", "e_sprint"),
+    ("TaskImport", "e_task_import"),
 ];
 
 /// The records a customer's portal people reach by their project being shared: `(entity, table, the link to the project,
@@ -97,6 +101,7 @@ impl DocHook for ProjectHook {
         match name {
             "make_sales_invoice" => crate::billing::invoice_project(hc, doc, params).await.map(Some),
             "complete" => complete(hc, doc, params).await.map(Some),
+            "set_baseline" => crate::planning::take_baseline(hc, doc, params.get("name").and_then(Value::as_str).unwrap_or_default()).await.map(Some),
             "save_as_template" => crate::template::copy(hc, doc, true, params).await.map(Some),
             "create_from_template" => crate::template::copy(hc, doc, false, params).await.map(Some),
             _ => Ok(None),
@@ -297,6 +302,12 @@ impl DocHook for TaskHook {
         if moved("exp_start_date") || moved("exp_end_date") {
             crate::schedule::follow(hc, doc).await?;
         }
+        // A task that repeats from its completion makes its next in the save that completes it (its row is locked by
+        // this save): the task is done and the next exists, or neither.
+        let done_now = s(doc, "status_category") == Some(DONE) && old.and_then(|o| s(o, "status_category")) != Some(DONE);
+        if done_now && s(doc, "repeat").is_some() && s(doc, "repeat_from") == Some("Completion") {
+            crate::planning::next_occurrence(hc.kernel, &sys(hc.ctx), hc.tx, doc, hc.ctx.today()).await?;
+        }
         // People newly given the task hear of it (not whoever gave it to them).
         let before = old.map(assignees).unwrap_or_default();
         let me = hc.ctx.email.to_lowercase();
@@ -409,6 +420,40 @@ async fn check_task(hc: &mut HookCtx<'_>, doc: &Doc) -> Result<()> {
         match try_get(hc.kernel, hc.ctx, hc.tx, "Task", parent).await? {
             None => errors.push(FieldError::new("parent_task", "does not exist")),
             Some(p) if id(&p, "project") != Some(project_id) => errors.push(FieldError::new("parent_task", "belongs to another project")),
+            _ => {}
+        }
+    }
+
+    // A repeat lands on each weekday once, and one counted from the due date needs a due date.
+    let mut weekdays = Vec::new();
+    for (i, r) in rows(doc, "repeat_weekdays").iter().enumerate() {
+        if let Some(w) = s(r, "weekday") {
+            if weekdays.contains(&w.to_string()) {
+                errors.push(FieldError::new("weekday", "is listed twice").in_row("repeat_weekdays", i));
+            }
+            weekdays.push(w.to_string());
+        }
+    }
+    if s(doc, "repeat").is_some() && s(doc, "repeat_from") != Some("Completion") && s(doc, "exp_end_date").is_none() {
+        errors.push(FieldError::new("exp_end_date", "is needed for a task that repeats from its due date"));
+    }
+
+    // A task's sprint is of its project, and a closed sprint takes no task (one may be taken out of it).
+    if hc.ctx.schema.entity("Sprint").is_some()
+        && let Some(sprint) = id(doc, "sprint")
+    {
+        let found: Option<(Option<Uuid>, Option<String>)> = sqlx::query_as("select project, state from e_sprint where tenant_id = $1 and id = $2")
+            .bind(tenant)
+            .bind(sprint)
+            .fetch_optional(&mut **hc.tx)
+            .await?;
+        let moved_in = old.as_ref().is_none_or(|o| id(o, "sprint") != Some(sprint));
+        match found {
+            None => errors.push(FieldError::new("sprint", "does not exist")),
+            Some((p, _)) if p != Some(project_id) => errors.push(FieldError::new("sprint", "belongs to another project")),
+            Some((_, state)) if moved_in && state.as_deref() == Some("Closed") => {
+                errors.push(FieldError::new("sprint", "is closed; plan the task in another sprint"))
+            }
             _ => {}
         }
     }

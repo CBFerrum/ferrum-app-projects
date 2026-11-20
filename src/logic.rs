@@ -118,6 +118,44 @@ pub fn weighted_progress(tasks: &[(String, Decimal, Decimal, bool)]) -> Decimal 
     pct.round_dp(2).min(hundred)
 }
 
+/// How much of a baseline's plan is due by `today`, 0 to 100, weighed as [`weighted_progress`] weighs progress:
+/// each line `(start, end, expected hours)` is due by the share of its days (both ends counted) up to `today`; a line
+/// with one date is due all at once on it, one with none takes the baseline's `span`, and one without dates at all
+/// counts for nothing.
+pub fn planned_percent(lines: &[(Option<NaiveDate>, Option<NaiveDate>, Decimal)], span: (Option<NaiveDate>, Option<NaiveDate>), today: NaiveDate) -> Decimal {
+    let hundred = Decimal::ONE_HUNDRED;
+    let parts: Vec<(Decimal, Decimal)> = lines
+        .iter()
+        .filter_map(|(start, end, hours)| {
+            let (a, b) = match (start.or(*end), end.or(*start)) {
+                (Some(a), Some(b)) => (a, b),
+                _ => (span.0?, span.1?),
+            };
+            if b < a {
+                return None;
+            }
+            let due = if today < a {
+                Decimal::ZERO
+            } else if today >= b {
+                Decimal::ONE
+            } else {
+                Decimal::from((today - a).num_days() + 1) / Decimal::from((b - a).num_days() + 1)
+            };
+            Some((due, (*hours).max(Decimal::ZERO)))
+        })
+        .collect();
+    if parts.is_empty() {
+        return Decimal::ZERO;
+    }
+    let hours: Decimal = parts.iter().map(|p| p.1).sum();
+    let pct = if hours.is_zero() {
+        parts.iter().map(|p| p.0).sum::<Decimal>() / Decimal::from(parts.len()) * hundred
+    } else {
+        parts.iter().map(|(due, h)| due * h).sum::<Decimal>() / hours * hundred
+    };
+    pct.round_dp(2).min(hundred)
+}
+
 pub fn percent(part: Decimal, whole: Decimal) -> Decimal {
     if whole.is_zero() { Decimal::ZERO } else { (part / whole * Decimal::ONE_HUNDRED).round_dp(2) }
 }
@@ -293,5 +331,46 @@ mod tests {
         assert_eq!((lines[0].from, lines[0].to), (day("2026-10-25"), day("2026-10-26")));
         assert_eq!((lines[1].activity_type, lines[1].rate), (consult, n("150")));
         assert_eq!((lines[2].rate, lines[2].hours), (n("100"), n("1")));
+    }
+
+    #[test]
+    fn planned_percent_weighs_by_hours() {
+        let day = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok();
+        let today = day("2026-11-10").unwrap();
+        let lines = [(day("2026-11-02"), day("2026-11-09"), n("10")), (day("2026-11-10"), day("2026-11-19"), n("30"))];
+        // 10 done, and a tenth of 30: 13 of 40.
+        assert_eq!(planned_percent(&lines, (None, None), today), n("32.5"));
+    }
+
+    #[test]
+    fn planned_percent_counts_alike_without_hours() {
+        let day = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok();
+        let today = day("2026-11-10").unwrap();
+        let lines = [(day("2026-11-01"), day("2026-11-05"), Decimal::ZERO), (day("2026-11-20"), day("2026-11-25"), Decimal::ZERO)];
+        assert_eq!(planned_percent(&lines, (None, None), today), n("50"));
+    }
+
+    #[test]
+    fn a_line_with_one_date_is_a_step() {
+        let day = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok();
+        let today = day("2026-11-10").unwrap();
+        assert_eq!(planned_percent(&[(None, day("2026-11-10"), n("4"))], (None, None), today), n("100"), "due on the day");
+        assert_eq!(planned_percent(&[(day("2026-11-11"), None, n("4"))], (None, None), today), Decimal::ZERO, "not yet");
+    }
+
+    #[test]
+    fn a_line_without_dates_takes_the_span() {
+        let day = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok();
+        let today = day("2026-11-10").unwrap();
+        // Days 1 to 10 of a 20-day span.
+        let span = (day("2026-11-01"), day("2026-11-20"));
+        assert_eq!(planned_percent(&[(None, None, n("8"))], span, today), n("50"));
+        assert_eq!(planned_percent(&[(None, None, n("8"))], (None, None), today), Decimal::ZERO, "no span: nothing planned");
+    }
+
+    #[test]
+    fn nothing_planned_is_zero() {
+        let today = NaiveDate::parse_from_str("2026-11-10", "%Y-%m-%d").unwrap();
+        assert_eq!(planned_percent(&[], (None, None), today), Decimal::ZERO);
     }
 }

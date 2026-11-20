@@ -1,5 +1,158 @@
 # Changelog
 
+## 0.20.1
+
+Package `projects` 0.12.1 (contracts). Needs the same platform as 0.11.0. No interface or database change.
+
+- **Five more actions say what they do.** Set Baseline, Start Sprint, Close Sprint, Check and Import are in the catalog
+  with their effect, the shape of what they return (a baseline or a sprint is a link a screen or an agent can follow)
+  and a sentence saying what is true when they report done. Nothing else changes: who may run them, what they ask for and
+  what they do are as before. Run through the gate they need a key; the same key again is answered, not run again.
+
+## 0.20.0
+
+Package `projects` 0.12.0: the action Import on a task import (`projects.task_import.run`), and a fourth upkeep step.
+Needs the same platform as 0.11.0. No interface build.
+
+- **Import makes the tasks.** After Check, **Import** makes every row of the file a task of the project: its parent, what
+  it waits for, its people, status, dates, hours, points and milestone mark. Parents are made first, then the links, so an
+  imported history (a done task that waited for an open one) is kept. Everything is made as the person who presses Import,
+  with every check a task made by hand has, in one transaction: one refused row makes nothing, and the answer names the
+  row and its title. An import runs once.
+- **Imports do not stay.** Upkeep deletes every import, done or not, with its file, thirty days after it was made; the
+  tasks it made stay.
+
+## 0.19.0
+
+Package `projects` 0.11.0: `TaskImport` and `TaskImportMapping` (with their lines), the action Check
+(`projects.task_import.check`), four seeded mappings. One new dependency, `csv` (MIT OR Unlicense). Needs the same platform as
+0.11.0. No interface build: the import's form is the records frame's.
+
+- **Importing tasks, part 1: Check.** A project's manager (or a Projects Manager, or an agent for them) makes a task
+  import: the project, a mapping and a CSV file (UTF-8, at most 2 MB and 500 rows). **Check** reads the file through
+  the mapping and writes onto the import how many rows it has and every problem, row by row (a missing title, an unknown
+  parent or dependency, a person who is no user here, a day the mapping cannot read, a status the project's workflow does
+  not have, and the rest). No task is made yet; making them follows in the next release.
+- **Mappings are records.** Spreadsheet, Jira, Asana and MS Project (their CSV exports) are seeded: which heading is
+  the title, the parent or the outline level, the dates and the people; how the file writes a day; what its statuses and
+  priorities mean here. A workspace corrects a heading or adds a mapping for another tool. The seeded headings follow what
+  each product's export is known to write; they were not checked against real export files.
+- A person in the file is never copied into the import's text; the file stays with its import.
+
+## 0.18.0
+
+Package `projects` 0.10.0: three message templates and three automations. Needs the same platform as 0.11.0. No
+interface or database change.
+
+- **Automations that come with Projects**, switched on in every workspace, in the app only (no e-mail unless a workspace
+  adds the channel to the template):
+  - a task that goes overdue (by upkeep or by someone's save) tells its project's named manager;
+  - a milestone that is completed tells the project's named manager;
+  - at 09:00 the day before a task's expected end, each person on it is told, while it is open.
+- An administrator switches any of them off or edits it under Administration, Automations; the wording is under
+  Settings, Messages. A release updates them unless the workspace edited them. A project without a named manager is
+  told nothing.
+
+## 0.17.0
+
+Server and interface; no database change. `ui/dist` rebuilt with Ferrum-Frontend `5e2661f`. Needs the same platform as 0.11.0.
+
+- **Fields a workspace adds to tasks reach the board.** The board's task list carries the plain fields (text, choice,
+  number, date, tick) marked to show in lists or as filters, at most twelve, each only to whoever may read it. A card
+  draws up to three of those marked to show in lists, a line under its facts, and a screen reader hears them with it.
+- **As filters and swimlanes.** Each choice or tick field marked as a filter is a filter on the board (kept in the
+  address as `f.<field>`); a choice field can be the swimlanes, one lane per option and one for none, and dropping a
+  card in another lane sets that field.
+- The card's spoken "late, was due" and "due" now go through the translations.
+
+## 0.16.0
+
+Package `projects` 0.9.0: three fields on Task (`repeat_every`, `repeat_weekdays` with its small table `TaskRepeatDay`,
+`repeat_from`). Needs the same platform as 0.11.0. No interface build: the task form draws the new fields.
+
+- **Every N, on weekdays.** A task repeats every N days, weeks or months; a weekly one on chosen weekdays (the next
+  chosen day this week, else the first chosen day N weeks on). An existing repeating task reads as every 1, from its
+  due date, on its own weekday: it behaves as before.
+- **From the due date or from completion.** Counted from the due date, the next is made by upkeep when the task falls
+  due, as before. Counted from completion, it is made by the save that completes the task, a step on from that day:
+  both happen or neither. A task reopened and completed again makes no second one; upkeep leaves such tasks alone.
+- **What the next carries.** Every field people set and copies keep, fields the workspace added included; its people,
+  less any who are no longer users; its sub-tasks (not cancelled ones, nor ones that repeat on their own) with the
+  links among them, every date moved by the same days. Not carried: the status (the next starts at the workflow's
+  first), progress, the sprint, board and backlog places, and a milestone's billing percent (a fixed price's
+  milestones bill at most 100 % together). A link to a task outside the copied ones is not carried.
+- A weekday listed twice is refused, and so is a task that repeats from its due date without one.
+
+## 0.15.0
+
+Interface only, `ui/dist` rebuilt with Ferrum-Frontend `5e2661f`. Needs the same platform as 0.11.0 and package `projects` 0.8.0.
+
+- **The Backlog tab.** A project's page has a Backlog tab: the active sprint, the planned sprints by start, and the
+  backlog (its open tasks in no sprint, in the backlog's own order), each with its tasks, points, people and how much is
+  still open. A row's menu moves the task to another sprint or to the backlog, and in the backlog puts it at the top, one
+  up or one down; its points are typed in the row. A sprint's head starts it (when none is active) or closes it, asking
+  where the open tasks go; **Plan a sprint** opens the sprint form. Every change is the server's own: a task's save or a
+  sprint's action, sent once however often it is pressed.
+- **The board filters by sprint**: any, the active one, none, or one by name.
+
+## 0.14.0
+
+Package `projects` 0.8.0: a new record `Sprint` with the actions Start Sprint (`projects.sprint.start`) and Close Sprint
+(`projects.sprint.close`), and three fields on Task (`sprint`, `story_points`, `backlog_rank`). Needs the same platform as
+0.11.0. Server only: the backlog screen follows; until then sprints are in the records frame and the API.
+
+- **Sprints.** A project's team manager or named manager (or a Projects Manager) plans sprints: a name (once in the
+  project), two dates and a goal. Tasks are put in a sprint and estimated in points. **Start Sprint** makes it Active and
+  records the points and tasks committed; a project has one active sprint at a time. **Close Sprint** records the points
+  and tasks done and moves every task that is not done to the planned sprint named, or back to the backlog, all at once
+  or not at all. A closed sprint is kept as it closed; only a planned one is deleted (its tasks go back to the backlog).
+- **The backlog** is the project's open tasks with no sprint, ordered by `backlog_rank`.
+- A task's sprint must be of its project, and a closed sprint takes no task. The board's task list carries the three
+  fields. The client portal does not show a task's sprint or points.
+
+## 0.13.0
+
+Package `projects` 0.7.0: a new record `ProjectUpdate` and two fields on Project (`proj_health`, `proj_health_on`). Needs the same platform as 0.11.0. `ui/dist`
+rebuilt with Ferrum-Frontend `5e2661f`.
+
+- **Status updates.** A project's team manager or its named manager (or a Projects Manager, or an agent for them)
+  posts a status update: its day (today unless given; never in the future), a health rating (On Track, At Risk, Off
+  Track) and a summary. Its author is whoever posts it. Whoever reads the project reads its updates; a private
+  project's stay its team's; an update stays with its project and is not posted on a template.
+- **The project's health.** The project shows the rating and day of its latest update (by day, then as posted), in
+  the head of its page, and a **Status updates** tile links to them; **Post an update** is there for those who may.
+  It is worked out again under the project's lock each time an update is saved, changed or deleted.
+- The client portal does not show a project's health.
+
+## 0.12.1
+
+Package `projects` 0.6.1 (the report in the module). Needs the same platform as 0.11.0. No interface or database change.
+
+- **Earned value.** A new report, **Earned Value**, shows each project you may read, as of today: the budget at
+  completion (the latest baseline's estimated cost, else its budget; without a baseline the project's own), planned
+  value (that budget times the share of the baseline's tasks due by today, weighed by their hours as % complete is),
+  earned value (times % complete), actual cost (submitted time and expenses on the ledger up to today), the schedule
+  and cost variances, the schedule and cost indices (SPI, CPI) and the estimate at completion. A project without a
+  baseline gets the cost side only; a figure that would divide by nothing is left empty. Templates are left out. Like
+  profitability it is for roles that see costs, and it opens at `/projects/r/earned_value`.
+
+## 0.12.0
+
+Package `projects` 0.6.0: two new tables (`ProjectBaseline` and its lines, `BaselineTask`) and the action `Set Baseline`
+on Project (`projects.project.set_baseline`). Needs the same platform as 0.11.0. `ui/dist` rebuilt with Ferrum-Frontend `5e2661f`.
+
+- **Baselines on demand.** Someone who may change a project (its team's manager, a Projects Manager, or an agent
+  acting for them) sets a named baseline whenever they want: it keeps the project's dates, estimated hours and cost,
+  budget and contract value, and each task that is not cancelled with its dates, hours, whether it is a milestone and
+  whether it had sub-tasks. A baseline is never edited, and a name is used once in a project. A task deleted later
+  keeps its line. Whoever reads the project reads its baselines; a private project's stay its team's.
+- **The first approved change takes one.** Approving a project's first change request also sets a baseline named by
+  the request's number and title, with the plan as it was; the five baseline figures on the project stay as before.
+- **On the timeline.** The latest baseline (or the one picked in the toolbar, or none) is drawn as a thin bar under
+  each task, a hollow diamond under a milestone, and each task says how many days it ends after or before it.
+  **Set a baseline** is in the toolbar for those who may change the project.
+- A project baselined before this release has no baseline record; nothing is backfilled.
+
 ## 0.11.3
 
 Package `projects` 0.5.3, connector `projects-erp` 0.3.1 (each action's contract). Needs the same platform as 0.11.0.

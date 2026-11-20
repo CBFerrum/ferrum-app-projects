@@ -10,12 +10,14 @@
 //! timesheets recording their time through `owner_fields`.
 
 mod billing;
+mod importing;
 mod logic;
 mod planning;
 mod project;
 mod reports;
 mod schedule;
 mod site;
+mod sprint;
 mod status;
 mod template;
 mod timesheet;
@@ -34,6 +36,9 @@ pub fn register(hooks: &mut HookRegistry) {
         .register("Task", Arc::new(project::TaskHook))
         .register("ProjectRisk", Arc::new(planning::RiskHook))
         .register("ChangeRequest", Arc::new(planning::ChangeRequestHook))
+        .register("ProjectUpdate", Arc::new(planning::UpdateHook))
+        .register("Sprint", Arc::new(sprint::SprintHook))
+        .register("TaskImport", Arc::new(importing::ImportHook))
         .register("Timesheet", Arc::new(timesheet::TimesheetHook))
         .register("ActivityCost", Arc::new(timesheet::ActivityCostHook));
     hooks.add_site("projects", Arc::new(site::ProjectsSite));
@@ -53,7 +58,8 @@ pub fn reports() -> Vec<Arc<dyn ReportSource>> {
 
 /// Upkeep for one workspace, called by the platform as it comes due (idempotent and safe to run concurrently):
 /// tasks in a To Do status that names a late status move to it once past their expected end, and
-/// people whose week's time is short of their hours are reminded (Projects Settings).
+/// people whose week's time is short of their hours are reminded (Projects Settings), and task imports thirty days old
+/// are deleted with their files.
 pub async fn maintenance(k: &Kernel, tenant: Uuid) -> Result<()> {
     match mark_overdue(k, tenant).await {
         Ok(0) => {}
@@ -69,6 +75,11 @@ pub async fn maintenance(k: &Kernel, tenant: Uuid) -> Result<()> {
         Ok(0) => {}
         Ok(n) => tracing::info!(%tenant, people = n, "people reminded of their week's time"),
         Err(e) => tracing::warn!(%tenant, "reminding people of their time failed: {e}"),
+    }
+    match importing::drop_old(k, tenant).await {
+        Ok(0) => {}
+        Ok(n) => tracing::info!(%tenant, imports = n, "task imports thirty days old deleted"),
+        Err(e) => tracing::warn!(%tenant, "deleting old task imports failed: {e}"),
     }
     Ok(())
 }

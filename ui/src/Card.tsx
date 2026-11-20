@@ -29,27 +29,30 @@ export interface CardData {
   /** The tasks this one waits for that are not completed. */
   blockedBy: Task[];
   subtasks?: { done: number; total: number };
+  /** Fields the workspace added, as the card shows them. */
+  extras?: { label: string; text: string }[];
 }
 
 /** The words a screen reader gets for a card, in the order a sighted person reads it. */
-export function describe({ task, today, blockedBy, subtasks, names }: CardData): string {
+export function describe({ task, today, blockedBy, subtasks, names, extras }: CardData): string {
   const people = assignees(task).map(names);
   return [
     task.number,
     task.subject,
     task.status,
     task.priority && task.priority !== "Medium" ? t("{priority} priority", { priority: task.priority }) : null,
-    task.exp_end_date ? `${late(task, today) ? "late, was due" : "due"} ${task.exp_end_date}` : null,
+    task.exp_end_date ? (late(task, today) ? t("late, was due {day}", { day: task.exp_end_date }) : t("due {day}", { day: task.exp_end_date })) : null,
     subtasks ? t("{done} of {total} sub-tasks done", { done: subtasks.done, total: subtasks.total }) : null,
     blockedBy.length ? t("waits for {value}", { value: blockedBy.map((b) => b.number ?? b.subject).join(", ") }) : null,
     people.length ? t("assigned to {people}", { people: people.join(", ") }) : null,
+    ...(extras ?? []).map((e) => `${e.label}: ${e.text}`),
   ]
     .filter(Boolean)
     .join(", ");
 }
 
 export function CardView({ data, selected, held, menu, ...rest }: { data: CardData; selected?: boolean; held?: boolean; menu?: ReactNode } & HTMLAttributes<HTMLElement>) {
-  const { task, names, today, blockedBy, subtasks } = data;
+  const { task, names, today, blockedBy, subtasks, extras } = data;
   const isLate = late(task, today);
   return (
     <article className="pj-card" data-selected={selected || undefined} data-held={held || undefined} data-late={isLate || undefined} aria-label={describe(data)} {...rest}>
@@ -77,6 +80,22 @@ export function CardView({ data, selected, held, menu, ...rest }: { data: CardDa
         )}
         <Avatars emails={assignees(task)} names={names} />
       </div>
+      {!!extras?.length && (
+        <dl className="pj-card-extras">
+          {extras.map((e) =>
+            e.text === e.label ? (
+              <dd key={e.label} title={e.label}>
+                {isolate(e.text)}
+              </dd>
+            ) : (
+              <div key={e.label}>
+                <dt className="sr-only">{isolate(e.label)}</dt>
+                <dd title={e.label}>{isolate(e.text)}</dd>
+              </div>
+            ),
+          )}
+        </dl>
+      )}
     </article>
   );
 }

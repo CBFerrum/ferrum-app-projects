@@ -30,7 +30,8 @@ import { type CSSProperties, type FormEvent, type HTMLAttributes, type KeyboardE
 import { Link } from "react-router";
 import { todayIso, t as tr, isolate } from "@ferrum/client";
 import { Alert, Badge, confirmDialog, StatePanel, statusTone, toast, useDebounced, placed } from "@ferrum/kit";
-import { can, useMe, useMetaIndex } from "@ferrum/records";
+import { can, useEntityMeta, useMe, useMetaIndex } from "@ferrum/records";
+import { cardFields, type Extra, filterFields, shown as extraText } from "./extras";
 import { Avatar, Keys } from "./bits";
 import {
   boardModel,
@@ -53,7 +54,8 @@ import {
   type Way,
 } from "./kanban";
 import { CardMenu, type CardActions, CardView, SortableCard } from "./Card";
-import { changeTask, createTask, type Project, TASK_LIMIT, type TaskSet, useNames, useQueryState } from "./data";
+import type { Sprint } from "./sprints";
+import { changeTask, createTask, type Project, TASK_LIMIT, type TaskSet, useNames, useQueryState, useSprints } from "./data";
 import { assignees, blockers, PRIORITIES, subtaskCounts, TASK_TONES, type Task } from "./plan";
 
 /** Where each card and each column stands in a layout: a card to the column that holds it, a column to itself. */
@@ -70,8 +72,11 @@ const reduced = () => typeof window !== "undefined" && window.matchMedia?.("(pre
 
 // ── the bar above the board ──
 
-function Bar({ filters, lanes, order, people, parents, names, set, shown, total }: {
+function Bar({ filters, lanes, order, people, parents, sprints, fields, names, set, shown, total }: {
   filters: Filters;
+  sprints: Sprint[];
+  /** Fields the workspace added that filter the board. */
+  fields: Extra[];
   lanes: Lanes;
   order: Order;
   people: string[];
@@ -123,6 +128,35 @@ function Bar({ filters, lanes, order, people, parents, names, set, shown, total 
           </option>
         ))}
       </select>
+      {sprints.length > 0 && (
+        <select className="select pj-select" aria-label={tr("Sprint")} value={filters.sprint} onChange={(e) => change({ sprint: e.target.value })}>
+          <option value="">{tr("Any sprint")}</option>
+          <option value="active">{tr("Active sprint")}</option>
+          <option value="none">{tr("No sprint")}</option>
+          {sprints.map((s) => (
+            <option key={s.id} value={s.id}>
+              {isolate(s.sprint_name)}
+            </option>
+          ))}
+        </select>
+      )}
+      {fields.map((e) => (
+        <select key={e.name} className="select pj-select" aria-label={e.label} value={filters.fields[e.name] ?? ""} onChange={(ev) => change({ fields: { ...filters.fields, [e.name]: ev.target.value } })}>
+          <option value="">{tr("Any {label}", { label: e.label })}</option>
+          {e.type === "check" ? (
+            <>
+              <option value="yes">{tr("Yes")}</option>
+              <option value="no">{tr("No")}</option>
+            </>
+          ) : (
+            (e.options ?? []).map((o) => (
+              <option key={o} value={o}>
+                {isolate(o)}
+              </option>
+            ))
+          )}
+        </select>
+      ))}
       <span className="pj-tools-gap" />
       <label className="pj-tools-pick">
         <span className="faint">{tr("Swimlanes")}</span>
@@ -130,6 +164,13 @@ function Bar({ filters, lanes, order, people, parents, names, set, shown, total 
           <option value="none">{tr("None")}</option>
           <option value="assignee">{tr("Person")}</option>
           <option value="priority">{tr("Priority")}</option>
+          {fields
+            .filter((e) => e.type === "select")
+            .map((e) => (
+              <option key={e.name} value={`f.${e.name}`}>
+                {isolate(e.label)}
+              </option>
+            ))}
         </select>
       </label>
       <label className="pj-tools-pick">
@@ -244,15 +285,31 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
   const meta = useMetaIndex().data?.entities.find((e) => e.name === "Task");
   const names = useNames();
   const [sp, setQuery] = useQueryState();
-  const filters = readFilters(sp);
-  const lanes = readLanes(sp);
+  // Fields the workspace added: on the card, as filters, as swimlanes (none until the metadata is in).
+  const taskMeta = useEntityMeta("Task").data;
+  const onCard = useMemo(() => cardFields(taskMeta), [taskMeta]);
+  const filterBy = useMemo(() => filterFields(taskMeta), [taskMeta]);
+  const filters = readFilters(
+    sp,
+    filterBy.map((e) => e.name),
+  );
+  const lanes = readLanes(
+    sp,
+    filterBy.filter((e) => e.type === "select").map((e) => e.name),
+  );
+  const laneField = lanes.startsWith("f.") ? filterBy.find((e) => e.name === lanes.slice(2)) : undefined;
   const order = readOrder(sp);
   const today = todayIso();
   const closed = project.status === "Completed" || project.status === "Cancelled";
   const canWrite = !!meta && can(meta.permissions, "write") && !closed;
   const canCreate = !!meta && can(meta.permissions, "create") && !closed;
 
-  const model = useMemo(() => boardModel(tasks.rows, filters, lanes, order, { me, today }), [tasks.rows, sp.toString(), me, today]);
+  const sprints = useSprints(project.id).data ?? [];
+  const activeSprint = sprints.find((s) => s.state === "Active")?.id;
+  const model = useMemo(
+    () => boardModel(tasks.rows, filters, lanes, order, { me, today, activeSprint, laneOptions: laneField?.options }),
+    [tasks.rows, sp.toString(), me, today, activeSprint, laneField],
+  );
   const byId = useMemo(() => new Map(tasks.rows.map((t) => [t.id, t])), [tasks.rows]);
   const counts = useMemo(() => subtaskCounts(tasks.rows), [tasks.rows]);
   const cards = useMemo(() => new Map(model.lanes.flatMap((l) => l.cells.flatMap((c) => c.cards)).map((c) => [c.key, c])), [model]);
@@ -295,8 +352,18 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
   const sensors = useSensors(useSensor(MouseSensor, { activationConstraint: { distance: 6 } }), useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }));
 
   const cardData = useCallback(
-    (task: Task) => ({ task, names, today, blockedBy: blockers(task, byId), subtasks: counts.get(task.id) }),
-    [names, today, byId, counts],
+    (task: Task) => ({
+      task,
+      names,
+      today,
+      blockedBy: blockers(task, byId),
+      subtasks: counts.get(task.id),
+      extras: onCard.flatMap((e) => {
+        const text = extraText(task[e.name], e);
+        return text === null ? [] : [{ label: e.label, text }];
+      }),
+    }),
+    [names, today, byId, counts, onCard],
   );
 
   // ── doing things to a task ──
@@ -468,11 +535,12 @@ export function Board({ project, set: tasks, open, onOpen }: { project: Project;
 
   const overlay = held ? cards.get(held) : undefined;
   const sortNote = order === "manual" ? null : (order === "due" ? tr("Sorted by due date: a drop moves the card between columns only.") : tr("Sorted by priority: a drop moves the card between columns only."));
-  const laneName = (id: string) => (id === NOBODY ? tr("Nobody") : lanes === "priority" ? tr("{id} priority", { id }) : names(id));
+  const laneName = (id: string) =>
+    laneField ? (id === NOBODY ? tr("No {label}", { label: laneField.label }) : id) : id === NOBODY ? tr("Nobody") : lanes === "priority" ? tr("{id} priority", { id }) : names(id);
 
   return (
     <div className="pj-board-wrap">
-      <Bar filters={filters} lanes={lanes} order={order} people={people} parents={parents} names={names} set={setQuery} shown={model.shown} total={model.total} />
+      <Bar filters={filters} lanes={lanes} order={order} people={people} parents={parents} sprints={sprints} fields={filterBy} names={names} set={setQuery} shown={model.shown} total={model.total} />
       {closed && <Alert tone="info">{placed(tr("This project is {p1}. Its tasks cannot be changed until it is reopened."), { p1: isolate(project.status?.toLowerCase() ?? "") })}</Alert>}
       {tasks.total > tasks.rows.length && (
         <Alert tone="warning">

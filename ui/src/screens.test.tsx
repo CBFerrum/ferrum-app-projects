@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
+import { Backlog } from "./Backlog";
 import { Board } from "./Board";
 import type { Project } from "./data";
 import type { Task } from "./plan";
@@ -80,6 +81,116 @@ describe("the board", () => {
   });
 });
 
+describe("the board's sprint filter", () => {
+  it("shows the Sprint select when the project has sprints, and filters to tasks without one", () => {
+    const qc = seeded();
+    qc.setQueryData(["projects", "sprints", "p1"], [{ id: "s1", sprint_name: "Sprint 7", start_date: day(2), end_date: day(15), state: "Active" }]);
+    const rows = tasks.map((x, i) => (i === 0 ? { ...x, sprint: "s1" } : x));
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={["/?sprint=none"]}>
+          <Board project={project} set={{ rows, total: rows.length }} open={null} onOpen={() => {}} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(html).toContain('aria-label="Sprint"');
+    expect(html).toContain("4 of 5 tasks");
+  });
+});
+
+describe("the board with a field the workspace added", () => {
+  const zone = {
+    name: "Task",
+    label: "Task",
+    label_plural: "Tasks",
+    kind: "master",
+    submittable: false,
+    permissions: all,
+    fields: [{ name: "x_zone", label: "Zone", type: "select", options: ["North", "South"], in_list: true, in_filter: true, can_read: true }],
+    form: [{ fields: ["x_zone"] }],
+    list: { columns: [] },
+    actions: [],
+    children: {},
+  };
+  const at = (where: string) => {
+    const qc = seeded();
+    qc.setQueryData(["meta", "Task"], zone);
+    const rows = tasks.map((x, i) => (i === 0 ? { ...x, x_zone: "North" } : x));
+    return renderToStaticMarkup(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={[where]}>
+          <Board project={project} set={{ rows, total: rows.length }} open={null} onOpen={() => {}} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  };
+
+  it("offers the field as a filter and draws it on the card", () => {
+    const html = at("/");
+    expect(html).toContain('aria-label="Zone"');
+    expect(html).toContain("pj-card-extras");
+    expect(html).toContain("North");
+  });
+
+  it("makes a lane of each of its options, and one for no value", () => {
+    const html = at("/?lanes=f.x_zone");
+    expect(html).toContain('aria-label="North"');
+    expect(html).toContain("No Zone");
+  });
+});
+
+describe("the backlog", () => {
+  const sprints = [
+    { id: "s1", sprint_name: "Sprint 7", start_date: day(2), end_date: day(15), state: "Active", goal: "Ship the checkout" },
+    { id: "s2", sprint_name: "Sprint 8", start_date: day(16), end_date: day(29), state: "Planned" },
+  ];
+  const rows: Task[] = [
+    task("10", { subject: "Pay by card", sprint: "s1", story_points: "5" }),
+    task("11", { subject: "Refunds", sprint: "s2" }),
+    task("12", { subject: "Invoice PDF" }),
+    task("13", { subject: "Receipts by mail" }),
+  ];
+  const view = (sprintRights: Record<string, string> = all, p: Project = project) => {
+    const qc = seeded();
+    qc.setQueryData(["meta"], {
+      version: 1,
+      packages: [],
+      modules: [],
+      warnings: [],
+      entities: [
+        { name: "Task", label: "Task", label_plural: "Tasks", kind: "master", submittable: false, permissions: all },
+        { name: "Sprint", label: "Sprint", label_plural: "Sprints", kind: "master", submittable: false, permissions: sprintRights },
+      ],
+    });
+    qc.setQueryData(["projects", "sprints", "p1"], sprints);
+    return renderToStaticMarkup(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter>
+          <Backlog project={p} set={{ rows, total: rows.length }} open={null} onOpen={() => {}} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  };
+
+  it("shows the active sprint, the planned ones and the backlog, with what can be done", () => {
+    const html = view();
+    for (const t of ["Sprint 7", "Sprint 8", "Backlog", "Close sprint…", "Plan a sprint", "Pay by card", "Refunds", "Invoice PDF", "Receipts by mail", "Ship the checkout"]) expect(html).toContain(t);
+    expect(html).not.toContain("Start sprint");
+    expect(html).toContain('aria-label="Move TASK-10"');
+  });
+
+  it("offers no button and no menu to someone who may only read sprints", () => {
+    const html = view({ ...all, write: "none", create: "none", delete: "none" });
+    for (const t of ["Close sprint…", "Start sprint", "Plan a sprint", 'aria-label="Move ']) expect(html).not.toContain(t);
+    expect(html).toContain("Pay by card");
+  });
+
+  it("is read-only on a completed project", () => {
+    const html = view(all, { ...project, status: "Completed" });
+    for (const t of ["Close sprint…", "Plan a sprint", 'aria-label="Move ']) expect(html).not.toContain(t);
+  });
+});
+
 describe("the timeline", () => {
   const line = (rows = tasks, at = "/") => draw(<Timeline project={project} set={{ rows, total: rows.length }} open={null} onOpen={() => {}} />, at);
 
@@ -108,6 +219,25 @@ describe("the timeline", () => {
 
   it("is an empty state with nothing to place", () => {
     expect(line([])).toContain("Nothing to place on a timeline");
+  });
+
+  it("draws the chosen baseline under the bars and says how far each task ends from it", () => {
+    const qc = seeded();
+    qc.setQueryData(["projects", "baselines", "p1"], [{ id: "b1", baseline_name: "Kick-off", taken_on: day(1) }]);
+    qc.setQueryData(["projects", "baseline", "b1"], { id: "b1", tasks: [{ task: "2", exp_start_date: day(9), exp_end_date: day(18) }] });
+    const at = (where: string) =>
+      renderToStaticMarkup(
+        <QueryClientProvider client={qc}>
+          <MemoryRouter initialEntries={[where]}>
+            <Timeline project={project} set={{ rows: tasks, total: tasks.length }} open={null} onOpen={() => {}} />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+    const html = at("/");
+    expect(html).toContain('data-base="2"');
+    expect(html).toContain("2 days after its baseline");
+    expect(html).toContain("Kick-off");
+    expect(at("/?baseline=none")).not.toContain("data-base=");
   });
 
   it("offers the zoom levels, and the one in the address is pressed", () => {

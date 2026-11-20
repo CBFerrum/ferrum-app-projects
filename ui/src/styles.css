@@ -1046,6 +1046,31 @@ button.pj-fold:hover {
   stroke-dasharray: 3 3;
 }
 
+/* The chosen baseline: a thin bar under each task's own, a hollow diamond under a milestone. */
+.pj-base {
+  position: absolute;
+  z-index: 2;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-strong);
+  pointer-events: none;
+}
+
+.pj-base-diamond {
+  position: absolute;
+  z-index: 2;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 2px;
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+
+.pj-namer .input {
+  width: 14rem;
+}
+
 .pj-ghost {
   position: absolute;
   z-index: 2;
@@ -1880,4 +1905,78 @@ button.pj-heat-cell {
   .pj-canvas .pj-diamond {
     transition: left 90ms ease, width 90ms ease;
   }
+}
+
+/* The backlog: a section per sprint and one for the backlog, a row per task that wraps on a narrow screen. */
+.pj-backlog {
+  display: grid;
+  gap: var(--space-4, 1rem);
+}
+
+.pj-sprint {
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 6px);
+  padding: var(--space-3, 0.75rem);
+}
+
+.pj-sprint-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+}
+
+.pj-sprint-head h2 {
+  margin: 0;
+  font-size: var(--text-md, 1rem);
+}
+
+.pj-sprint-goal {
+  margin: var(--space-1, 0.25rem) 0 0;
+}
+
+.pj-backlog-rows {
+  margin: var(--space-2, 0.5rem) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pj-backlog-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+  padding: var(--space-1, 0.25rem) 0;
+  border-top: 1px solid var(--border);
+}
+
+.pj-backlog-subject {
+  flex: 1 1 12rem;
+  min-width: 0;
+  text-align: start;
+}
+
+.pj-points {
+  width: 4.5rem;
+}
+
+.pj-close-sprint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+}
+
+/* Fields the workspace added, a line under the card's facts. */
+.pj-card-extras {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1, 0.25rem) var(--space-2, 0.5rem);
+  margin: var(--space-1, 0.25rem) 0 0;
+  color: var(--text-muted, inherit);
+  font-size: var(--text-xs, 0.75rem);
+}
+
+.pj-card-extras dd {
+  margin: 0;
 }

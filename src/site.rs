@@ -33,7 +33,7 @@ impl Site for ProjectsSite {
 
 /// What the interface draws of a task. A list gives these; the people on a task and what it waits
 /// for are child rows, which a list leaves out and only a single record carries.
-const TASK_FIELDS: [&str; 16] = [
+const TASK_FIELDS: [&str; 19] = [
     "number",
     "subject",
     "project",
@@ -49,8 +49,27 @@ const TASK_FIELDS: [&str; 16] = [
     "is_milestone",
     "parent_task",
     "rank",
+    "sprint",
+    "story_points",
+    "backlog_rank",
     "version",
 ];
+
+/// The most fields a workspace added that the board carries.
+const EXTRA_LIMIT: usize = 12;
+
+/// Fields a workspace added to tasks that the board carries: plain ones (text, choice, number, date, tick) marked to
+/// show in lists or as filters, not hidden, not already among [`TASK_FIELDS`], that `user` may read; at most twelve.
+fn extra_fields(user: &Ctx) -> Vec<String> {
+    use ferrum_meta::FieldType::{Check, Data, Date, Decimal, Int, Percent, Select};
+    let Some(task) = user.schema.entity("Task") else { return vec![] };
+    task.value_fields()
+        .filter(|f| (f.in_list || f.in_filter) && !f.hidden && matches!(f.ftype, Data | Select | Int | Decimal | Percent | Date | Check))
+        .filter(|f| !TASK_FIELDS.contains(&f.name.as_str()) && user.perms.can_read_field("Task", f))
+        .take(EXTRA_LIMIT)
+        .map(|f| f.name.clone())
+        .collect()
+}
 
 /// The most tasks one request returns, the API's own limit for a list.
 const TASK_LIMIT: u32 = 500;
@@ -64,7 +83,7 @@ async fn tasks(k: &Kernel, user: &Ctx, query: &Map<String, Value>) -> Result<Val
         query.get("project").and_then(Value::as_str).and_then(|p| p.parse::<Uuid>().ok()).ok_or_else(|| Error::invalid("project: give the id of a project"))?;
     let q = ListQuery {
         filters: vec![Filter::eq("project", project.to_string())],
-        fields: Some(TASK_FIELDS.iter().map(|f| f.to_string()).collect()),
+        fields: Some(TASK_FIELDS.iter().map(|f| f.to_string()).chain(extra_fields(user)).collect()),
         sort: Some("created_at asc".into()),
         limit: Some(TASK_LIMIT),
         with_count: true,

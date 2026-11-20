@@ -5,7 +5,8 @@ import { diffDays } from "./days";
 import { assignees, COLUMNS, late, PRIORITIES, priorityOf, statusOf, type Task } from "./plan";
 import { byRank, place } from "./rank";
 
-export type Lanes = "none" | "assignee" | "priority";
+/** By person, by priority, or by one of a choice field's options (`f.<field>`). */
+export type Lanes = "none" | "assignee" | "priority" | `f.${string}`;
 export type Order = "manual" | "due" | "priority";
 
 export interface Filters {
@@ -18,9 +19,13 @@ export interface Filters {
   due: "" | "late" | "week" | "none";
   /** "" every task; "top" those that are not sub-tasks; or a task's id for its sub-tasks. */
   parent: string;
+  /** "" any; "active" the project's active sprint; "none" no sprint; or a sprint's id. */
+  sprint: string;
+  /** Fields the workspace added, by name: a value, or "yes" / "no" for a tick. */
+  fields: Record<string, string>;
 }
 
-export const NO_FILTERS: Filters = { q: "", who: "", priority: "", due: "", parent: "" };
+export const NO_FILTERS: Filters = { q: "", who: "", priority: "", due: "", parent: "", sprint: "", fields: {} };
 
 /** The lane of the tasks nobody is on. No address can be this. */
 export const NOBODY = "(nobody)";
@@ -28,7 +33,7 @@ export const NOBODY = "(nobody)";
 const DUE = ["late", "week", "none"];
 
 /** What the address of the page says about the board. Anything unknown is ignored. */
-export function readFilters(p: URLSearchParams): Filters {
+export function readFilters(p: URLSearchParams, names: string[] = []): Filters {
   const due = p.get("due") ?? "";
   const priority = p.get("prio") ?? "";
   return {
@@ -37,21 +42,29 @@ export function readFilters(p: URLSearchParams): Filters {
     priority: PRIORITIES.includes(priority) ? priority : "",
     due: DUE.includes(due) ? (due as Filters["due"]) : "",
     parent: p.get("parent") ?? "",
+    sprint: p.get("sprint") ?? "",
+    fields: Object.fromEntries(names.flatMap((n) => (p.get(`f.${n}`) ? [[n, p.get(`f.${n}`) as string]] : []))),
   };
 }
 
 /** The same, as changes to the address (null removes one). */
 export function filterParams(f: Filters): Record<string, string | null> {
-  return { q: f.q || null, who: f.who || null, prio: f.priority || null, due: f.due || null, parent: f.parent || null };
+  const fields = Object.fromEntries(Object.entries(f.fields).map(([n, v]) => [`f.${n}`, v || null]));
+  return { q: f.q || null, who: f.who || null, prio: f.priority || null, due: f.due || null, parent: f.parent || null, sprint: f.sprint || null, ...fields };
 }
 
-export const readLanes = (p: URLSearchParams): Lanes => (p.get("lanes") === "assignee" || p.get("lanes") === "priority" ? (p.get("lanes") as Lanes) : "none");
+export function readLanes(p: URLSearchParams, names: string[] = []): Lanes {
+  const l = p.get("lanes") ?? "";
+  if (l === "assignee" || l === "priority") return l;
+  return l.startsWith("f.") && names.includes(l.slice(2)) ? (l as Lanes) : "none";
+}
 export const readOrder = (p: URLSearchParams): Order => (p.get("order") === "due" || p.get("order") === "priority" ? (p.get("order") as Order) : "manual");
 
 /** How many of the filters are on (the search box is not counted: it shows its own text). */
-export const filtersOn = (f: Filters): number => [f.who, f.priority, f.due, f.parent].filter(Boolean).length;
+export const filtersOn = (f: Filters): number => [f.who, f.priority, f.due, f.parent, f.sprint, ...Object.values(f.fields)].filter(Boolean).length;
 
-export function matches(t: Task, f: Filters, me: string, today: string): boolean {
+/** Whether a task passes the filters; `activeSprint` is the id the "active" sprint filter stands for. */
+export function matches(t: Task, f: Filters, me: string, today: string, activeSprint?: string): boolean {
   const q = f.q.trim().toLowerCase();
   if (q && ![t.subject, t.number].some((v) => v?.toLowerCase().includes(q))) return false;
   const who = assignees(t).map((a) => a.toLowerCase());
@@ -64,6 +77,15 @@ export function matches(t: Task, f: Filters, me: string, today: string): boolean
   if (f.due === "none" && t.exp_end_date) return false;
   if (f.parent === "top" && t.parent_task) return false;
   if (f.parent && f.parent !== "top" && t.parent_task !== f.parent) return false;
+  if (f.sprint === "none" && t.sprint) return false;
+  if (f.sprint === "active" && (!activeSprint || t.sprint !== activeSprint)) return false;
+  if (f.sprint && f.sprint !== "none" && f.sprint !== "active" && t.sprint !== f.sprint) return false;
+  for (const [name, want] of Object.entries(f.fields)) {
+    if (!want) continue;
+    const v = t[name];
+    const have = want === "yes" || want === "no" ? (v === true ? "yes" : "no") : String(v ?? "");
+    if (have !== want) return false;
+  }
   return true;
 }
 
@@ -103,8 +125,15 @@ function comparer(order: Order): (a: Task, b: Task) => number {
   return byRank;
 }
 
-function laneKeys(shown: Task[], lanes: Lanes): string[] {
+/** A task's value of the lanes' field, "" when it has none. */
+const valueOf = (t: Task, lanes: Lanes): string => String(t[lanes.slice(2)] ?? "");
+
+function laneKeys(shown: Task[], lanes: Lanes, options: string[] = []): string[] {
   if (lanes === "priority") return PRIORITIES.filter((p) => shown.some((t) => priorityOf(t) === p));
+  if (lanes.startsWith("f.")) {
+    const used = options.filter((o) => shown.some((t) => valueOf(t, lanes) === o));
+    return shown.some((t) => !options.includes(valueOf(t, lanes))) ? [...used, NOBODY] : used;
+  }
   if (lanes === "assignee") {
     const people = [...new Set(shown.flatMap((t) => assignees(t).map((a) => a.toLowerCase())))].sort();
     return shown.some((t) => !assignees(t).length) ? [...people, NOBODY] : people;
@@ -112,21 +141,23 @@ function laneKeys(shown: Task[], lanes: Lanes): string[] {
   return [];
 }
 
-function inLane(t: Task, lane: string, lanes: Lanes): boolean {
+function inLane(t: Task, lane: string, lanes: Lanes, options: string[]): boolean {
   if (lanes === "priority") return priorityOf(t) === lane;
+  if (lanes.startsWith("f.")) return lane === NOBODY ? !options.includes(valueOf(t, lanes)) : valueOf(t, lanes) === lane;
   if (lanes === "assignee") return lane === NOBODY ? !assignees(t).length : assignees(t).some((a) => a.toLowerCase() === lane);
   return true;
 }
 
-export function boardModel(tasks: Task[], f: Filters, lanes: Lanes, order: Order, ctx: { me: string; today: string }): BoardModel {
+export function boardModel(tasks: Task[], f: Filters, lanes: Lanes, order: Order, ctx: { me: string; today: string; activeSprint?: string; laneOptions?: string[] }): BoardModel {
   const live = tasks.filter((t) => t.status !== "Cancelled");
   const statuses = COLUMNS.filter((s) => s !== "Overdue" || live.some((t) => statusOf(t) === "Overdue"));
-  const shown = live.filter((t) => matches(t, f, ctx.me, ctx.today));
+  const shown = live.filter((t) => matches(t, f, ctx.me, ctx.today, ctx.activeSprint));
   const cmp = comparer(order);
   // With nothing to group, one lane still holds the columns.
-  const keys = laneKeys(shown, lanes);
+  const options = ctx.laneOptions ?? [];
+  const keys = laneKeys(shown, lanes, options);
   const list = (lanes === "none" || !keys.length ? [""] : keys).map((lane): Lane => {
-    const mine = shown.filter((t) => inLane(t, lane, lanes === "none" || !keys.length ? "none" : lanes));
+    const mine = shown.filter((t) => inLane(t, lane, lanes === "none" || !keys.length ? "none" : lanes, options));
     const cells = statuses.map((status): Cell => ({
       id: `${lane}|${status}`,
       lane,
@@ -178,7 +209,7 @@ export function dropAllowed(lanes: Lanes, from: Cell, to: Cell): boolean {
 
 export interface Move {
   /** What to send for the card that moved: only what changes. */
-  patch: { status?: string; priority?: string; rank?: string };
+  patch: { status?: string; priority?: string; rank?: string; [field: string]: string | null | undefined };
   /** Other cards of the cell that had to be ranked again. */
   also: { id: string; rank: string }[];
 }
@@ -195,6 +226,7 @@ export function dropPlan(model: BoardModel, key: string, to: string, at: number,
   const patch: Move["patch"] = {};
   if (cell.status !== statusOf(t)) patch.status = cell.status;
   if (lanes === "priority" && cell.lane !== priorityOf(t)) patch.priority = cell.lane;
+  if (lanes.startsWith("f.") && cell.lane !== from.cell.lane) patch[lanes.slice(2)] = cell.lane === NOBODY ? null : cell.lane;
   let also: Move["also"] = [];
   if (order === "manual" && !(from.cell.id === cell.id && from.index === at)) {
     const placed = place(

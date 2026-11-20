@@ -21,6 +21,13 @@ describe("a card", () => {
     expect(describeCard({ ...data, blockedBy: [], subtasks: undefined, task: { id: "x", number: "T-1", subject: "Plain", status: "Open", priority: "Medium" } })).toBe("T-1, Plain, Open");
   });
 
+  it("draws the fields a workspace added, and speaks them", () => {
+    const extras = [{ label: "Zone", text: "North" }, { label: "Signed off", text: "Signed off" }];
+    const html = renderToStaticMarkup(<CardView data={{ ...data, extras }} />);
+    for (const text of ["pj-card-extras", "North", "Signed off"]) expect(html).toContain(text);
+    expect(describeCard({ ...data, extras })).toContain("late, was due 2026-10-30, 3 of 5 sub-tasks done, waits for TASK-00003, assigned to Asha Rao, ravi.k@acme.test, Zone: North, Signed off: Signed off");
+  });
+
   it("marks a milestone, a selection and a card being carried", () => {
     const html = renderToStaticMarkup(<CardView data={{ ...data, blockedBy: [], subtasks: undefined, task: { ...task, is_milestone: true } }} selected held />);
     expect(html).toContain('aria-label="Milestone"');

@@ -43,6 +43,9 @@ impl ReportSource for Reports {
                     text("calendar", "Business Calendar"), {"name": "hours_per_day", "label": "Working Hours a Day", "type": "float", "default": 8}]}),
             json!({"name": "portfolio_overview", "label": "Portfolio Overview", "module": "projects", "entity": "Project",
                 "params": [param_def("company"), link("portfolio", "Portfolio", "Portfolio")]}),
+            json!({"name": "earned_value", "label": "Earned Value", "module": "projects", "entity": "Project",
+                "params": [param_def("company"), link("project", "Project", "Project"), link("portfolio", "Portfolio", "Portfolio"),
+                    {"name": "status", "label": "Status", "type": "select", "options": ["Open", "On Hold", "Completed", "Cancelled"]}]}),
         ]
     }
 
@@ -56,6 +59,7 @@ impl ReportSource for Reports {
             "task_overview" => task_overview(&mut tx, ctx, &co, &p).await?,
             "workload" => workload(&mut tx, ctx, &co, &p).await?,
             "portfolio_overview" => portfolio_overview(&mut tx, ctx, &co, &p).await?,
+            "earned_value" => earned_value(&mut tx, ctx, &co, &p).await?,
             _ => return Err(Error::NotFound(format!("report {name}"))),
         };
         tx.rollback().await?;
@@ -360,6 +364,122 @@ async fn profitability(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Params<'_
         "rows": rows,
         "totals": total_obj,
         "meta": {"from_date": from, "to_date": to, "truncated": truncated, "ledger": ctx.schema.entity("Account").is_some()},
+    }))
+}
+
+/// Earned value as of today, per project the caller may read (templates left out): the budget at completion (the
+/// latest baseline's estimated cost, else its budget; without a baseline the project's), planned value (that budget
+/// times the share of the baseline's tasks due by today), earned value (times % complete), actual cost (submitted time
+/// and ledger expense up to today), their variances, the two indices and the estimate at completion. A figure whose
+/// inputs are missing, or that would divide by nothing, is empty.
+async fn earned_value(tx: &mut Tx, ctx: &Ctx, co: &ReportCompany, p: &Params<'_>) -> Result<Value> {
+    if !can_see_costs(ctx) {
+        return Err(Error::Forbidden("earned value shows costs, which your roles may not see".into()));
+    }
+    let today = ctx.today();
+    let ent = ctx.schema.entity("Project").ok_or_else(|| Error::NotFound("Project".into()))?;
+    let mut qb = QueryBuilder::<Postgres>::new(
+        "select p.id, p.number, p.project_name, nullif(p.ext->>'proj_percent_complete', '')::numeric, nullif(p.ext->>'proj_estimated_cost', '')::numeric, p.budget \
+         from e_project p where p.tenant_id = ",
+    );
+    qb.push_bind(ctx.tenant).push(" and p.company = ").push_bind(co.id);
+    row_scope(ctx, ent, Action::Read)?.push_sql(&mut qb, "p");
+    qb.push(" and coalesce(p.ext->>'proj_is_template', 'false') <> 'true'");
+    if let Some(project) = p.uuid("project")? {
+        qb.push(" and p.id = ").push_bind(project);
+    }
+    if let Some(status) = p.str("status") {
+        qb.push(" and p.status = ").push_bind(status.to_string());
+    }
+    if let Some(portfolio) = p.uuid("portfolio")? {
+        qb.push(" and exists (select 1 from e_portfolio__projects x where x.tenant_id = p.tenant_id and x.parent_id = ")
+            .push_bind(portfolio)
+            .push(" and x.project = p.id)");
+    }
+    qb.push(" order by p.number nulls last, p.project_name limit ").push_bind(MAX_ROWS + 1);
+    #[allow(clippy::type_complexity)]
+    let mut projects: Vec<(Uuid, Option<String>, Option<String>, Option<Decimal>, Option<Decimal>, Option<Decimal>)> =
+        qb.build_query_as().fetch_all(&mut **tx).await?;
+    let truncated = projects.len() as i64 > MAX_ROWS;
+    projects.truncate(MAX_ROWS as usize);
+    let ids: Vec<Uuid> = projects.iter().map(|r| r.0).collect();
+    // The latest baseline of each, and the lines that weigh (a parent is its sub-tasks).
+    #[allow(clippy::type_complexity)]
+    let baselines: HashMap<Uuid, (Uuid, Option<String>, Option<NaiveDate>, Option<NaiveDate>, Option<Decimal>, Option<Decimal>)> =
+        if ctx.schema.entity("ProjectBaseline").is_none() {
+            HashMap::new()
+        } else {
+            sqlx::query_as::<_, (Uuid, Uuid, Option<String>, Option<NaiveDate>, Option<NaiveDate>, Option<Decimal>, Option<Decimal>)>(
+                "select distinct on (project) project, id, baseline_name, start_date, end_date, estimated_cost, budget from e_project_baseline \
+                 where tenant_id = $1 and project = any($2) order by project, taken_on desc, created_at desc",
+            )
+            .bind(ctx.tenant)
+            .bind(&ids)
+            .fetch_all(&mut **tx)
+            .await?
+            .into_iter()
+            .map(|(project, id, name, start, end, cost, budget)| (project, (id, name, start, end, cost, budget)))
+            .collect()
+        };
+    let chosen: Vec<Uuid> = baselines.values().map(|b| b.0).collect();
+    let mut lines: HashMap<Uuid, Vec<(Option<NaiveDate>, Option<NaiveDate>, Decimal)>> = HashMap::new();
+    if !chosen.is_empty() {
+        let rows: Vec<(Uuid, Option<NaiveDate>, Option<NaiveDate>, Option<Decimal>)> = sqlx::query_as(
+            "select parent_id, exp_start_date, exp_end_date, expected_hours from e_project_baseline__tasks \
+             where tenant_id = $1 and parent_id = any($2) and not coalesce(has_subtasks, false)",
+        )
+        .bind(ctx.tenant)
+        .bind(&chosen)
+        .fetch_all(&mut **tx)
+        .await?;
+        for (baseline, start, end, hours) in rows {
+            lines.entry(baseline).or_default().push((start, end, hours.unwrap_or_default()));
+        }
+    }
+    let (_, time, expense) = costs_and_revenue(tx, ctx, co, &ids, None, Some(today)).await?;
+    let amount = |v: Option<Decimal>| v.map_or(Value::Null, |v| money(v.round_dp(co.precision)));
+    let index = |v: Option<Decimal>| v.map_or(Value::Null, |v| money(v.round_dp(2)));
+    let above = |v: Option<Decimal>| v.filter(|v| *v > Decimal::ZERO);
+    let ratio = |a: Option<Decimal>, b: Option<Decimal>| a.zip(above(b)).map(|(a, b)| a / b);
+    // Budget, planned, earned, actual, schedule variance, cost variance.
+    let mut totals = [Decimal::ZERO; 6];
+    let mut rows = Vec::new();
+    for (pid, number, name, complete, estimated, budget) in projects {
+        let base = baselines.get(&pid);
+        let bac = match base {
+            Some(b) => above(b.4).or(above(b.5)),
+            None => above(estimated).or(above(budget)),
+        };
+        let planned = base.map(|b| crate::logic::planned_percent(lines.get(&b.0).map_or(&[][..], Vec::as_slice), (b.2, b.3), today));
+        let pv = bac.zip(planned).map(|(b, p)| b * p / Decimal::ONE_HUNDRED);
+        let ev = bac.zip(complete).map(|(b, c)| b * c / Decimal::ONE_HUNDRED);
+        let ac = time.get(&pid).map(|t| t.0).unwrap_or_default() + expense.get(&pid).copied().unwrap_or_default();
+        let sv = ev.zip(pv).map(|(e, p)| e - p);
+        let cv = ev.map(|e| e - ac);
+        let cpi = ratio(ev, Some(ac));
+        // bac / cpi, without dividing twice: bac × ac / ev, empty when cpi is empty or 0.
+        let eac = bac.zip(above(cpi)).zip(ev).map(|((b, _), e)| b * ac / e);
+        for (i, v) in [bac, pv, ev, Some(ac), sv, cv].into_iter().enumerate() {
+            totals[i] += v.unwrap_or_default();
+        }
+        rows.push(json!({"project_id": pid, "project": project_label(number, name), "baseline": base.and_then(|b| b.1.clone()),
+            "budget_at_completion": amount(bac), "planned_value": amount(pv), "earned_value": amount(ev), "actual_cost": amount(Some(ac)),
+            "schedule_variance": amount(sv), "cost_variance": amount(cv), "schedule_index": index(ratio(ev, pv)), "cost_index": index(cpi),
+            "estimate_at_completion": amount(eac)}));
+    }
+    let [bac, pv, ev, ac, sv, cv] = totals.map(Some);
+    let cpi = ratio(ev, ac);
+    Ok(json!({
+        "columns": [col("project", "Project", "data"), col("baseline", "Baseline", "data"), col("budget_at_completion", "Budget at Completion", "currency"),
+            col("planned_value", "Planned Value", "currency"), col("earned_value", "Earned Value", "currency"), col("actual_cost", "Actual Cost", "currency"),
+            col("schedule_variance", "Schedule Variance", "currency"), col("cost_variance", "Cost Variance", "currency"),
+            col("schedule_index", "Schedule Index (SPI)", "decimal"), col("cost_index", "Cost Index (CPI)", "decimal"),
+            col("estimate_at_completion", "Estimate at Completion", "currency")],
+        "rows": rows,
+        "totals": {"budget_at_completion": amount(bac), "planned_value": amount(pv), "earned_value": amount(ev), "actual_cost": amount(ac),
+            "schedule_variance": amount(sv), "cost_variance": amount(cv), "schedule_index": index(ratio(ev, pv)), "cost_index": index(cpi),
+            "estimate_at_completion": amount(bac.zip(above(cpi)).zip(ev).zip(ac).map(|(((b, _), e), a)| b * a / e))},
+        "meta": {"as_of": today, "truncated": truncated, "ledger": ctx.schema.entity("Account").is_some()},
     }))
 }
 

@@ -19,9 +19,15 @@ export interface Task {
   parent_task?: string | null;
   /** Manual order within a status (a decimal, so a card can land between two others). */
   rank?: string | number | null;
+  /** The sprint it is planned in (empty: the backlog), its size in points, and its place in the backlog. */
+  sprint?: string | null;
+  story_points?: string | number | null;
+  backlog_rank?: string | number | null;
   assigned_to?: { id?: string; user?: string | null }[] | null;
   depends_on?: { id?: string; task?: string | null }[] | null;
   _titles?: Record<string, string>;
+  /** Fields the workspace added (the board's endpoint sends the plain ones it marks). */
+  [field: string]: unknown;
 }
 
 /** The board's columns in order; Overdue shows only while a task is in it, Cancelled never. */
@@ -41,6 +47,7 @@ type Tone = "neutral" | "blue" | "green" | "amber" | "red" | "purple";
 /** Badge colour by stored status id (never by display text). Overdue is the server's own, worked out from the dates. */
 export const TASK_TONES: Record<string, Tone> = { Open: "neutral", Working: "blue", "Pending Review": "amber", Overdue: "red", Completed: "green", Cancelled: "neutral" };
 export const PROJECT_TONES: Record<string, Tone> = { Open: "blue", "On Hold": "amber", Completed: "green", Cancelled: "neutral" };
+export const HEALTH_TONES: Record<string, Tone> = { "On Track": "green", "At Risk": "amber", "Off Track": "red" };
 export const ISSUE_TONES: Record<string, Tone> = { Open: "amber", "In Progress": "blue", Resolved: "green", Closed: "neutral" };
 
 export const statusOf = (t: Task): string => t.status ?? "Open";

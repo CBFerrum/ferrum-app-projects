@@ -11,14 +11,17 @@ import { Badge, EmptyState, ErrorState, ListSkeleton, PageLoading, statusTone, T
 import { Progress } from "./bits";
 import { list, loadTasks, type Project, tasksKey, useQueryState } from "./data";
 import { addDays } from "./days";
-import { late, num, PROJECT_TONES } from "./plan";
+import { can, useMetaIndex } from "@ferrum/records";
+import { HEALTH_TONES, late, num, PROJECT_TONES } from "./plan";
 import { TaskPanel } from "./TaskPanel";
 
 const Board = lazy(() => import("./Board").then((m) => ({ default: m.Board })));
 const Timeline = lazy(() => import("./Timeline").then((m) => ({ default: m.Timeline })));
+const Backlog = lazy(() => import("./Backlog").then((m) => ({ default: m.Backlog })));
 
 const TABS = [
   { id: "board", get label() { return tr("Board"); } },
+  { id: "backlog", get label() { return tr("Backlog"); } },
   { id: "timeline", get label() { return tr("Timeline"); } },
   { id: "time", get label() { return tr("Time"); } },
 ];
@@ -58,12 +61,17 @@ function Overview({ project: p, open, overdue }: { project: Project; open: numbe
     queryFn: async () => {
       // A person who may not read one of these gets no tile for it.
       const count = (entity: string, filters: unknown[]) => list<unknown>(entity, { filters: JSON.stringify(filters), fields: "id", limit: 1, count: true }).then((r) => r.total ?? 0).catch(() => null);
-      const [risks, issues, changes] = await Promise.all([
+      // The latest status update's day ("" when there is none yet).
+      const latest = list<{ on_date?: string | null }>("ProjectUpdate", { filters: JSON.stringify([["project", "=", p.id]]), fields: "on_date", sort: "on_date desc", limit: 1 })
+        .then((r) => r.rows[0]?.on_date ?? "")
+        .catch(() => null);
+      const [risks, issues, changes, updated] = await Promise.all([
         count("ProjectRisk", [["project", "=", p.id], ["status", "in", ["Open", "Mitigating"]]]),
         count("ProjectIssue", [["project", "=", p.id], ["status", "in", ["Open", "In Progress"]]]),
         count("ChangeRequest", [["project", "=", p.id], ["docstatus", "=", 1], ["decision", "=", "Pending"]]),
+        latest,
       ]);
-      return { risks, issues, changes };
+      return { risks, issues, changes, updated };
     },
   });
   const hours = num(p.proj_actual_hours);
@@ -107,6 +115,11 @@ function Overview({ project: p, open, overdue }: { project: Project; open: numbe
       {watch.data?.issues != null && (
         <Tile label={tr("Open issues")} to={`/e/ProjectIssue?f.project=${p.id}`}>
           {watch.data.issues}
+        </Tile>
+      )}
+      {watch.data?.updated != null && (
+        <Tile label={tr("Status updates")} to={`/e/ProjectUpdate?f.project=${p.id}`}>
+          {watch.data.updated ? tr("Latest {day}", { day: watch.data.updated }) : tr("None yet")}
         </Tile>
       )}
       {watch.data?.changes != null && watch.data.changes > 0 && (
@@ -222,6 +235,7 @@ function ProjectView({ id }: { id: string }) {
     return { open: rows.filter((t) => t.status !== "Completed" && t.status !== "Cancelled").length, overdue: rows.filter((t) => late(t, day)).length };
   }, [tasks.data, day]);
   const open = useCallback((next: string | null) => setQuery({ task: next }), [setQuery]);
+  const updates = useMetaIndex().data?.entities.find((e) => e.name === "ProjectUpdate");
 
   if (project.error) {
     if (project.error instanceof ApiError && project.error.status === 404) {
@@ -245,6 +259,11 @@ function ProjectView({ id }: { id: string }) {
           <h1 className="page-title">{isolate(p.project_name ?? "")}</h1>
           <p className="row pj-facts">
             <Badge tone={statusTone(p.status, PROJECT_TONES)}>{isolate(p.status ?? "")}</Badge>
+            {p.proj_health && (
+              <span title={tr("As of {day}", { day: p.proj_health_on ?? "" })}>
+                <Badge tone={statusTone(p.proj_health, HEALTH_TONES)}>{isolate(p.proj_health)}</Badge>
+              </span>
+            )}
             {p.proj_priority && p.proj_priority !== "Medium" && <Badge tone="amber">{isolate(p.proj_priority)}</Badge>}
             <span className="faint">{isolate([p._titles?.customer, p.start_date && p.end_date ? `${p.start_date} – ${p.end_date}` : null, p.proj_project_manager].filter(Boolean).join(" · "))}</span>
           </p>
@@ -253,6 +272,11 @@ function ProjectView({ id }: { id: string }) {
           <Link className="btn btn-md" to={`/e/Project/${p.id}`}>
             {tr("Edit the project")}
           </Link>
+          {!!updates && can(updates.permissions, "create") && !p.proj_is_template && (
+            <Link className="btn btn-md" to={`/e/ProjectUpdate/new?project=${p.id}`}>
+              {tr("Post an update")}
+            </Link>
+          )}
           {p.status !== "Completed" && p.status !== "Cancelled" && (
             <Link className="btn btn-primary btn-md" to={`/e/Task/new?project=${p.id}`}>
               {tr("New task")}
@@ -273,7 +297,13 @@ function ProjectView({ id }: { id: string }) {
               <ListSkeleton rows={8} />
             ) : (
               <Suspense fallback={<ListSkeleton rows={8} />}>
-                {tab === "board" ? <Board project={p} set={tasks.data} open={task} onOpen={open} /> : <Timeline project={p} set={tasks.data} open={task} onOpen={open} />}
+                {tab === "board" ? (
+                  <Board project={p} set={tasks.data} open={task} onOpen={open} />
+                ) : tab === "backlog" ? (
+                  <Backlog project={p} set={tasks.data} open={task} onOpen={open} />
+                ) : (
+                  <Timeline project={p} set={tasks.data} open={task} onOpen={open} />
+                )}
               </Suspense>
             )}
           </TabPanel>

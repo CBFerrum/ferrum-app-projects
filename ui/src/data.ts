@@ -2,12 +2,13 @@
 // on screen, and put back with the server's reason if it refuses. The server holds the rules (what
 // may start, what may close, who may change what); the screens only show what it says.
 
-import { type QueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router";
 import { api, ApiError, docPath, errorMessage, newKey, t as tr } from "@ferrum/client";
 import { toast } from "@ferrum/kit";
 import { usePeople } from "@ferrum/records";
+import type { Sprint } from "./sprints";
 import { patched, type Task } from "./plan";
 
 export interface Project {
@@ -32,6 +33,10 @@ export interface Project {
   proj_costing_amount?: string | number | null;
   proj_billable_amount?: string | number | null;
   proj_billed_amount?: string | number | null;
+  /** From its latest status update: On Track, At Risk or Off Track, and that update's day. */
+  proj_health?: string | null;
+  proj_health_on?: string | null;
+  proj_is_template?: boolean | null;
   _titles?: Record<string, string>;
 }
 
@@ -59,6 +64,9 @@ const KEPT = new Set([
   "is_milestone",
   "parent_task",
   "rank",
+  "sprint",
+  "story_points",
+  "backlog_rank",
   "assigned_to",
   "depends_on",
 ]);
@@ -70,6 +78,17 @@ export interface TaskSet {
 }
 
 export const tasksKey = (project: string) => ["projects", "tasks", project];
+
+export const sprintsKey = (project: string) => ["projects", "sprints", project];
+
+/** A project's sprints that are not closed, by start: the backlog's sections and the board's sprint filter. */
+export function useSprints(project: string) {
+  return useQuery({
+    queryKey: sprintsKey(project),
+    queryFn: ({ signal }) =>
+      list<Sprint>("Sprint", { filters: JSON.stringify([["project", "=", project], ["state", "in", ["Planned", "Active"]]]), sort: "start_date asc", limit: 50 }, signal).then((r) => r.rows),
+  });
+}
 
 /** The most tasks a screen loads; the API's own limit. */
 export const TASK_LIMIT = 500;
